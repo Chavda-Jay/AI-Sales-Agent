@@ -10,7 +10,9 @@ import asyncpg  # type: ignore
 from contextlib import asynccontextmanager
 import asyncio
 
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(BASE_DIR, ".env")
+load_dotenv(dotenv_path=env_path, override=True)
 
 db_pool = None
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -36,8 +38,7 @@ async def abandoned_chat_worker():
                     ext_id = row['ext_id']
                     
                     try:
-                        with open("business-config.json", "r") as f:
-                            config = json.load(f)
+                        config = load_config()
                     except:
                         continue
                     
@@ -123,6 +124,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+from fastapi.responses import JSONResponse
+import traceback
+import sys
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    print(f"Unhandled exception on {request.url}: {exc}", file=sys.stderr)
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error": str(exc)}
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -142,7 +156,8 @@ class HandoffRequest(BaseModel):
 conversations = {}
 
 def load_config():
-    with open("business-config.json", "r", encoding="utf-8") as f:
+    config_path = os.path.join(BASE_DIR, "business-config.json")
+    with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def detect_language(text: str) -> str:
@@ -188,6 +203,8 @@ Rules:
 - Never invent prices, stock, delivery dates or offers not listed above.
 - Be helpful, concise, human, persuasive without being pushy.
 - Ask only necessary questions to narrow a recommendation.
+- **UPSELL/CROSS-SELL:** When a customer shows intent to buy a main product (e.g., Jeans), you MUST naturally suggest a related accessory (e.g., Belt, Jacket) as a quick upsell before confirming the order.
+- **COUPON/DISCOUNT:** If the customer mentions the coupon code 'FIRST10', acknowledge it excitedly and apply a 10% discount to their purchase. When setting 'order_amount' in the JSON, calculate and provide the discounted price. Clearly mention the discount applied in your 'reply'.
 - When the customer shows clear purchase intent (e.g., asking for delivery, confirming an order, or asking about sizes), naturally ask for their name and phone number (if not already provided). Do not ask upfront in the first message.
 - If the customer mentions their name or phone number anywhere in the conversation, acknowledge it naturally and include it in your JSON response.
 - HUMAN HANDOFF: If the customer sounds angry/frustrated, asks for a human/manager, mentions legal/fraud/payment disputes, asks for an extreme discount/exception, or asks a question completely outside your catalog/policy knowledge, set "needs_human" to true and provide a short "handoff_reason". Acknowledge this naturally in your "reply" (e.g. "I'll connect you with our team right away for this."). Otherwise, set "needs_human" to false and "handoff_reason" to null.
@@ -307,6 +324,12 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                     customer_id, req.message, parsed.get("reply", ""), parsed.get("intent_score", 0), parsed.get("segment", "COLD")
                 )
                 
+                if parsed.get("needs_human"):
+                    await conn.execute(
+                        "INSERT INTO handoffs (customer_id, reason) VALUES ($1, $2)",
+                        customer_id, parsed.get("handoff_reason", "Customer requested human assistance")
+                    )
+                
                 if parsed.get("order_ready"):
                     import random
                     order_id = f"ORD-{random.randint(10000, 99999)}"
@@ -349,6 +372,24 @@ async def get_customers():
                 return [dict(row) for row in rows]
         except Exception as e:
             print(f"Warning: Database error fetching customers: {e}")
+            raise HTTPException(status_code=500, detail="Database error")
+    return []
+
+@app.get("/api/customers/{customer_id}/orders")
+async def get_customer_orders(customer_id: int):
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT o.id, o.status, o.amount, o.created_at, p.name as product_name
+                    FROM orders o
+                    LEFT JOIN products p ON o.product_id = p.id
+                    WHERE o.customer_id = $1
+                    ORDER BY o.created_at DESC
+                """, customer_id)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"Warning: Database error fetching orders: {e}")
             raise HTTPException(status_code=500, detail="Database error")
     return []
 
