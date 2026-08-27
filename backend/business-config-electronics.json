@@ -1,0 +1,27 @@
+{
+  "brandName": "Sharma Electronics",
+  "language": "English + Hindi mix (Hinglish)",
+  "catalog": [
+    {
+      "name": "Samsung 43-inch Smart TV",
+      "price": 24999,
+      "note": "4K UHD, Android TV, voice remote"
+    },
+    {
+      "name": "LG Refrigerator 190L",
+      "price": 15999,
+      "note": "single door, 5 star rating, 1 year warranty"
+    },
+    {
+      "name": "Bajaj Mixer Grinder 750W",
+      "price": 2499,
+      "note": "3 jars, 2 year warranty"
+    },
+    {
+      "name": "boAt Bluetooth Earphones",
+      "price": 1299,
+      "note": "20 hours battery, sweatproof"
+    }
+  ],
+  "policies": "Free delivery above ₹999, 10-day replacement guarantee, EMI available on cards, installation support included on TV and fridge."
+}

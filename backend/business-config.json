@@ -1,0 +1,47 @@
+{
+  "brandName": "Urban Threads Clothing",
+  "language": "English + Hindi mix (Hinglish)",
+  "catalog": [
+    {
+      "name": "Cotton T-Shirt",
+      "price": 599,
+      "note": "soft everyday wear, 5 colors"
+    },
+    {
+      "name": "Slim Fit Jeans",
+      "price": 1299,
+      "note": "stretch denim, all sizes"
+    },
+    {
+      "name": "Casual Sneakers",
+      "price": 1999,
+      "note": "lightweight, all-day comfort"
+    },
+    {
+      "name": "Formal Shirt",
+      "price": 899,
+      "note": "office wear, wrinkle-free"
+    },
+    {
+      "name": "Winter Hoodie",
+      "price": 1499,
+      "note": "fleece lined, warm, unisex"
+    },
+    {
+      "name": "Men's Kurta Set",
+      "price": 1799,
+      "note": "cotton, festive/ethnic wear, 3 colors"
+    },
+    {
+      "name": "Denim Jacket",
+      "price": 2299,
+      "note": "unisex, all-season layering"
+    },
+    {
+      "name": "Leather Belt",
+      "price": 499,
+      "note": "genuine leather, formal and casual"
+    }
+  ],
+  "policies": "Free delivery above ₹799, 7-day easy exchange, COD available, UPI/cards accepted, size chart on request."
+}
