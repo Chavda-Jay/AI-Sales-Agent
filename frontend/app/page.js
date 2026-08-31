@@ -192,9 +192,6 @@ export default function Home() {
           <div style={{ background: 'var(--primary)', width: '20px', height: '20px', borderRadius: '4px' }}></div>
           {config?.brandName || 'Urban Threads'} <span>Agent</span>
         </div>
-        <Link href="/dashboard" className="nav-btn">
-            View Dashboard
-        </Link>
       </nav>
 
       <div className="wrap">

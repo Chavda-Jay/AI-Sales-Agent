@@ -167,8 +167,8 @@ export default function Dashboard() {
     }
   };
 
-  const fetchCustomers = async () => {
-    setLoading(true);
+  const fetchCustomers = async (isPolling = false) => {
+    if (!isPolling) setLoading(true);
     try {
       const res = await fetch(CUSTOMERS_URL);
       if (res.ok) {
@@ -178,7 +178,19 @@ export default function Dashboard() {
 
       const hRes = await fetch(HANDOFFS_URL);
       if (hRes.ok) {
-        setHandoffs(await hRes.json());
+        const newHandoffs = await hRes.json();
+        setHandoffs(prev => {
+          // Compare previous pending count with new pending count
+          const prevPendingCount = prev.filter(h => h.status === 'pending').length;
+          const newPendingCount = newHandoffs.filter(h => h.status === 'pending').length;
+          
+          if (newPendingCount > prevPendingCount) {
+             // Play Notification Sound
+             const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+             audio.play().catch(err => console.log('Audio blocked by browser:', err));
+          }
+          return newHandoffs;
+        });
       }
 
       const aRes = await fetch(ANALYTICS_URL);
@@ -188,12 +200,17 @@ export default function Dashboard() {
     } catch (e) {
       console.error("Could not fetch customers", e);
     } finally {
-      setLoading(false);
+      if (!isPolling) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchCustomers();
+    // Auto-refresh every 3 seconds for live demo
+    const intervalId = setInterval(() => {
+      fetchCustomers(true);
+    }, 3000);
+    return () => clearInterval(intervalId);
   }, []);
 
   const resolveHandoff = async (id) => {
@@ -215,20 +232,12 @@ export default function Dashboard() {
     <div style={styles.page}>
       <div style={styles.wrap}>
 
-        {/* Back to Chat */}
-        <Link href="/" style={styles.backBtn}>Back to Chat</Link>
-
         {/* Header */}
         <div style={styles.eyebrow}>CRM Dashboard</div>
         <div style={styles.titleRow}>
-          <h1 style={styles.h1}>Customer Overview</h1>
-          <button onClick={fetchCustomers} disabled={loading} style={{
-            ...styles.refreshBtn,
-            opacity: loading ? 0.6 : 1,
-            cursor: loading ? 'not-allowed' : 'pointer',
-          }}>
-            {loading ? 'Refreshing...' : 'Refresh Data'}
-          </button>
+          <div>
+            <h1 style={styles.h1}>Customer Overview</h1>
+          </div>
         </div>
         <p style={styles.sub}>Monitor your live AI sales leads and review conversation transcripts.</p>
 
@@ -391,7 +400,9 @@ export default function Dashboard() {
                           Reason: {h.reason}
                         </div>
                         <div style={{ color: c.muted, fontSize: '11px', marginTop: '6px' }}>
-                          {new Date(h.created_at).toLocaleString()}
+                          {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
+                            day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
+                          })}
                         </div>
                       </div>
                       <button onClick={() => resolveHandoff(h.id)} style={styles.resolveBtn}>
