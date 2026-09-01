@@ -41,6 +41,26 @@
       "name": "Leather Belt",
       "price": 499,
       "note": "genuine leather, formal and casual"
+    },
+    {
+      "name": "Polo T-Shirt",
+      "price": 799,
+      "note": "classic fit, breathable cotton"
+    },
+    {
+      "name": "Chino Pants",
+      "price": 1499,
+      "note": "slim fit, comfortable stretch"
+    },
+    {
+      "name": "Aviator Sunglasses",
+      "price": 999,
+      "note": "UV protection, classic metal frame"
+    },
+    {
+      "name": "Silk Saree",
+      "price": 2999,
+      "note": "pure silk, traditional wear, 2 colors"
     }
   ],
   "policies": "Free delivery above ₹799, 7-day easy exchange, COD available, UPI/cards accepted, size chart on request."

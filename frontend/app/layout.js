@@ -1,4 +1,5 @@
 import { Inter, Sora, JetBrains_Mono } from 'next/font/google';
+import { Toaster } from 'react-hot-toast';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
@@ -14,6 +15,12 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={`${inter.variable} ${sora.variable} ${jetbrainsMono.variable}`}>
+        <Toaster 
+          position="top-right" 
+          toastOptions={{ 
+            style: { background: '#1c2129', color: '#e6edf3', border: '1px solid #2b3140' } 
+          }} 
+        />
         {children}
       </body>
     </html>

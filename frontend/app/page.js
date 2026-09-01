@@ -1,20 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const BACKEND_URL = "http://localhost:3001/api/chat";
 const HEALTH_URL = "http://localhost:3001/api/health";
-
-const stages = [
-  "New Visitor",
-  "Interested",
-  "Considering",
-  "Ready to Buy",
-  "Special Offer",
-  "Order Placed",
-  "Purchased"
-];
 
 function iconFor(name) {
   const n = name.toLowerCase();
@@ -31,21 +22,19 @@ function iconFor(name) {
   else if (n.includes('kurta')) imgSrc = '/images/kurta_set.jpg';
   else if (n.includes('jacket')) imgSrc = '/images/denim_jacket.jpg';
   else if (n.includes('belt')) imgSrc = '/images/leather_belt.jpg';
+  else if (n.includes('chino') || n.includes('pants')) imgSrc = '/images/chino_pants.jpg';
+  else if (n.includes('aviator') || n.includes('sunglass')) imgSrc = '/images/aviator_sunglasses.jpg';
+  else if (n.includes('saree') || n.includes('silk')) imgSrc = '/images/silk_saree.jpg';
   if (imgSrc) {
       return <img src={imgSrc} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
   }
-  if (n.includes('jacket') || n.includes('hoodie')) return '🧥';
-  if (n.includes('dress')) return '👗';
-  if (n.includes('bag')) return '👜';
-  if (n.includes('watch')) return '⌚';
-  return '📦';
-}
-
-function segColor(seg) {
-  if (seg === 'HOT') return 'var(--hot)';
-  if (seg === 'WARM') return 'var(--warm)';
-  if (seg === 'CUSTOMER') return 'var(--cust)';
-  return 'var(--cold)';
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '48px', height: '48px', opacity: 0.5, margin: 'auto' }}>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+      <polyline points="21 15 16 10 5 21"></polyline>
+    </svg>
+  );
 }
 
 export default function Home() {
@@ -54,20 +43,11 @@ export default function Home() {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [backendStatus, setBackendStatus] = useState('checking');
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [customerId] = useState(() => "demo-customer-" + Date.now());
   
-  // Profile state
-  const [score, setScore] = useState(0);
-  const [segment, setSegment] = useState('AWAITING');
-  const [reasoning, setReasoning] = useState('Waiting for first message...');
-  const [objection, setObjection] = useState('...');
-  const [recProduct, setRecProduct] = useState('...');
-  const [nextAction, setNextAction] = useState('...');
-  
-  const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  
-  const [customerId] = useState(() => "demo-customer-" + Date.now());
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -75,23 +55,20 @@ export default function Home() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages, isTyping, isChatOpen]);
 
   useEffect(() => {
-    if (!isTyping) {
+    if (!isTyping && isChatOpen) {
       setTimeout(() => inputRef.current?.focus(), 10);
     }
-  }, [isTyping]);
+  }, [isTyping, isChatOpen]);
 
   useEffect(() => {
     const checkBackend = async () => {
       try {
         const r = await fetch(HEALTH_URL);
-        if (r.ok) {
-          setBackendStatus('ok');
-        } else {
-          setBackendStatus('err');
-        }
+        if (r.ok) setBackendStatus('ok');
+        else setBackendStatus('err');
       } catch (e) {
         setBackendStatus('err');
       }
@@ -103,18 +80,19 @@ export default function Home() {
         const res = await fetch("http://localhost:3001/api/config");
         const data = await res.json();
         setConfig(data);
-        const firstTwo = data.catalog.slice(0, 3).map(p => p.name).join(', ');
         setMessages([
           {
-            text: `Hi! Welcome to ${data.brandName} 👋 We have ${firstTwo} and more. What are you looking for today?`,
-            who: 'agent'
+            text: `Hi! Welcome to ${data.brandName} 👋 How can I help you today?`,
+            who: 'agent',
+            isGreeting: true
           }
         ]);
       } catch (e) {
         setMessages([
           {
-            text: "Hi! Welcome to our store 👋 What are you looking for today? (Could not load business config ❌ check backend)",
-            who: 'agent'
+            text: "Hi! Welcome to our store 👋 How can I help you today?",
+            who: 'agent',
+            isGreeting: true
           }
         ]);
       }
@@ -122,23 +100,54 @@ export default function Home() {
     loadBrandAndGreet();
   }, []);
 
-  const updateProfile = (newScore, newSegment, newReasoning, newObjection, newRec, newNext) => {
-    const s = Math.max(0, Math.min(100, newScore || 0));
-    setScore(s);
-    setSegment(newSegment || 'COLD');
-    setReasoning(newReasoning || '...');
-    setObjection(newObjection || 'None detected');
-    setRecProduct(newRec || '...');
-    setNextAction(newNext || '...');
+  useEffect(() => {
+    if (!customerId) return;
+    const pollHistory = async () => {
+      try {
+        const res = await fetch(`http://localhost:3001/api/chat/poll/${customerId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.messages && data.messages.length > 0) {
+          const newMessages = [];
+          data.messages.forEach(m => {
+            if (m.role === 'user') {
+              newMessages.push({ text: m.content, who: 'user' });
+            } else if (m.role === 'assistant') {
+              try {
+                const parsed = JSON.parse(m.content);
+                if (parsed.reply) {
+                  newMessages.push({ text: parsed.reply, who: 'bot', receipt: parsed.order_ready, amount: parsed.order_amount, orderId: parsed.order_id, product: parsed.order_product });
+                }
+              } catch(e) {
+                newMessages.push({ text: m.content, who: 'bot' });
+              }
+            }
+          });
+          
+          setMessages(prev => {
+            const prevChatCount = prev.filter(m => !m.isGreeting).length;
+            if (newMessages.length > prevChatCount) {
+               const greeting = prev.filter(m => m.isGreeting);
+               const mappedMessages = newMessages.map(m => {
+                 if (m.who === 'bot') {
+                   if (m.receipt) {
+                     return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount };
+                   }
+                   return { text: m.text, who: 'agent' };
+                 }
+                 return m;
+               });
+               return [...greeting, ...mappedMessages];
+            }
+            return prev;
+          });
+        }
+      } catch(e) {}
+    };
     
-    let idx = 0;
-    if (newSegment === 'CUSTOMER') idx = 6;
-    else if (s >= 80) idx = 4;
-    else if (s >= 60) idx = 3;
-    else if (s >= 40) idx = 2;
-    else if (s >= 20) idx = 1;
-    setCurrentStageIndex(prev => Math.max(prev, idx));
-  };
+    const intervalId = setInterval(pollHistory, 3000);
+    return () => clearInterval(intervalId);
+  }, [customerId]);
 
   const handleSend = async () => {
     const text = inputValue.trim();
@@ -172,56 +181,95 @@ export default function Home() {
           }
           return newMsgs;
         });
-        updateProfile(data.intent_score, data.segment, data.reasoning, data.objection, data.recommended_product, data.next_action);
       }
     } catch (e) {
       setIsTyping(false);
-      setMessages(prev => [...prev, { text: '❌ Could not reach backend. Is server.js running on port 3001?', who: 'sys' }]);
+      setMessages(prev => [...prev, { text: '❌ Could not reach backend.', who: 'sys' }]);
     }
   };
-
-  const circumference = 314;
-  const offset = circumference - (score / 100) * circumference;
-  const badgeBg = segColor(segment);
-  const badgeColor = segment === 'WARM' ? '#000000' : '#ffffff';
 
   return (
     <>
       <nav className="navbar">
         <div className="nav-brand">
-          <div style={{ background: 'var(--primary)', width: '20px', height: '20px', borderRadius: '4px' }}></div>
-          {config?.brandName || 'Urban Threads'} <span>Agent</span>
+          {config?.brandName || 'Store'}
         </div>
       </nav>
 
-      <div className="wrap">
-        <div className="eyebrow">Live Prototype</div>
-      <h1 id="brandTitle">{config ? `${config.brandName} – AI Sales Agent` : 'AI Sales & Marketing Agent'}</h1>
-      <p className="sub" id="brandSub">{config ? `Live AI sales conversation for ${config.brandName}. Every reply is generated from the real product catalog and policies below.` : 'Real-time customer conversation, intent scoring, and lead classification – powered by your own backend.'}</p>
-      
-      <div className="products-strip" id="productsStrip">
+      <div className="store-hero">
+        <h1>{config ? `Welcome to ${config.brandName}` : 'Premium Store'}</h1>
+        <p>Discover our exclusive collection of high-quality products. Expertly crafted for those who demand the best.</p>
+      </div>
+
+      <div className="store-grid">
         {config?.catalog.map((p, i) => (
-          <div className="product-chip" key={i}>
-            <div className="icon">{iconFor(p.name)}</div>
-            <div className="pname">{p.name}</div>
-            <div className="pprice">₹{p.price}</div>
+          <div className="store-product" key={i}>
+            <div className="store-product-img">
+              {iconFor(p.name)}
+            </div>
+            <div className="store-product-info">
+              <div className="store-product-name">{p.name}</div>
+              <div className="store-product-price">₹{p.price}</div>
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="stage-strip" id="stageStrip">
-        {stages.map((s, i) => {
-          let className = 'stage';
-          if (i === currentStageIndex) className += ' active';
-          else if (i < currentStageIndex) className += ' passed';
-          return <div className={className} key={i}>{s}</div>;
-        })}
-      </div>
+      <footer className="store-footer">
+        <div className="footer-content">
+          <div className="footer-brand">
+            <h2>{config?.brandName || 'Store'}</h2>
+            <p>Premium quality products designed for those who appreciate the finer things in life. Step into luxury with our exclusive AI-powered storefront.</p>
+          </div>
+          
+          <div className="footer-links">
+            <h3>Shop</h3>
+            <ul>
+              <li><a href="#">New Arrivals</a></li>
+              <li><a href="#">Best Sellers</a></li>
+              <li><a href="#">Menswear</a></li>
+              <li><a href="#">Accessories</a></li>
+            </ul>
+          </div>
+          
+          <div className="footer-links">
+            <h3>Support</h3>
+            <ul>
+              <li><a href="#">Contact Us</a></li>
+              <li><a href="#">Shipping & Returns</a></li>
+              <li><a href="#">FAQ</a></li>
+              <li><a href="#">Track Order</a></li>
+            </ul>
+          </div>
+          
+          <div className="footer-links">
+            <h3>Legal</h3>
+            <ul>
+              <li><a href="#">Privacy Policy</a></li>
+              <li><a href="#">Terms of Service</a></li>
+              <li><a href="#">Cookie Policy</a></li>
+            </ul>
+          </div>
+        </div>
+        
+        <div className="footer-bottom">
+          <div>&copy; {new Date().getFullYear()} {config?.brandName || 'Urban Threads'}. All rights reserved.</div>
+          <div>Powered by Advanced B2C AI Sales Agent</div>
+        </div>
+      </footer>
 
-      <div className="grid">
-        <div className="card chatcard">
-          <div className="chat-header">Live Conversation</div>
-            <div className="messages" id="chatbox">
+      <div className="chat-widget-container">
+        {isChatOpen && (
+          <div className="floating-chat-window">
+            <div className="chat-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '50%', boxShadow: '0 0 10px #10b981' }}></div>
+                <div style={{ color: 'white', fontWeight: 800, fontSize: '16px', letterSpacing: '0.02em' }}>Shopping Assistant</div>
+              </div>
+              <button className="close-chat" onClick={() => setIsChatOpen(false)}>×</button>
+            </div>
+            
+            <div className="messages" id="chatbox" style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {messages.map((m, i) => {
                 if (m.isOrder) {
                   return (
@@ -232,74 +280,50 @@ export default function Home() {
                       </div>
                       <div className="receipt-body">
                         <div className="receipt-row"><span>Order ID</span><span className="receipt-val">{m.orderId}</span></div>
-                        <div className="receipt-row"><span>Item</span><span className="receipt-val">{m.product || 'Unknown Item'}</span></div>
+                        <div className="receipt-row"><span>Item</span><span className="receipt-val">{m.product || 'Item'}</span></div>
                       </div>
                       <div className="receipt-total"><span>Total</span><span>₹{m.amount || '0'}</span></div>
                     </div>
                   );
                 }
-                return <div key={i} className={`bubble ${m.who}`}>{m.text}</div>;
+                return (
+                  <div key={i} className={`bubble ${m.who}`}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
+                  </div>
+                );
               })}
               {isTyping && (
                 <div className="typing">Agent is typing...</div>
               )}
+              <div ref={messagesEndRef} />
             </div>
-            <div ref={messagesEndRef} />
-          <div className="input-area">
-            <div className="inputrow">
-              <input 
-                id="input"
-                ref={inputRef}
-                placeholder="Type as a customer... e.g. 'jeans is available ?'" 
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !isTyping) handleSend() }}
-                disabled={isTyping}
-                autoFocus
-              />
-              <button id="sendBtn" onClick={handleSend} disabled={isTyping || !inputValue.trim()}>Send</button>
+
+            <div className="input-area">
+              <div className="inputrow">
+                <input 
+                  id="input"
+                  ref={inputRef}
+                  placeholder="Ask a question..." 
+                  value={inputValue}
+                  onChange={e => setInputValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !isTyping) handleSend() }}
+                  disabled={isTyping}
+                  autoFocus
+                />
+                <button id="sendBtn" onClick={handleSend} disabled={isTyping || !inputValue.trim()}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+              </div>
             </div>
           </div>
-          <div className="conn" id="conn">
-            <span className={`status-dot ${backendStatus === 'ok' ? 'ok' : backendStatus === 'err' ? 'err' : ''}`} id="dot"></span>
-            <span id="connText">{backendStatus === 'ok' ? 'Backend connected @ localhost:3001' : backendStatus === 'err' ? 'Backend not reachable - make sure "npm start" is running in the backend folder' : 'Checking backend...'}</span>
-          </div>
-        </div>
+        )}
 
-        <div className="card profile">
-          <h2>Customer Profile</h2>
-          <div className={`gauge-wrap ${segment === 'HOT' ? 'intent-hot' : segment === 'WARM' ? 'intent-warm' : segment === 'CUSTOMER' ? 'intent-cust' : ''}`}>
-            <div className="score-num" id="scoreNum">{score}</div>
-            <div className="score-label">Intent Score</div>
-            <div className="badge" id="segmentBadge" style={{ background: badgeBg, color: badgeColor }}>{segment}</div>
-          </div>
-
-          <div className="fields-container">
-
-          <div className="field">
-            <div className="label">Live Intent Score</div>
-            <div className="desc">Analyzed from customer tone & phrasing</div>
-          </div>
-          <div className="field">
-            <div className="label">AI Reasoning</div>
-            <div className="val" id="reasoningVal">{reasoning}</div>
-          </div>
-          <div className="field">
-            <div className="label">Detected Objection</div>
-            <div className="val" id="objectionVal">{objection}</div>
-          </div>
-          <div className="field">
-            <div className="label">Recommended Product</div>
-            <div className="val" id="recProductVal">{recProduct}</div>
-          </div>
-          <div className="field" style={{ border: 'none', marginBottom: 0 }}>
-            <div className="label">Next Best Action</div>
-            <div className="val" id="nextActionVal">{nextAction}</div>
-          </div>
-          </div>
-        </div>
+        {!isChatOpen && (
+          <button className="chat-toggle-btn" onClick={() => setIsChatOpen(true)}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+          </button>
+        )}
       </div>
-    </div>
     </>
   );
 }

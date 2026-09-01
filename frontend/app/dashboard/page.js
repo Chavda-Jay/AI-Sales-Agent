@@ -3,11 +3,13 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import toast from 'react-hot-toast';
 
 const CUSTOMERS_URL = "http://localhost:3001/api/customers";
 const CONVERSATIONS_URL = "http://localhost:3001/api/conversations";
 const HANDOFFS_URL = "http://localhost:3001/api/handoffs";
 const ANALYTICS_URL = "http://localhost:3001/api/analytics";
+const WEEKLY_URL = "http://localhost:3001/api/analytics/weekly";
 
 function segColor(seg) {
   if (seg === 'HOT') return '#f85149';
@@ -44,105 +46,100 @@ const styles = {
   page: {
     background: c.bg, minHeight: '100vh', color: c.ivory, ...inter,
   },
-  wrap: {
-    maxWidth: '1080px', margin: '0 auto', padding: '32px 24px 80px',
+  navbar: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '24px 40px', background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(12px)',
+    borderBottom: `1px solid ${c.line}`, position: 'sticky', top: 0, zIndex: 100
   },
-  backBtn: {
-    display: 'inline-flex', alignItems: 'center',
-    background: c.panel2, color: c.primary, border: `1px solid ${c.primary}`,
-    padding: '8px 16px', borderRadius: '12px',
-    textDecoration: 'none', fontWeight: 700, ...sora, fontSize: '13px',
-    marginBottom: '24px',
+  navBrand: {
+    ...sora, fontSize: '24px', fontWeight: 900, color: c.ivory,
+    textTransform: 'uppercase', letterSpacing: '0.1em'
+  },
+  wrap: {
+    maxWidth: '1600px', margin: '0 auto', padding: '40px 40px 100px',
   },
   eyebrow: {
-    ...sora, fontSize: '11px', fontWeight: 700,
+    ...sora, fontSize: '12px', fontWeight: 700,
     textTransform: 'uppercase', letterSpacing: '.18em',
-    color: c.primary, marginBottom: '6px',
+    color: c.primary, marginBottom: '8px',
   },
   titleRow: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'
   },
   h1: {
-    ...sora, fontSize: '28px', fontWeight: 800, color: c.ivory, margin: 0,
-  },
-  refreshBtn: {
-    background: c.panel, border: `1px solid ${c.line}`, color: c.ivory,
-    borderRadius: '8px', padding: '8px 16px', cursor: 'pointer',
-    ...inter, fontSize: '13px', fontWeight: 600, transition: 'all 0.2s',
+    ...sora, fontSize: '32px', fontWeight: 800, color: c.ivory, margin: 0,
   },
   sub: {
-    color: c.muted, fontSize: '14px', marginTop: '8px', marginBottom: '0',
+    color: c.muted, fontSize: '15px', marginTop: '0', marginBottom: '40px',
   },
   sectionTitle: {
-    ...sora, fontSize: '15px', fontWeight: 800, textTransform: 'uppercase',
+    ...sora, fontSize: '16px', fontWeight: 800, textTransform: 'uppercase',
     letterSpacing: '.06em', color: c.primary, margin: 0,
   },
   card: {
-    background: c.panel, border: `1px solid ${c.line}`, borderRadius: '18px',
-    padding: '22px',
+    background: 'rgba(22, 27, 34, 0.65)', backdropFilter: 'blur(16px)', 
+    border: `1px solid rgba(255,255,255,0.05)`, borderRadius: '24px',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.4)', padding: '28px',
   },
   statCard: {
-    background: c.panel, border: `1px solid ${c.line}`, borderRadius: '18px',
-    padding: '20px', textAlign: 'center',
+    background: 'rgba(22, 27, 34, 0.65)', backdropFilter: 'blur(16px)', 
+    border: `1px solid rgba(255,255,255,0.05)`, borderRadius: '24px',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.4)', padding: '28px', textAlign: 'center',
+    display: 'flex', flexDirection: 'column', justifyContent: 'center'
   },
   statLabel: {
-    ...mono, fontSize: '11px', textTransform: 'uppercase',
-    letterSpacing: '.1em', color: c.muted, marginBottom: '8px',
+    ...mono, fontSize: '12px', textTransform: 'uppercase',
+    letterSpacing: '.1em', color: c.muted, marginBottom: '12px',
   },
   statVal: {
-    ...sora, fontSize: '32px', fontWeight: 800,
+    ...sora, fontSize: '42px', fontWeight: 800,
   },
   badge: (bg, color) => ({
-    background: bg, color: color, padding: '4px 10px', borderRadius: '12px',
+    background: bg, color: color, padding: '6px 12px', borderRadius: '12px',
     fontSize: '11px', fontWeight: 700, display: 'inline-block',
     textTransform: 'uppercase',
   }),
   progressBg: {
-    flex: 1, background: c.panel2, height: '40px', borderRadius: '6px',
+    flex: 1, background: c.panel2, height: '40px', borderRadius: '8px',
     position: 'relative', overflow: 'hidden',
   },
   progressFill: (width) => ({
     width: `${width}%`, height: '100%',
     background: `linear-gradient(90deg, ${c.primary}, #3a7bd5)`,
-    borderRadius: '6px', transition: 'width 0.6s ease',
+    borderRadius: '8px', transition: 'width 0.6s ease',
   }),
-  metricBadge: {
-    background: c.panel, border: `1px solid ${c.line}`, padding: '6px 12px',
-    borderRadius: '8px', color: c.ivory, fontSize: '13px', fontWeight: 600,
-    display: 'flex', alignItems: 'center', gap: '8px',
-  },
   table: {
     width: '100%', borderCollapse: 'collapse',
   },
   th: {
-    ...mono, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.08em',
-    color: c.muted, fontWeight: 700, padding: '12px 16px', textAlign: 'left',
-    borderBottom: `1px solid ${c.line}`,
+    ...mono, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '.08em',
+    color: c.muted, fontWeight: 700, padding: '16px 20px', textAlign: 'left',
+    borderBottom: `1px solid ${c.line}`, background: 'rgba(255,255,255,0.02)'
   },
   td: {
-    padding: '14px 16px', borderBottom: `1px solid ${c.line}`, fontSize: '14px',
+    padding: '16px 20px', borderBottom: `1px solid ${c.line}`, fontSize: '15px',
     color: c.ivory,
   },
   handoffCard: {
-    background: c.panel, border: `1px solid ${c.line}`, borderRadius: '14px',
-    padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px',
+    padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     borderLeft: `4px solid ${c.hot}`,
   },
   resolveBtn: {
     background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory,
-    borderRadius: '8px', padding: '8px 16px', cursor: 'pointer',
-    ...inter, fontSize: '12px', fontWeight: 600, transition: 'all 0.2s',
+    borderRadius: '8px', padding: '10px 16px', cursor: 'pointer',
+    ...inter, fontSize: '13px', fontWeight: 600, transition: 'all 0.2s',
   },
-  gridContainer: {
-    display: 'grid',
-    gridTemplateColumns: '1.2fr 1fr',
-    gap: '24px',
-    marginTop: '32px'
+  feedCard: {
+    background: 'rgba(22, 27, 34, 0.4)', border: `1px solid ${c.line}`,
+    borderRadius: '16px', padding: '16px 20px', marginBottom: '12px',
+    display: 'flex', alignItems: 'center', gap: '16px',
+    transition: 'all 0.3s ease', cursor: 'pointer',
   },
-  column: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '32px'
+  feedIcon: {
+    width: '44px', height: '44px', borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '20px'
   }
 };
 
@@ -151,8 +148,30 @@ export default function Dashboard() {
   const [handoffs, setHandoffs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [deleteCustomerId, setDeleteCustomerId] = useState(null);
   const [selectedOrders, setSelectedOrders] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const [replyTexts, setReplyTexts] = useState({});
+  const [weeklyData, setWeeklyData] = useState([]);
+  const [selectedConvo, setSelectedConvo] = useState(null);
+  const [selectedCustName, setSelectedCustName] = useState('');
+  const [showConvoModal, setShowConvoModal] = useState(false);
+
+  const viewConversation = async (e, custId, custName) => {
+    e.stopPropagation();
+    try {
+      const [convoRes, orderRes] = await Promise.all([
+        fetch(`http://localhost:3001/api/conversations/${custId}`),
+        fetch(`http://localhost:3001/api/customers/${custId}/orders`)
+      ]);
+      if (convoRes.ok) setSelectedConvo(await convoRes.json());
+      if (orderRes.ok) setSelectedOrders(await orderRes.json());
+      setSelectedCustName(custName || 'Anonymous Visitor');
+      setShowConvoModal(true);
+    } catch(e) {
+      console.error(e);
+    }
+  };
 
   const viewOrders = async (customerId) => {
     try {
@@ -165,6 +184,29 @@ export default function Dashboard() {
     } catch(e) {
       console.error(e);
     }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteCustomerId) return;
+    const cid = deleteCustomerId;
+    setDeleteCustomerId(null);
+    try {
+      const res = await fetch(`http://localhost:3001/api/customers/${cid}`, { method: 'DELETE' });
+      if (res.ok) {
+        setCustomers(prev => prev.filter(c => c.id !== cid));
+        toast.success('Lead deleted successfully', { position: 'top-right' });
+      } else {
+        toast.error('Failed to delete lead');
+      }
+    } catch (err) {
+      console.error("Failed to delete customer", err);
+      toast.error('Failed to delete lead');
+    }
+  };
+
+  const handleDeleteCustomer = (e, customerId) => {
+    e.stopPropagation();
+    setDeleteCustomerId(customerId);
   };
 
   const fetchCustomers = async (isPolling = false) => {
@@ -180,12 +222,10 @@ export default function Dashboard() {
       if (hRes.ok) {
         const newHandoffs = await hRes.json();
         setHandoffs(prev => {
-          // Compare previous pending count with new pending count
           const prevPendingCount = prev.filter(h => h.status === 'pending').length;
           const newPendingCount = newHandoffs.filter(h => h.status === 'pending').length;
           
           if (newPendingCount > prevPendingCount) {
-             // Play Notification Sound
              const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
              audio.play().catch(err => console.log('Audio blocked by browser:', err));
           }
@@ -197,6 +237,11 @@ export default function Dashboard() {
       if (aRes.ok) {
         setAnalytics(await aRes.json());
       }
+
+      const wRes = await fetch(WEEKLY_URL);
+      if (wRes.ok) {
+        setWeeklyData(await wRes.json());
+      }
     } catch (e) {
       console.error("Could not fetch customers", e);
     } finally {
@@ -206,7 +251,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchCustomers();
-    // Auto-refresh every 3 seconds for live demo
     const intervalId = setInterval(() => {
       fetchCustomers(true);
     }, 3000);
@@ -215,9 +259,33 @@ export default function Dashboard() {
 
   const resolveHandoff = async (id) => {
     try {
-      await fetch(`${HANDOFFS_URL}/${id}/resolve`, { method: 'POST' });
-      setHandoffs(prev => prev.map(h => h.id === id ? { ...h, status: 'resolved' } : h));
-    } catch (e) {
+      const res = await fetch(`http://localhost:3001/api/handoffs/${id}/resolve`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        setHandoffs(prev => prev.map(h => h.id === id ? { ...h, status: 'resolved' } : h));
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  const sendReply = async (id) => {
+    const text = replyTexts[id];
+    if (!text || !text.trim()) return;
+    
+    try {
+      const res = await fetch(`http://localhost:3001/api/handoffs/${id}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text.trim() })
+      });
+      
+      if (res.ok) {
+        setReplyTexts(prev => ({ ...prev, [id]: '' }));
+        fetchCustomers(true);
+      }
+    } catch(e) {
       console.error(e);
     }
   };
@@ -230,27 +298,50 @@ export default function Dashboard() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.wrap}>
-
-        {/* Header */}
-        <div style={styles.eyebrow}>CRM Dashboard</div>
-        <div style={styles.titleRow}>
-          <div>
-            <h1 style={styles.h1}>Customer Overview</h1>
+      
+      {/* Navbar */}
+      <nav style={styles.navbar}>
+        <div style={styles.navBrand}>Store Dashboard</div>
+        <div style={{ ...sora, fontSize: '13px', fontWeight: 600, color: c.muted, display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '8px', height: '8px', background: c.cust, borderRadius: '50%', boxShadow: `0 0 10px ${c.cust}` }}></div>
+            Live Monitoring
           </div>
         </div>
-        <p style={styles.sub}>Monitor your live AI sales leads and review conversation transcripts.</p>
+      </nav>
 
-        <div style={styles.gridContainer}>
-          {/* Left Column */}
-          <div style={styles.column}>
-            {/* Performance Overview */}
+      <div style={styles.wrap}>
+        {/* Header Title */}
+        <div style={styles.eyebrow}>AI CRM</div>
+        <div style={styles.titleRow}>
+          <h1 style={styles.h1}>Customer Overview</h1>
+        </div>
+        <p style={styles.sub}>Monitor your live AI sales leads and manage customer handoffs in real-time.</p>
+
+        {/* Top Row: Stat Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px', marginBottom: '40px' }}>
+          {[
+            { label: 'Total Customers', val: total, color: c.ivory },
+            { label: 'HOT Leads', val: hotCount, color: c.hot },
+            { label: 'WARM Leads', val: warmCount, color: c.warm },
+            { label: 'COLD Leads', val: coldCount, color: c.cold },
+          ].map((stat, i) => (
+            <div key={i} style={styles.statCard}>
+              <div style={styles.statLabel}>{stat.label}</div>
+              <div style={{ ...styles.statVal, color: stat.color }}>{stat.val}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Middle Row: Graph & Needs Attention */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px', marginBottom: '40px' }}>
+          
+          {/* Left: Performance & Graph */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {analytics && (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h2 style={styles.sectionTitle}>Performance Overview</h2>
-                </div>
-                <div style={{ ...styles.card, padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={styles.card}>
+                <h2 style={{ ...styles.sectionTitle, marginBottom: '24px' }}>Performance Overview</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {[
                     { label: 'Conversations', count: analytics.total_conversations },
                     { label: 'Warm+ Leads', count: analytics.warm_or_above },
@@ -261,15 +352,15 @@ export default function Dashboard() {
                     const width = Math.max(2, (stage.count / max) * 100);
                     const percent = Math.round((stage.count / max) * 100);
                     return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <div style={{ width: '110px', fontSize: '12px', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'right' }}>
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                        <div style={{ width: '130px', fontSize: '13px', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'right' }}>
                           {stage.label}
                         </div>
                         <div style={styles.progressBg}>
                           <div style={styles.progressFill(width)} />
                         </div>
-                        <div style={{ width: '80px', ...mono, fontSize: '14px', fontWeight: 700, color: c.ivory }}>
-                          {stage.count} <span style={{ fontSize: '11px', color: c.muted, fontWeight: 500 }}>({percent}%)</span>
+                        <div style={{ width: '90px', ...mono, fontSize: '16px', fontWeight: 700, color: c.ivory }}>
+                          {stage.count} <span style={{ fontSize: '12px', color: c.muted, fontWeight: 500 }}>({percent}%)</span>
                         </div>
                       </div>
                     );
@@ -278,141 +369,163 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Analytics Graph */}
-            <div style={{ marginTop: '32px', marginBottom: '32px' }}>
-              <h2 style={{ ...styles.sectionTitle, marginBottom: '16px' }}>7-Day Intent Trend</h2>
-              <div style={{ ...styles.card, padding: '24px 24px 0 0', height: '300px' }}>
+            <div style={{ ...styles.card, padding: '28px 28px 12px 12px', height: '360px', display: 'flex', flexDirection: 'column' }}>
+              <h2 style={{ ...styles.sectionTitle, marginBottom: '24px', paddingLeft: '16px' }}>7-Day Intent Trend</h2>
+              <div style={{ flex: 1 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={[
-                    { name: 'Mon', leads: 12, hot: 2, orders: 1 },
-                    { name: 'Tue', leads: 19, hot: 5, orders: 2 },
-                    { name: 'Wed', leads: 15, hot: 4, orders: 1 },
-                    { name: 'Thu', leads: 22, hot: 8, orders: 3 },
-                    { name: 'Fri', leads: 28, hot: 12, orders: 4 },
-                    { name: 'Sat', leads: 35, hot: 16, orders: 7 },
-                    { name: 'Sun', leads: 42, hot: 24, orders: 11 },
+                  <LineChart data={weeklyData.length > 0 ? weeklyData : [
+                    { name: 'Mon', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Tue', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Wed', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Thu', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Fri', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Sat', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Sun', leads: 0, hot: 0, orders: 0 },
                   ]}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2b3140" vertical={false} />
                     <XAxis dataKey="name" stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
                     <YAxis stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #1F1F1F', borderRadius: '8px' }} 
-                      itemStyle={{ fontWeight: 600 }}
+                      contentStyle={{ backgroundColor: '#161b22', border: '1px solid #2b3140', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }} 
+                      itemStyle={{ fontWeight: 600, fontFamily: 'var(--font-inter, sans-serif)' }}
                     />
-                    <Line type="monotone" dataKey="leads" name="Total Leads" stroke="#58a6ff" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="hot" name="Hot Leads" stroke="#f85149" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="orders" name="Orders" stroke="#3fb950" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="leads" name="Total Leads" stroke="#58a6ff" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
+                    <Line type="monotone" dataKey="hot" name="Hot Leads" stroke="#f85149" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
+                    <Line type="monotone" dataKey="orders" name="Orders" stroke="#3fb950" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
-
-            {/* Recent Activity Table */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h2 style={styles.sectionTitle}>Recent Activity</h2>
-              </div>
-
-              <div style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Customer</th>
-                      <th style={styles.th}>Segment</th>
-                      <th style={styles.th}>Score</th>
-                      <th style={styles.th}>Last Interaction</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customers.length === 0 ? (
-                      <tr>
-                        <td colSpan="4" style={{ ...styles.td, textAlign: 'center', color: c.muted }}>
-                          No customers yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      customers.slice(0, 8).map(cust => (
-                        <tr key={cust.id} onClick={() => viewOrders(cust.id)} style={{ cursor: 'pointer' }}>
-                          <td style={styles.td}>
-                            <div style={{ fontWeight: 600 }}>{cust.name || 'Unknown'}</div>
-                          </td>
-                          <td style={styles.td}>
-                            <span style={styles.badge(segColor(cust.segment), segTextColor(cust.segment))}>
-                              {cust.segment}
-                            </span>
-                          </td>
-                          <td style={{ ...styles.td, fontWeight: 600, ...mono }}>{cust.intent_score || 0}</td>
-                          <td style={{ ...styles.td, color: c.muted, fontSize: '13px' }}>
-                            {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                              day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
-                            }) : '—'}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
 
-          {/* Right Column */}
-          <div style={styles.column}>
-            {/* Stat Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-              {[
-                { label: 'Total Customers', val: total, color: c.ivory },
-                { label: 'HOT Leads', val: hotCount, color: c.hot },
-                { label: 'WARM Leads', val: warmCount, color: c.warm },
-                { label: 'COLD Leads', val: coldCount, color: c.cold },
-              ].map((stat, i) => (
-                <div key={i} style={styles.statCard}>
-                  <div style={styles.statLabel}>{stat.label}</div>
-                  <div style={{ ...styles.statVal, color: stat.color }}>{stat.val}</div>
-                </div>
-              ))}
+          {/* Right: Needs Attention */}
+          <div style={styles.card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+              <h2 style={styles.sectionTitle}>Needs Attention</h2>
+              {pendingHandoffs.length > 0 && (
+                <span style={styles.badge(c.hot, '#fff')}>
+                  {pendingHandoffs.length} Pending
+                </span>
+              )}
             </div>
 
-            {/* Needs Attention */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                <h2 style={styles.sectionTitle}>Needs Attention</h2>
-                {pendingHandoffs.length > 0 && (
-                  <span style={styles.badge(c.hot, '#fff')}>
-                    {pendingHandoffs.length} Pending
-                  </span>
-                )}
+            {handoffs.length === 0 ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: c.muted, fontSize: '15px' }}>
+                No handoffs requested yet.
               </div>
-
-              {handoffs.length === 0 ? (
-                <div style={{ ...styles.card, padding: '24px', textAlign: 'center', color: c.muted, fontSize: '13px' }}>
-                  No handoffs requested yet.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {pendingHandoffs.map(h => (
-                    <div key={h.id} style={styles.handoffCard}>
-                      <div>
-                        <div style={{ fontWeight: 600, color: c.ivory, marginBottom: '4px', fontSize: '14px' }}>
-                          {h.name || 'Unknown'}
-                        </div>
-                        <div style={{ color: c.hot, fontSize: '13px', fontWeight: 500 }}>
-                          Reason: {h.reason}
-                        </div>
-                        <div style={{ color: c.muted, fontSize: '11px', marginTop: '6px' }}>
-                          {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                            day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
-                          })}
-                        </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {pendingHandoffs.map(h => (
+                  <div key={h.id} style={styles.handoffCard}>
+                    <div style={{ flex: 1, marginRight: '16px' }}>
+                      <div style={{ fontWeight: 700, color: c.ivory, marginBottom: '6px', fontSize: '15px' }}>
+                        {h.name || 'Unknown Customer'}
+                      </div>
+                      <div style={{ color: c.hot, fontSize: '14px', fontWeight: 500 }}>
+                        Reason: {h.reason}
+                      </div>
+                      <div style={{ color: c.muted, fontSize: '12px', marginTop: '8px' }}>
+                        {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
+                          day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
+                        })}
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '180px' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input 
+                          type="text" 
+                          className="manager-input"
+                          placeholder="Type reply..." 
+                          value={replyTexts[h.id] || ''}
+                          onChange={(e) => setReplyTexts(prev => ({ ...prev, [h.id]: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') sendReply(h.id); }}
+                          style={{ 
+                            flex: 1, 
+                            border: `1px solid ${c.line}`, 
+                            borderRadius: '8px', 
+                            padding: '8px 12px',
+                            fontSize: '13px',
+                            background: c.panel2,
+                            color: c.ivory,
+                            outline: 'none'
+                          }}
+                        />
+                        <button onClick={() => sendReply(h.id)} style={{ ...styles.resolveBtn, background: c.cust, color: '#fff', border: 'none' }}>
+                          Send
+                        </button>
                       </div>
                       <button onClick={() => resolveHandoff(h.id)} style={styles.resolveBtn}>
                         Mark as Resolved
                       </button>
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom Row: Live Timeline Feed */}
+        <div style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '24px 28px', borderBottom: `1px solid ${c.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={styles.sectionTitle}>Live Activity Feed</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: c.cust, fontWeight: 600 }}>
+               <div style={{ width: '8px', height: '8px', background: c.cust, borderRadius: '50%', boxShadow: `0 0 10px ${c.cust}` }} />
+               Syncing live...
             </div>
+          </div>
+          <div style={{ padding: '24px' }}>
+            {customers.length === 0 ? (
+              <div style={{ textAlign: 'center', color: c.muted, padding: '40px' }}>No live activity yet.</div>
+            ) : (
+              customers.slice(0, 15).map(cust => (
+                <div 
+                  key={cust.id} 
+                  style={styles.feedCard}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                    e.currentTarget.style.transform = 'translateX(4px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(22, 27, 34, 0.4)';
+                    e.currentTarget.style.transform = 'translateX(0)';
+                  }}
+                  onClick={() => viewOrders(cust.id)}
+                >
+                  <div style={{ ...styles.feedIcon, background: `${segColor(cust.segment)}20`, color: segColor(cust.segment) }}>
+                    {cust.segment === 'HOT' ? '🔥' : cust.segment === 'CUSTOMER' ? '🛍️' : '💬'}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 600, color: c.ivory, fontSize: '15px' }}>{cust.name || 'Anonymous Visitor'}</span>
+                      <span style={styles.badge(segColor(cust.segment), segTextColor(cust.segment))}>{cust.segment}</span>
+                    </div>
+                    <div style={{ color: c.muted, fontSize: '13px' }}>
+                      Intent Score: <strong style={{ color: c.ivory, ...mono }}>{cust.intent_score || 0}/100</strong> • 
+                      Last active: {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
+                        day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
+                      }) : 'just now'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button 
+                      onClick={(e) => handleDeleteCustomer(e, cust.id)}
+                      style={{ ...styles.resolveBtn, background: 'transparent', color: c.hot, border: `1px solid ${c.hot}`, padding: '8px 12px' }}
+                      title="Delete"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </button>
+                    <button 
+                      onClick={(e) => viewConversation(e, cust.id, cust.name)}
+                      style={{ ...styles.resolveBtn, background: 'transparent', color: c.primary, border: `1px solid ${c.primary}` }}
+                    >
+                      View Details
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -446,6 +559,129 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {showConvoModal && (
+        <div className="modal-overlay" onClick={() => setShowConvoModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '560px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <button className="modal-close" onClick={() => setShowConvoModal(false)}>✖</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: `${c.primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: c.primary, fontSize: '18px' }}>💬</div>
+              <div>
+                <h2 style={{ ...styles.sectionTitle, margin: 0 }}>Conversation History</h2>
+                <div style={{ color: c.muted, fontSize: '13px', marginTop: '4px' }}>{selectedCustName}</div>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '8px', marginBottom: '16px' }}>
+              {selectedConvo && selectedConvo.length > 0 ? (
+                selectedConvo.map((msg, idx) => (
+                  <div key={idx}>
+                    {msg.message && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                        <div style={{ background: `${c.primary}22`, border: `1px solid ${c.primary}33`, borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '80%', color: c.ivory, fontSize: '14px', lineHeight: '1.5' }}>
+                          {msg.message}
+                        </div>
+                      </div>
+                    )}
+                    {msg.reply && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '8px' }}>
+                        <div style={{ background: c.panel2, border: `1px solid ${c.line}`, borderRadius: '16px 16px 16px 4px', padding: '12px 16px', maxWidth: '80%', color: c.ivory, fontSize: '14px', lineHeight: '1.5' }}>
+                          <div style={{ fontSize: '11px', color: c.primary, fontWeight: 700, marginBottom: '6px', ...mono }}>AI AGENT</div>
+                          {msg.reply}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div style={{ textAlign: 'center', color: c.muted, padding: '40px 0' }}>No conversation history found.</div>
+              )}
+            </div>
+
+            {selectedOrders && selectedOrders.length > 0 && (
+              <div style={{ borderTop: `1px solid ${c.line}`, paddingTop: '16px' }}>
+                <div style={{ ...mono, fontSize: '11px', color: c.cust, fontWeight: 700, marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '.1em' }}>📦 Orders ({selectedOrders.length})</div>
+                {selectedOrders.map((o, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: idx < selectedOrders.length - 1 ? `1px solid ${c.line}` : 'none' }}>
+                    <div style={{ fontSize: '13px', color: c.ivory }}>{o.product_name || 'Product'}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: c.cust }}>₹{o.amount}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {deleteCustomerId && (
+        <div className="modal-overlay" onClick={() => setDeleteCustomerId(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center', padding: '40px 32px' }}>
+            <div style={{ background: 'rgba(248, 81, 73, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', color: c.hot }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+            </div>
+            <h2 style={{ ...styles.sectionTitle, marginBottom: '12px', fontSize: '20px' }}>Delete Lead?</h2>
+            <p style={{ color: c.muted, fontSize: '14px', marginBottom: '32px', lineHeight: '1.5' }}>
+              Are you sure you want to permanently delete this lead? This action cannot be undone and will remove them from the database.
+            </p>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
+              <button 
+                style={{ flex: 1, padding: '12px', background: 'transparent', border: `1px solid ${c.line}`, borderRadius: '8px', color: c.ivory, cursor: 'pointer', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s' }}
+                onClick={() => setDeleteCustomerId(null)}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                Cancel
+              </button>
+              <button 
+                style={{ flex: 1, padding: '12px', background: c.hot, border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(248,81,73,0.3)' }}
+                onClick={confirmDelete}
+                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <footer className="store-footer">
+        <div className="footer-content">
+          <div className="footer-brand">
+            <h2>AI Sales Agent</h2>
+            <p>Autonomous B2C customer acquisition, sales & conversion platform powered by advanced AI. Real-time analytics and intelligent automation.</p>
+          </div>
+          <div className="footer-links">
+            <h3>Platform</h3>
+            <ul>
+              <li><a href="/">Storefront</a></li>
+              <li><a href="/dashboard">Dashboard</a></li>
+              <li><a href="#">Analytics</a></li>
+            </ul>
+          </div>
+          <div className="footer-links">
+            <h3>Features</h3>
+            <ul>
+              <li><a href="#">AI Chatbot</a></li>
+              <li><a href="#">Lead Scoring</a></li>
+              <li><a href="#">Auto Follow-up</a></li>
+            </ul>
+          </div>
+          <div className="footer-links">
+            <h3>Support</h3>
+            <ul>
+              <li><a href="#">Documentation</a></li>
+              <li><a href="#">API Reference</a></li>
+              <li><a href="#">Contact</a></li>
+            </ul>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <div>&copy; {new Date().getFullYear()} AI Sales Agent. All rights reserved.</div>
+          <div>Powered by Advanced B2C AI Sales Agent</div>
+        </div>
+      </footer>
+
     </div>
   );
 }

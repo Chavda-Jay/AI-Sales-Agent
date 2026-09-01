@@ -185,7 +185,47 @@ async def chat(req: ChatRequest):
     if req.customerId not in conversations:
         conversations[req.customerId] = []
     
+    # Check if AI is paused (pending handoff)
+    is_paused = False
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                c_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
+                if c_id:
+                    pending = await conn.fetchval("SELECT id FROM handoffs WHERE customer_id = $1 AND status = 'pending'", c_id)
+                    if pending:
+                        is_paused = True
+                        
+                        # Save the user's message to the database so the manager sees it
+                        await conn.execute(
+                            "INSERT INTO conversations (customer_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5)",
+                            c_id, req.message, None, 100, 'HOT'
+                        )
+        except:
+            pass
+
     history = conversations[req.customerId]
+    
+    if is_paused:
+        # Append to memory history
+        history.append({"role": "user", "content": req.message})
+        return {
+            "reply": "⏳ Please wait, our store manager is reviewing your message...",
+            "intent_score": 100,
+            "segment": "HOT",
+            "reasoning": "AI paused",
+            "objection": None,
+            "recommended_product": None,
+            "next_action": "Wait for manager",
+            "customer_name": None,
+            "customer_phone": None,
+            "needs_human": False,
+            "handoff_reason": None,
+            "order_ready": False,
+            "order_product": None,
+            "order_amount": None
+        }
+
     detected_lang = detect_language(req.message)
 
     system_prompt = f"""You are an AI B2C sales agent for the Indian brand "{config.get('brandName')}".
@@ -200,6 +240,11 @@ Language rule (very important, follow exactly):
 - Keep it natural and native-sounding, not a literal word-for-word translation.
 
 Rules:
+- **FORMATTING (CRITICAL):** You must format your response beautifully and professionally.
+  1. ALWAYS use a Markdown Table when listing multiple items or products (e.g., `| Product | Price | Details |`).
+  2. You are generating JSON. You MUST use escaped newlines (`\n`) in the "reply" string to separate table rows. Example: `| A | B |\n|---|---|\n| C | D |`
+  3. ALWAYS use relevant emojis in the table (e.g., 👕, 👖, 👗) next to product names.
+  4. Never output a single massive block of text. Keep conversational sentences short and readable.
 - Never invent prices, stock, delivery dates or offers not listed above.
 - Be helpful, concise, human, persuasive without being pushy.
 - Ask only necessary questions to narrow a recommendation.
@@ -434,6 +479,46 @@ async def request_handoff(req: HandoffRequest):
             raise HTTPException(status_code=500, detail="Database error")
     return {"status": "success"}
 
+@app.get("/api/chat/poll/{customer_id}")
+async def poll_chat(customer_id: str):
+    return {"messages": conversations.get(customer_id, [])}
+
+class ManagerReply(BaseModel):
+    message: str
+
+@app.post("/api/handoffs/{handoff_id}/reply")
+async def manager_reply(handoff_id: int, req: ManagerReply):
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT h.customer_id, c.ext_id, c.segment 
+                    FROM handoffs h 
+                    JOIN customers c ON c.id = h.customer_id 
+                    WHERE h.id = $1
+                """, handoff_id)
+                if row:
+                    ext_id = row['ext_id']
+                    c_id = row['customer_id']
+                    segment = row['segment']
+                    
+                    await conn.execute(
+                        "INSERT INTO conversations (customer_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5)",
+                        c_id, None, req.message, 100, segment
+                    )
+                    
+                    if ext_id not in conversations:
+                        conversations[ext_id] = []
+                    conversations[ext_id].append({
+                        "role": "assistant", 
+                        "content": json.dumps({"reply": req.message})
+                    })
+                    return {"status": "success"}
+        except Exception as e:
+            print(f"Error in manager_reply: {e}")
+            raise HTTPException(status_code=500, detail="Database error")
+    return {"status": "error"}
+
 @app.get("/api/handoffs")
 async def get_handoffs():
     if db_pool:
@@ -458,6 +543,59 @@ async def resolve_handoff(handoff_id: int):
         try:
             async with db_pool.acquire() as conn:
                 await conn.execute("UPDATE handoffs SET status = 'resolved' WHERE id = $1", handoff_id)
+                
+                row = await conn.fetchrow("""
+                    SELECT h.customer_id, c.ext_id, c.segment 
+                    FROM handoffs h 
+                    JOIN customers c ON c.id = h.customer_id 
+                    WHERE h.id = $1
+                """, handoff_id)
+                
+                if row:
+                    ext_id = row['ext_id']
+                    c_id = row['customer_id']
+                    segment = row['segment']
+                    
+                    history = conversations.get(ext_id, [])
+                    
+                    system_prompt = """The human manager has resolved the customer's issue. Write a polite, short, and professional closing message from the AI thanking the customer and offering further assistance. 
+CRITICAL RULE: You MUST write the message in the exact language and script that the customer used in the conversation history (e.g., Hindi, Hinglish, Gujarati, or English). 
+Start the message with the ✅ emoji.
+Return ONLY a raw JSON object with the "reply" field: {"reply": "your message"}"""
+                    
+                    messages = [{"role": "system", "content": system_prompt}] + history[-3:] # Last 3 msgs for context
+                    
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            groq_response = await client.post(
+                                "https://api.groq.com/openai/v1/chat/completions",
+                                headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
+                                json={"model": GROQ_MODEL, "messages": messages, "max_tokens": 150, "temperature": 0.5},
+                                timeout=10.0
+                            )
+                            data = groq_response.json()
+                            raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                            raw = re.sub(r'^```json', '', raw)
+                            raw = re.sub(r'^```', '', raw)
+                            raw = re.sub(r'```$', '', raw).strip()
+                            parsed = json.loads(raw)
+                            msg = parsed.get("reply", "✅ Your issue has been resolved by our manager. Let me know if you need further help!")
+                    except Exception as e:
+                        print(f"Error generating dynamic resolve message: {e}")
+                        msg = "✅ Aapka issue manager dwara resolve kar diya gaya hai. Agar aapko aur koi help chahiye toh aap wapas mujhse pooch sakte hain!"
+                    
+                    await conn.execute(
+                        "INSERT INTO conversations (customer_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5)",
+                        c_id, None, msg, 100, segment
+                    )
+                    
+                    if ext_id not in conversations:
+                        conversations[ext_id] = []
+                    conversations[ext_id].append({
+                        "role": "assistant", 
+                        "content": json.dumps({"reply": msg})
+                    })
+                    
                 return {"status": "success"}
         except Exception as e:
             print(f"Warning: Database error resolving handoff: {e}")
@@ -501,6 +639,64 @@ async def get_analytics():
         "avg_intent_score": 0
     }
 
+@app.get("/api/analytics/weekly")
+async def get_weekly_analytics():
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT 
+                        d.day,
+                        COALESCE(leads.cnt, 0) AS leads,
+                        COALESCE(hot.cnt, 0) AS hot,
+                        COALESCE(ord.cnt, 0) AS orders
+                    FROM (
+                        SELECT generate_series(
+                            (CURRENT_DATE - INTERVAL '6 days')::date,
+                            CURRENT_DATE::date,
+                            '1 day'::interval
+                        )::date AS day
+                    ) d
+                    LEFT JOIN (
+                        SELECT DATE(created_at) AS day, COUNT(DISTINCT customer_id) AS cnt
+                        FROM conversations
+                        WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
+                        GROUP BY DATE(created_at)
+                    ) leads ON leads.day = d.day
+                    LEFT JOIN (
+                        SELECT DATE(c.last_interaction) AS day, COUNT(*) AS cnt
+                        FROM customers c
+                        WHERE c.segment IN ('HOT', 'CUSTOMER')
+                          AND c.last_interaction >= CURRENT_DATE - INTERVAL '6 days'
+                        GROUP BY DATE(c.last_interaction)
+                    ) hot ON hot.day = d.day
+                    LEFT JOIN (
+                        SELECT DATE(created_at) AS day, COUNT(*) AS cnt
+                        FROM orders
+                        WHERE status = 'confirmed'
+                          AND created_at >= CURRENT_DATE - INTERVAL '6 days'
+                        GROUP BY DATE(created_at)
+                    ) ord ON ord.day = d.day
+                    ORDER BY d.day
+                """)
+                result = []
+                day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                for row in rows:
+                    day_date = row['day']
+                    day_name = day_names[day_date.weekday()]
+                    result.append({
+                        "name": day_name,
+                        "date": str(day_date),
+                        "leads": row['leads'],
+                        "hot": row['hot'],
+                        "orders": row['orders']
+                    })
+                return result
+        except Exception as e:
+            print(f"Warning: Database error fetching weekly analytics: {e}")
+            raise HTTPException(status_code=500, detail="Database error")
+    return []
+
 @app.get("/api/conversations/{customer_id}/latest")
 async def get_latest_conversation(customer_id: str):
     if db_pool:
@@ -522,4 +718,19 @@ async def get_latest_conversation(customer_id: str):
             pass
     return None
 
-
+@app.delete("/api/customers/{customer_id}")
+async def delete_customer(customer_id: int):
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                # Delete child rows first (foreign key constraints)
+                await conn.execute("DELETE FROM conversations WHERE customer_id = $1", customer_id)
+                await conn.execute("DELETE FROM orders WHERE customer_id = $1", customer_id)
+                await conn.execute("DELETE FROM handoffs WHERE customer_id = $1", customer_id)
+                # Now delete the customer
+                await conn.execute("DELETE FROM customers WHERE id = $1", customer_id)
+                return {"status": "success", "message": "Customer deleted"}
+        except Exception as e:
+            print(f"Error deleting customer: {e}")
+            raise HTTPException(status_code=500, detail="Database error")
+    return {"status": "error", "message": "No DB connection"}
