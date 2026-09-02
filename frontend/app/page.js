@@ -26,7 +26,7 @@ function iconFor(name) {
   else if (n.includes('aviator') || n.includes('sunglass')) imgSrc = '/images/aviator_sunglasses.jpg';
   else if (n.includes('saree') || n.includes('silk')) imgSrc = '/images/silk_saree.jpg';
   if (imgSrc) {
-      return <img src={imgSrc} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
+    return <img src={imgSrc} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
   }
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '48px', height: '48px', opacity: 0.5, margin: 'auto' }}>
@@ -45,7 +45,8 @@ export default function Home() {
   const [backendStatus, setBackendStatus] = useState('checking');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [customerId] = useState(() => "demo-customer-" + Date.now());
-  
+  const [shopParam, setShopParam] = useState(null);
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -77,7 +78,12 @@ export default function Home() {
 
     const loadBrandAndGreet = async () => {
       try {
-        const res = await fetch("http://localhost:3001/api/config");
+        const params = new URLSearchParams(window.location.search);
+        const shop = params.get('shop');
+        if (shop) setShopParam(shop);
+        
+        const fetchUrl = shop ? `http://localhost:3001/api/config?shop=${shop}` : "http://localhost:3001/api/config";
+        const res = await fetch(fetchUrl);
         const data = await res.json();
         setConfig(data);
         setMessages([
@@ -118,62 +124,61 @@ export default function Home() {
                 if (parsed.reply) {
                   newMessages.push({ text: parsed.reply, who: 'bot', receipt: parsed.order_ready, amount: parsed.order_amount, orderId: parsed.order_id, product: parsed.order_product });
                 }
-              } catch(e) {
+              } catch (e) {
                 newMessages.push({ text: m.content, who: 'bot' });
               }
             }
           });
-          
+
           setMessages(prev => {
             const prevChatCount = prev.filter(m => !m.isGreeting).length;
             if (newMessages.length > prevChatCount) {
-               const greeting = prev.filter(m => m.isGreeting);
-               const mappedMessages = newMessages.map(m => {
-                 if (m.who === 'bot') {
-                   if (m.receipt) {
-                     return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount };
-                   }
-                   return { text: m.text, who: 'agent' };
-                 }
-                 return m;
-               });
-               return [...greeting, ...mappedMessages];
+              const greeting = prev.filter(m => m.isGreeting);
+              const mappedMessages = newMessages.map(m => {
+                if (m.who === 'bot') {
+                  if (m.receipt) {
+                    return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount };
+                  }
+                  return { text: m.text, who: 'agent' };
+                }
+                return m;
+              });
+              return [...greeting, ...mappedMessages];
             }
             return prev;
           });
         }
-      } catch(e) {}
+      } catch (e) { }
     };
-    
+
     const intervalId = setInterval(pollHistory, 3000);
     return () => clearInterval(intervalId);
   }, [customerId]);
 
-  const handleSend = async () => {
-    const text = inputValue.trim();
+  const handleSendText = async (textToSend) => {
+    const text = textToSend.trim();
     if (!text) return;
     setMessages(prev => [...prev, { text, who: 'user' }]);
-    setInputValue('');
     setIsTyping(true);
 
     try {
       const res = await fetch(BACKEND_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, message: text })
+        body: JSON.stringify({ customerId, message: text, shop: shopParam })
       });
       const data = await res.json();
       setIsTyping(false);
-      
+
       if (data.error) {
         setMessages(prev => [...prev, { text: '❌ ' + data.error, who: 'sys' }]);
       } else {
         setMessages(prev => {
-          const newMsgs = [...prev, { text: data.reply, who: 'agent' }];
+          const newMsgs = [...prev, { text: data.reply, who: 'agent', requiresDetails: data.requires_details }];
           if (data.order_ready) {
             newMsgs.push({
               isOrder: true,
-              orderId: data.order_id,
+              orderId: data.order_id || 'ORD-' + Math.floor(1000 + Math.random() * 9000),
               product: data.order_product,
               amount: data.order_amount,
               who: 'agent'
@@ -186,6 +191,11 @@ export default function Home() {
       setIsTyping(false);
       setMessages(prev => [...prev, { text: '❌ Could not reach backend.', who: 'sys' }]);
     }
+  };
+
+  const handleSend = () => {
+    handleSendText(inputValue);
+    setInputValue('');
   };
 
   return (
@@ -221,7 +231,7 @@ export default function Home() {
             <h2>{config?.brandName || 'Store'}</h2>
             <p>Premium quality products designed for those who appreciate the finer things in life. Step into luxury with our exclusive AI-powered storefront.</p>
           </div>
-          
+
           <div className="footer-links">
             <h3>Shop</h3>
             <ul>
@@ -231,7 +241,7 @@ export default function Home() {
               <li><a href="#">Accessories</a></li>
             </ul>
           </div>
-          
+
           <div className="footer-links">
             <h3>Support</h3>
             <ul>
@@ -241,7 +251,7 @@ export default function Home() {
               <li><a href="#">Track Order</a></li>
             </ul>
           </div>
-          
+
           <div className="footer-links">
             <h3>Legal</h3>
             <ul>
@@ -251,7 +261,7 @@ export default function Home() {
             </ul>
           </div>
         </div>
-        
+
         <div className="footer-bottom">
           <div>&copy; {new Date().getFullYear()} {config?.brandName || 'Urban Threads'}. All rights reserved.</div>
           <div>Powered by Advanced B2C AI Sales Agent</div>
@@ -268,7 +278,7 @@ export default function Home() {
               </div>
               <button className="close-chat" onClick={() => setIsChatOpen(false)}>×</button>
             </div>
-            
+
             <div className="messages" id="chatbox" style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {messages.map((m, i) => {
                 if (m.isOrder) {
@@ -286,9 +296,39 @@ export default function Home() {
                     </div>
                   );
                 }
+                const displayText = (m.text || '').replace(/\\n/g, '\n').replace(/\|\s*\n\s*\|/g, '|\n|');
+                const isLast = i === messages.length - 1;
                 return (
                   <div key={i} className={`bubble ${m.who}`}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayText}</ReactMarkdown>
+                    {m.requiresDetails && isLast && (
+                      <div className="order-details-form">
+                        <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>Please provide order details</div>
+                        <input type="text" id={`form-size-${i}`} placeholder="Size (e.g. S, M, L or N/A)" className="form-input" />
+                        <input type="text" id={`form-color-${i}`} placeholder="Color preference" className="form-input" />
+                        <input type="text" id={`form-name-${i}`} placeholder="Full Name" className="form-input" />
+                        <input type="text" id={`form-phone-${i}`} placeholder="Phone Number" className="form-input" />
+                        <button className="form-submit-btn" onClick={() => {
+                          const size = document.getElementById(`form-size-${i}`).value;
+                          const color = document.getElementById(`form-color-${i}`).value;
+                          const name = document.getElementById(`form-name-${i}`).value;
+                          const phone = document.getElementById(`form-phone-${i}`).value;
+                          if (!name || !phone) { alert("Name and Phone are required to proceed."); return; }
+
+                          // Hide the form by modifying this message in state
+                          setMessages(prev => {
+                            const updated = [...prev];
+                            updated[i].requiresDetails = false;
+                            return updated;
+                          });
+
+                          // Send the constructed text
+                          const text = `My order details - Size: ${size || 'N/A'}, Color: ${color || 'N/A'}, Name: ${name}, Phone: ${phone}`;
+                          handleSendText(text);
+                        }}>Submit Details</button>
+                      </div>
+                    )}
+
                   </div>
                 );
               })}
@@ -300,10 +340,10 @@ export default function Home() {
 
             <div className="input-area">
               <div className="inputrow">
-                <input 
+                <input
                   id="input"
                   ref={inputRef}
-                  placeholder="Ask a question..." 
+                  placeholder="Ask a question..."
                   value={inputValue}
                   onChange={e => setInputValue(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !isTyping) handleSend() }}

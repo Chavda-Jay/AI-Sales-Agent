@@ -16,7 +16,7 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 db_pool = None
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "openai/gpt-oss-120b"
+GROQ_MODEL = "qwen/qwen3.8-27b"
 
 async def abandoned_chat_worker():
     while True:
@@ -155,7 +155,13 @@ class HandoffRequest(BaseModel):
 
 conversations = {}
 
-def load_config():
+def load_config(shop_name=None):
+    if shop_name:
+        specific_path = os.path.join(BASE_DIR, f"business-config-{shop_name}.json")
+        if os.path.exists(specific_path):
+            with open(specific_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    
     config_path = os.path.join(BASE_DIR, "business-config.json")
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -170,13 +176,14 @@ def detect_language(text: str) -> str:
 class ChatRequest(BaseModel):
     customerId: str
     message: str
+    shop: str = None
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     if not req.customerId or not req.message:
         raise HTTPException(status_code=400, detail="customerId and message are required")
 
-    config = load_config()
+    config = load_config(req.shop)
     catalog_text = "\n".join([
         f"{p['name']} — ₹{p['price']} — {p['note']}" 
         for p in config.get("catalog", [])
@@ -241,10 +248,13 @@ Language rule (very important, follow exactly):
 
 Rules:
 - **FORMATTING (CRITICAL):** You must format your response beautifully and professionally.
-  1. ALWAYS use a Markdown Table when listing multiple items or products (e.g., `| Product | Price | Details |`).
-  2. You are generating JSON. You MUST use escaped newlines (`\n`) in the "reply" string to separate table rows. Example: `| A | B |\n|---|---|\n| C | D |`
-  3. ALWAYS use relevant emojis in the table (e.g., 👕, 👖, 👗) next to product names.
-  4. Never output a single massive block of text. Keep conversational sentences short and readable.
+  1. When listing products, use a NUMBERED LIST with emojis. Format each product EXACTLY like this example:
+     `1. 👕 **Cotton T-Shirt** — ₹599\\nSoft everyday wear, 5 colors available\\n\\n2. 👖 **Slim Fit Jeans** — ₹1299\\nStretch denim, all sizes\\n\\n`
+  2. Each product MUST be on its own numbered line with: emoji, **bold name**, dash (—), price on the first line. Description on the next line.
+  3. Add a friendly greeting line BEFORE the product list and a helpful closing line AFTER it.
+  4. Inside the JSON string, represent newlines as `\\n`. NEVER press Enter inside a JSON string.
+  5. Use double `\\n\\n` between products for clean spacing.
+  6. Keep prices as plain numbers (e.g., 599, NOT ₹5,99 or 1,299).
 - Never invent prices, stock, delivery dates or offers not listed above.
 - Be helpful, concise, human, persuasive without being pushy.
 - Ask only necessary questions to narrow a recommendation.
@@ -252,6 +262,7 @@ Rules:
 - **UPSELL/CROSS-SELL:** When a customer shows intent to buy a main product (e.g., Jeans), suggest a related accessory (e.g., Belt, Jacket). HOWEVER, do not add the accessory to the final 'order_product' unless the customer explicitly says they want it. If they just say "confirm", only confirm the original item.
 - **COUPON/DISCOUNT:** If the customer mentions the coupon code 'FIRST10', acknowledge it excitedly and apply a 10% discount to their purchase. When setting 'order_amount' in the JSON, calculate and provide the discounted price. Clearly mention the discount applied in your 'reply'.
 - When the customer shows clear purchase intent (e.g., asking for delivery, confirming an order, or asking about sizes), naturally ask for their name and phone number (if not already provided). Do not ask upfront in the first message.
+- **ORDER DETAILS FORM:** If the customer is ready to buy but you need their specific details (like size, color, name, phone number) to place the order, set `"requires_details"` to `true`. This will show a clean form in their chat window for them to fill out. Otherwise, keep it `false`.
 - If the customer mentions their name or phone number anywhere in the conversation, acknowledge it naturally and include it in your JSON response.
 - HUMAN HANDOFF: If the customer sounds angry/frustrated, asks for a human/manager, mentions legal/fraud/payment disputes, asks for an extreme discount/exception, or asks a question completely outside your catalog/policy knowledge, set "needs_human" to true and provide a short "handoff_reason". Acknowledge this naturally in your "reply" (e.g. "I'll connect you with our team right away for this."). Otherwise, set "needs_human" to false and "handoff_reason" to null.
 - ORDER CONFIRMATION: If the customer clearly confirms they want to place an order (e.g., "order confirm karo", "yes place my order"), set "order_ready" to true, and provide the "order_product" and "order_amount" (numeric price). Otherwise, set these to false/null.
@@ -269,6 +280,7 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
   "customer_phone": "extracted phone number or null",
   "needs_human": boolean,
   "handoff_reason": "reason string or null",
+  "requires_details": boolean,
   "order_ready": boolean,
   "order_product": "product name being ordered or null",
   "order_amount": numeric price or null
@@ -288,7 +300,7 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                     "model": GROQ_MODEL,
                     "messages": messages,
                     "max_tokens": 1000,
-                    "temperature": 0.7,
+                    "temperature": 0.5,
                 },
                 timeout=30.0
             )
@@ -301,17 +313,84 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
         raise HTTPException(status_code=500, detail=data["error"].get("message", "Groq API error"))
 
     raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-    raw = re.sub(r'^```json', '', raw)
-    raw = re.sub(r'^```', '', raw)
-    raw = re.sub(r'```$', '', raw).strip()
+    print(f"[DEBUG RAW LENGTH] {len(raw)}")
+    print(f"[DEBUG RAW FIRST 800] {raw[:800].encode('ascii', 'replace').decode('ascii')}")
+    
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
+    raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
+    raw = re.sub(r'\s*```\s*$', '', raw, flags=re.MULTILINE)
+    raw = raw.strip()
 
+    parsed = None
+    
+    # Strategy 1: Direct JSON parse
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
+        pass
+    
+    # Strategy 2: Fix literal newlines inside JSON strings
+    # The AI often puts actual Enter keys inside JSON string values which breaks parsing
+    if parsed is None:
+        try:
+            # Find the JSON object
+            start = raw.find('{')
+            end = raw.rfind('}')
+            if start != -1 and end != -1:
+                json_str = raw[start:end+1]
+                # Replace all literal newlines with \\n, then fix the ones between keys
+                # Step 1: Replace ALL newlines with a placeholder
+                fixed = json_str.replace('\n', '<<<NL>>>')
+                # Step 2: Restore newlines that should be between JSON key-value pairs
+                # These are newlines between: "value", or "value" } or number, etc.
+                fixed = re.sub(r'<<<NL>>>', '\n', fixed)  # restore all as real newlines
+                
+                # Alternative approach: read char by char and escape newlines inside strings
+                result = []
+                in_string = False
+                escape_next = False
+                for ch in json_str:
+                    if escape_next:
+                        result.append(ch)
+                        escape_next = False
+                        continue
+                    if ch == '\\':
+                        escape_next = True
+                        result.append(ch)
+                        continue
+                    if ch == '"':
+                        in_string = not in_string
+                        result.append(ch)
+                        continue
+                    if ch == '\n' and in_string:
+                        result.append('\\n')
+                        continue
+                    if ch == '\r' and in_string:
+                        continue
+                    result.append(ch)
+                
+                fixed = ''.join(result)
+                parsed = json.loads(fixed)
+                print("[DEBUG] Strategy 2 (newline fix) succeeded")
+        except Exception as e2:
+            print(f"[DEBUG] Strategy 2 failed: {e2}")
+    
+    # Strategy 4: Extract reply field with regex as last resort
+    if parsed is None:
+        print(f"[WARN] All JSON parse strategies failed. Raw: {raw[:300].encode('ascii', 'replace').decode('ascii')}")
+        extracted_reply = "I'd be happy to help! Could you please ask me again?"
+        try:
+            # Try to extract reply from malformed JSON
+            reply_match = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)"', raw, re.DOTALL)
+            if reply_match:
+                extracted_reply = reply_match.group(1).replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+        except:
+            pass
+
         parsed = {
-            "reply": raw or "Sorry, thoda issue aa gaya. Please try again.",
-            "intent_score": 0,
-            "segment": "COLD",
+            "reply": extracted_reply,
+            "intent_score": 50,
+            "segment": "WARM",
             "reasoning": "Could not parse AI response",
             "objection": None,
             "recommended_product": None,
@@ -320,6 +399,7 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
             "customer_phone": None,
             "needs_human": False,
             "handoff_reason": None,
+            "requires_details": False,
             "order_ready": False,
             "order_product": None,
             "order_amount": None,
@@ -395,9 +475,9 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
     return parsed
 
 @app.get("/api/config")
-def get_config():
+def get_config(shop: str = None):
     try:
-        return load_config()
+        return load_config(shop)
     except Exception:
         raise HTTPException(status_code=500, detail="Could not load business config")
 
