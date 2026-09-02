@@ -46,6 +46,21 @@ export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [customerId] = useState(() => "demo-customer-" + Date.now());
   const [shopParam, setShopParam] = useState(null);
+  const [theme, setTheme] = useState('dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('app-theme') || 'dark';
+    setTheme(savedTheme);
+  }, []);
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.body.classList.add('light-theme');
+    } else {
+      document.body.classList.remove('light-theme');
+    }
+    localStorage.setItem('app-theme', theme);
+  }, [theme]);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -110,7 +125,7 @@ export default function Home() {
     if (!customerId) return;
     const pollHistory = async () => {
       try {
-        const res = await fetch(`http://localhost:3001/api/chat/poll/${customerId}`);
+        const res = await fetch(`${API_BASE}/api/chat/poll/${customerId}`);
         if (!res.ok) return;
         const data = await res.json();
         if (data.messages && data.messages.length > 0) {
@@ -200,10 +215,23 @@ export default function Home() {
 
   return (
     <>
-      <nav className="navbar">
+      <nav className="navbar" style={{ justifyContent: 'space-between' }}>
+        <div style={{ width: '100px' }}></div> {/* Spacer for centering nav-brand */}
         <div className="nav-brand">
           {config?.brandName || 'Store'}
         </div>
+        <button 
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          style={{
+            background: 'var(--panel2)', border: '1px solid var(--line)', color: 'var(--ivory)',
+            cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '8px 16px', borderRadius: '24px', fontWeight: 'bold', fontFamily: 'var(--font-heading)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+          }}
+          title="Toggle Theme"
+        >
+          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+        </button>
       </nav>
 
       <div className="store-hero">

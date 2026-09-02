@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import toast from 'react-hot-toast';
 
-const CUSTOMERS_URL = "http://localhost:3001/api/customers";
-const CONVERSATIONS_URL = "http://localhost:3001/api/conversations";
-const HANDOFFS_URL = "http://localhost:3001/api/handoffs";
-const ANALYTICS_URL = "http://localhost:3001/api/analytics";
-const WEEKLY_URL = "http://localhost:3001/api/analytics/weekly";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const CUSTOMERS_URL = `${API_BASE}/api/customers`;
+const CONVERSATIONS_URL = `${API_BASE}/api/conversations`;
+const HANDOFFS_URL = `${API_BASE}/api/handoffs`;
+const ANALYTICS_URL = `${API_BASE}/api/analytics`;
+const WEEKLY_URL = `${API_BASE}/api/analytics/weekly`;
 
 function segColor(seg) {
   if (seg === 'HOT') return '#f85149';
@@ -27,19 +28,19 @@ const sora = { fontFamily: 'var(--font-sora, Sora, sans-serif)' };
 const mono = { fontFamily: 'var(--font-jetbrains-mono, monospace)' };
 const inter = { fontFamily: 'var(--font-inter, Inter, sans-serif)' };
 
-/* ─── Dark theme tokens ─── */
+/* ─── CSS Variable theme tokens ─── */
 const c = {
-  bg: '#0e1117',
-  panel: '#161b22',
-  panel2: '#1c2129',
-  line: '#2b3140',
-  muted: '#8b949e',
-  ivory: '#e6edf3',
-  primary: '#58a6ff',
-  hot: '#f85149',
-  warm: '#ffc107',
-  cold: '#8b949e',
-  cust: '#3fb950',
+  bg: 'var(--bg)',
+  panel: 'var(--panel)',
+  panel2: 'var(--panel2)',
+  line: 'var(--line)',
+  muted: 'var(--muted)',
+  ivory: 'var(--ivory)',
+  primary: 'var(--primary)',
+  hot: 'var(--hot)',
+  warm: 'var(--warm)',
+  cold: 'var(--cold)',
+  cust: 'var(--cust)',
 };
 
 const styles = {
@@ -66,9 +67,6 @@ const styles = {
   titleRow: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'
   },
-  h1: {
-    ...sora, fontSize: '32px', fontWeight: 800, color: c.ivory, margin: 0,
-  },
   sub: {
     color: c.muted, fontSize: '15px', marginTop: '0', marginBottom: '40px',
   },
@@ -77,14 +75,14 @@ const styles = {
     letterSpacing: '.06em', color: c.primary, margin: 0,
   },
   card: {
-    background: 'rgba(22, 27, 34, 0.65)', backdropFilter: 'blur(16px)', 
-    border: `1px solid rgba(255,255,255,0.05)`, borderRadius: '24px',
-    boxShadow: '0 12px 32px rgba(0,0,0,0.4)', padding: '28px',
+    background: c.panel, backdropFilter: 'blur(16px)', 
+    border: `1px solid ${c.line}`, borderRadius: '24px',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.05)', padding: '28px',
   },
   statCard: {
-    background: 'rgba(22, 27, 34, 0.65)', backdropFilter: 'blur(16px)', 
-    border: `1px solid rgba(255,255,255,0.05)`, borderRadius: '24px',
-    boxShadow: '0 12px 32px rgba(0,0,0,0.4)', padding: '28px', textAlign: 'center',
+    background: c.panel, backdropFilter: 'blur(16px)', 
+    border: `1px solid ${c.line}`, borderRadius: '24px',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.05)', padding: '28px', textAlign: 'center',
     display: 'flex', flexDirection: 'column', justifyContent: 'center'
   },
   statLabel: {
@@ -114,7 +112,7 @@ const styles = {
   th: {
     ...mono, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '.08em',
     color: c.muted, fontWeight: 700, padding: '16px 20px', textAlign: 'left',
-    borderBottom: `1px solid ${c.line}`, background: 'rgba(255,255,255,0.02)'
+    borderBottom: `1px solid ${c.line}`, background: c.panel2
   },
   td: {
     padding: '16px 20px', borderBottom: `1px solid ${c.line}`, fontSize: '15px',
@@ -131,7 +129,7 @@ const styles = {
     ...inter, fontSize: '13px', fontWeight: 600, transition: 'all 0.2s',
   },
   feedCard: {
-    background: 'rgba(22, 27, 34, 0.4)', border: `1px solid ${c.line}`,
+    background: c.panel, border: `1px solid ${c.line}`,
     borderRadius: '16px', padding: '16px 20px', marginBottom: '12px',
     display: 'flex', alignItems: 'center', gap: '16px',
     transition: 'all 0.3s ease', cursor: 'pointer',
@@ -144,6 +142,22 @@ const styles = {
 };
 
 export default function Dashboard() {
+  const [theme, setTheme] = useState('dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('app-theme') || 'dark';
+    setTheme(savedTheme);
+  }, []);
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.body.classList.add('light-theme');
+    } else {
+      document.body.classList.remove('light-theme');
+    }
+    localStorage.setItem('app-theme', theme);
+  }, [theme]);
+
   const [customers, setCustomers] = useState([]);
   const [handoffs, setHandoffs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -259,7 +273,7 @@ export default function Dashboard() {
 
   const resolveHandoff = async (id) => {
     try {
-      const res = await fetch(`http://localhost:3001/api/handoffs/${id}/resolve`, {
+      const res = await fetch(`${API_BASE}/api/handoffs/${id}/resolve`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -275,7 +289,7 @@ export default function Dashboard() {
     if (!text || !text.trim()) return;
     
     try {
-      const res = await fetch(`http://localhost:3001/api/handoffs/${id}/reply`, {
+      const res = await fetch(`${API_BASE}/api/handoffs/${id}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text.trim() })
@@ -297,29 +311,41 @@ export default function Dashboard() {
   const pendingHandoffs = handoffs.filter(h => h.status === 'pending');
 
   return (
-    <div style={styles.page}>
+    <div className="dash-page">
       
       {/* Navbar */}
-      <nav style={styles.navbar}>
-        <div style={styles.navBrand}>Store Dashboard</div>
-        <div style={{ ...sora, fontSize: '13px', fontWeight: 600, color: c.muted, display: 'flex', gap: '16px', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <nav className="dash-navbar">
+        <div style={{...styles.navBrand, fontSize: 'clamp(18px, 4vw, 24px)'}}>Store Dashboard</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+          <button 
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            style={{
+              background: 'var(--panel2)', border: '1px solid var(--line)', color: 'var(--ivory)',
+              cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
+              padding: '8px 16px', borderRadius: '24px', fontWeight: 'bold', fontFamily: 'var(--font-heading)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+            }}
+            title="Toggle Theme"
+          >
+            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+          </button>
+          <div style={{ ...sora, fontSize: '13px', fontWeight: 600, color: c.muted, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: '8px', height: '8px', background: c.cust, borderRadius: '50%', boxShadow: `0 0 10px ${c.cust}` }}></div>
             Live Monitoring
           </div>
         </div>
       </nav>
 
-      <div style={styles.wrap}>
+      <div className="dash-wrap">
         {/* Header Title */}
         <div style={styles.eyebrow}>AI CRM</div>
         <div style={styles.titleRow}>
-          <h1 style={styles.h1}>Customer Overview</h1>
+          <h1 className="dash-h1">Customer Overview</h1>
         </div>
         <p style={styles.sub}>Monitor your live AI sales leads and manage customer handoffs in real-time.</p>
 
         {/* Top Row: Stat Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '24px', marginBottom: '40px' }}>
+        <div className="dash-stats-grid">
           {[
             { label: 'Total Customers', val: total, color: c.ivory },
             { label: 'HOT Leads', val: hotCount, color: c.hot },
@@ -334,7 +360,7 @@ export default function Dashboard() {
         </div>
 
         {/* Middle Row: Graph & Needs Attention */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px', marginBottom: '40px' }}>
+        <div className="dash-main-grid">
           
           {/* Left: Performance & Graph */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -352,15 +378,15 @@ export default function Dashboard() {
                     const width = Math.max(2, (stage.count / max) * 100);
                     const percent = Math.round((stage.count / max) * 100);
                     return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                        <div style={{ width: '130px', fontSize: '13px', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'right' }}>
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ flex: '0 0 100px', fontSize: '13px', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'right' }}>
                           {stage.label}
                         </div>
                         <div style={styles.progressBg}>
                           <div style={styles.progressFill(width)} />
                         </div>
-                        <div style={{ width: '90px', ...mono, fontSize: '16px', fontWeight: 700, color: c.ivory }}>
-                          {stage.count} <span style={{ fontSize: '12px', color: c.muted, fontWeight: 500 }}>({percent}%)</span>
+                        <div style={{ flex: '0 0 70px', ...mono, fontSize: '16px', fontWeight: 700, color: c.ivory }}>
+                          {stage.count} <div style={{ fontSize: '11px', color: c.muted, fontWeight: 500 }}>({percent}%)</div>
                         </div>
                       </div>
                     );
@@ -386,7 +412,7 @@ export default function Dashboard() {
                     <XAxis dataKey="name" stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
                     <YAxis stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#161b22', border: '1px solid #2b3140', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }} 
+                      contentStyle={{ backgroundColor: c.panel, border: `1px solid ${c.line}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} 
                       itemStyle={{ fontWeight: 600, fontFamily: 'var(--font-inter, sans-serif)' }}
                     />
                     <Line type="monotone" dataKey="leads" name="Total Leads" stroke="#58a6ff" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
@@ -484,11 +510,11 @@ export default function Dashboard() {
                   key={cust.id} 
                   style={styles.feedCard}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                    e.currentTarget.style.background = c.panel2;
                     e.currentTarget.style.transform = 'translateX(4px)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(22, 27, 34, 0.4)';
+                    e.currentTarget.style.background = c.panel;
                     e.currentTarget.style.transform = 'translateX(0)';
                   }}
                   onClick={() => viewOrders(cust.id)}
