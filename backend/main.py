@@ -4,6 +4,7 @@ import re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 from dotenv import load_dotenv
 import httpx
 import asyncpg  # type: ignore
@@ -145,9 +146,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class ChatRequest(BaseModel):
-    customerId: str
-    message: str
 
 class HandoffRequest(BaseModel):
     customerId: str
@@ -176,7 +174,7 @@ def detect_language(text: str) -> str:
 class ChatRequest(BaseModel):
     customerId: str
     message: str
-    shop: str = None
+    shop: Optional[str] = None
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
