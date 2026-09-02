@@ -51,29 +51,6 @@ export default function Home() {
   const [theme, setTheme] = useState('dark');
   const [isListening, setIsListening] = useState(false);
 
-  const startListening = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert("Your browser does not support Voice Chat. Please use Chrome, Safari, or Edge.");
-      return;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-IN'; // Works for English, and accurately transliterates Hindi/Gujarati to English script
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    recognition.onstart = () => setIsListening(true);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setInputValue(prev => prev ? prev + ' ' + transcript : transcript);
-      setIsListening(false);
-    };
-    recognition.onerror = (event) => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-    
-    recognition.start();
-  };
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('app-theme') || 'dark';
@@ -252,6 +229,32 @@ export default function Home() {
   const handleSend = () => {
     handleSendText(inputValue);
     setInputValue('');
+  };
+
+  const startListening = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert("Your browser does not support Voice Chat. Please use Chrome, Safari, or Edge.");
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-IN';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      const combined = inputValue ? inputValue + ' ' + transcript : transcript;
+      setInputValue(''); // Clear input box
+      setIsListening(false);
+      handleSendText(combined); // Auto-send directly
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    
+    recognition.start();
   };
 
   return (
