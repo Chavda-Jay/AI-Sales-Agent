@@ -346,7 +346,7 @@ export default function Home() {
             <div className="chat-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '50%', boxShadow: '0 0 10px #10b981' }}></div>
-                <div style={{ color: 'white', fontWeight: 800, fontSize: '16px', letterSpacing: '0.02em' }}>Shopping Assistant</div>
+                <div style={{ color: 'var(--ivory)', fontWeight: 800, fontSize: '16px', letterSpacing: '0.02em' }}>Shopping Assistant</div>
               </div>
               <button className="close-chat" onClick={() => setIsChatOpen(false)}>×</button>
             </div>

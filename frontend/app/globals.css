@@ -423,7 +423,7 @@ h2 {
   background: var(--chat-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 1px solid var(--line);
   border-radius: 24px 0 0 24px;
   box-shadow: -10px 0 48px rgba(0,0,0,0.6);
   display: flex; flex-direction: column;
@@ -440,16 +440,16 @@ h2 {
 .floating-chat-window .chat-header {
   padding: 20px 24px;
   background: linear-gradient(to right, rgba(0, 122, 255, 0.15), transparent);
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid var(--line);
   display: flex; justify-content: space-between; align-items: center;
 }
 .close-chat {
-  background: rgba(255,255,255,0.1); border: none; color: white;
+  background: var(--panel2); border: 1px solid var(--line); color: var(--ivory);
   width: 32px; height: 32px; border-radius: 50%;
   font-size: 20px; display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background 0.2s;
 }
-.close-chat:hover { background: rgba(255,255,255,0.2); }
+.close-chat:hover { background: var(--line); }
 
 /* Store Footer */
 .store-footer {
