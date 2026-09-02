@@ -342,8 +342,8 @@ export default function Home() {
                     {m.requiresDetails && isLast && (
                       <div className="order-details-form">
                         <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>Please provide order details</div>
-                        <input type="text" id={`form-size-${i}`} placeholder="Size (e.g. S, M, L or N/A)" className="form-input" />
-                        <input type="text" id={`form-color-${i}`} placeholder="Color preference" className="form-input" />
+                        <input type="text" id={`form-size-${i}`} placeholder="Size/Dimension (if applicable)" className="form-input" />
+                        <input type="text" id={`form-color-${i}`} placeholder="Color (if applicable)" className="form-input" />
                         <input type="text" id={`form-name-${i}`} placeholder="Full Name" className="form-input" />
                         <input type="text" id={`form-phone-${i}`} placeholder="Phone Number" className="form-input" />
                         <button className="form-submit-btn" onClick={() => {
