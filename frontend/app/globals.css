@@ -241,6 +241,30 @@ h2 {
   font-family: var(--font-body);
 }
 .inputrow button:disabled { opacity: 0.5; cursor: not-allowed; }
+.inputrow .mic-btn {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--ivory);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.inputrow .mic-btn:hover:not(:disabled) {
+  background: var(--line);
+}
+.inputrow .mic-btn.listening {
+  color: #fff;
+  background: #f43f5e;
+  border-color: #f43f5e;
+  animation: pulse-mic 1.5s infinite;
+}
+@keyframes pulse-mic {
+  0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(244, 63, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+}
 
 /* Profile */
 .profile { padding: 24px; }
