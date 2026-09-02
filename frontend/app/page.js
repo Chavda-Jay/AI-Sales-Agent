@@ -187,7 +187,10 @@ export default function Home() {
       const data = await res.json();
       setIsTyping(false);
 
-      if (data.error) {
+      if (!res.ok) {
+        const errorMsg = data.detail || data.error || 'Server error occurred.';
+        setMessages(prev => [...prev, { text: '❌ ' + errorMsg, who: 'sys' }]);
+      } else if (data.error) {
         setMessages(prev => [...prev, { text: '❌ ' + data.error, who: 'sys' }]);
       } else {
         setMessages(prev => {
