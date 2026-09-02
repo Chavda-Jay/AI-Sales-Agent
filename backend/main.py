@@ -17,7 +17,7 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 db_pool = None
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "qwen/qwen3.8-27b"
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 async def abandoned_chat_worker():
     while True:
@@ -257,7 +257,7 @@ Rules:
 - Be helpful, concise, human, persuasive without being pushy.
 - Ask only necessary questions to narrow a recommendation.
 - **NUMBER FORMATTING:** Do NOT use commas in prices or numbers in your 'reply' (e.g., write 1098, not 1,098 or 10,098).
-- **UPSELL/CROSS-SELL:** When a customer shows intent to buy a main product (e.g., Jeans), suggest a related accessory (e.g., Belt, Jacket). HOWEVER, do not add the accessory to the final 'order_product' unless the customer explicitly says they want it. If they just say "confirm", only confirm the original item.
+- Answer strictly and perfectly according to what the customer asks. Do not make illogical product suggestions (e.g., never suggest a leather belt with a silk saree).
 - **COUPON/DISCOUNT:** If the customer mentions the coupon code 'FIRST10', acknowledge it excitedly and apply a 10% discount to their purchase. When setting 'order_amount' in the JSON, calculate and provide the discounted price. Clearly mention the discount applied in your 'reply'.
 - When the customer shows clear purchase intent (e.g., asking for delivery, confirming an order, or asking about sizes), naturally ask for their name and phone number (if not already provided). Do not ask upfront in the first message.
 - **ORDER DETAILS FORM:** If the customer is ready to buy but you need their specific details (like size, color, name, phone number) to place the order, set `"requires_details"` to `true`. This will show a clean form in their chat window for them to fill out. Otherwise, keep it `false`.
