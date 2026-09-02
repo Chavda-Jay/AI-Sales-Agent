@@ -17,7 +17,7 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 db_pool = None
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "llama3-8b-8192"
+GROQ_MODEL = "qwen/qwen3.8-27b"
 
 async def abandoned_chat_worker():
     while True:
@@ -284,7 +284,8 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
   "order_amount": numeric price or null
 }}"""
 
-    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": req.message}]
+    # Keep only the last 6 messages to prevent hitting Token Per Minute limits
+    messages = [{"role": "system", "content": system_prompt}] + history[-6:] + [{"role": "user", "content": req.message}]
 
     async with httpx.AsyncClient() as client:
         try:
