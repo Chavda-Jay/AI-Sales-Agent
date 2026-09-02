@@ -144,7 +144,7 @@ export default function Home() {
               try {
                 const parsed = JSON.parse(m.content);
                 if (parsed.reply) {
-                  newMessages.push({ text: parsed.reply, who: 'bot', receipt: parsed.order_ready, amount: parsed.order_amount, orderId: parsed.order_id, product: parsed.order_product });
+                  newMessages.push({ text: parsed.reply, who: 'bot', receipt: parsed.order_ready, amount: parsed.order_amount, orderId: parsed.order_id, product: parsed.order_product, requiresDetails: parsed.requires_details });
                 }
               } catch (e) {
                 newMessages.push({ text: m.content, who: 'bot' });
@@ -159,9 +159,9 @@ export default function Home() {
               const mappedMessages = newMessages.map(m => {
                 if (m.who === 'bot') {
                   if (m.receipt) {
-                    return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount };
+                    return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount, requiresDetails: m.requiresDetails };
                   }
-                  return { text: m.text, who: 'agent' };
+                  return { text: m.text, who: 'agent', requiresDetails: m.requiresDetails };
                 }
                 return m;
               });
@@ -199,6 +199,12 @@ export default function Home() {
         setMessages(prev => [...prev, { text: '❌ ' + data.error, who: 'sys' }]);
       } else {
         setMessages(prev => {
+          // Prevent duplicates if polling endpoint fetched it first
+          const recentAgent = prev.slice(-3).find(m => m.who === 'agent');
+          if (recentAgent && recentAgent.text === data.reply) {
+            return prev.map(m => m === recentAgent ? { ...m, requiresDetails: data.requires_details } : m);
+          }
+          
           const newMsgs = [...prev, { text: data.reply, who: 'agent', requiresDetails: data.requires_details }];
           if (data.order_ready) {
             newMsgs.push({
