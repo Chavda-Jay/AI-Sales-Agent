@@ -17,7 +17,7 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 db_pool = None
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "llama-3.1-8b-instant"
+GROQ_MODEL = "llama3-8b-8192"
 
 async def abandoned_chat_worker():
     while True:
