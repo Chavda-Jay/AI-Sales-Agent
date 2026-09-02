@@ -79,6 +79,11 @@ export default function Home() {
     if (!isTyping && isChatOpen) {
       setTimeout(() => inputRef.current?.focus(), 10);
     }
+    if (isChatOpen && window.innerWidth <= 768) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
   }, [isTyping, isChatOpen]);
 
   useEffect(() => {

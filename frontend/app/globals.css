@@ -394,7 +394,7 @@ h2 {
 .floating-chat-window {
   position: fixed;
   top: 0; right: 0;
-  width: 420px; height: 100vh;
+  width: 420px; height: 100%; height: 100dvh; bottom: 0;
   margin: 0;
   background: var(--chat-bg);
   backdrop-filter: blur(24px);
@@ -573,7 +573,9 @@ h2 {
   
   .floating-chat-window {
     width: 100%;
-    height: 100vh;
+    height: 100%;
+    height: 100dvh;
+    bottom: 0;
     border-radius: 0;
     right: 0;
     top: 0;
@@ -591,6 +593,7 @@ h2 {
   
   .bubble { max-width: 90%; font-size: 13px; padding: 10px 14px; }
   .input-area { padding: 12px 16px; }
+  .inputrow input, .form-input { font-size: 16px !important; padding: 12px; }
 }
 
 @media (max-width: 600px) {
