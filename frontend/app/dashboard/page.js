@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import toast from 'react-hot-toast';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE = rawApi.replace(/\/+$/, '');
 const CUSTOMERS_URL = `${API_BASE}/api/customers`;
 const CONVERSATIONS_URL = `${API_BASE}/api/conversations`;
 const HANDOFFS_URL = `${API_BASE}/api/handoffs`;
@@ -175,8 +176,8 @@ export default function Dashboard() {
     e.stopPropagation();
     try {
       const [convoRes, orderRes] = await Promise.all([
-        fetch(`http://localhost:3001/api/conversations/${custId}`),
-        fetch(`http://localhost:3001/api/customers/${custId}/orders`)
+        fetch(`${API_BASE}/api/conversations/${custId}`),
+        fetch(`${API_BASE}/api/customers/${custId}/orders`)
       ]);
       if (convoRes.ok) setSelectedConvo(await convoRes.json());
       if (orderRes.ok) setSelectedOrders(await orderRes.json());
@@ -189,7 +190,7 @@ export default function Dashboard() {
 
   const viewOrders = async (customerId) => {
     try {
-      const res = await fetch(`http://localhost:3001/api/customers/${customerId}/orders`);
+      const res = await fetch(`${API_BASE}/api/customers/${customerId}/orders`);
       if (res.ok) {
         const data = await res.json();
         setSelectedOrders(data);
@@ -205,7 +206,7 @@ export default function Dashboard() {
     const cid = deleteCustomerId;
     setDeleteCustomerId(null);
     try {
-      const res = await fetch(`http://localhost:3001/api/customers/${cid}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/customers/${cid}`, { method: 'DELETE' });
       if (res.ok) {
         setCustomers(prev => prev.filter(c => c.id !== cid));
         toast.success('Lead deleted successfully', { position: 'top-right' });

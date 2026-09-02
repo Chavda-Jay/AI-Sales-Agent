@@ -4,8 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const BACKEND_URL = "http://localhost:3001/api/chat";
-const HEALTH_URL = "http://localhost:3001/api/health";
+const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE = rawApi.replace(/\/+$/, '');
+const BACKEND_URL = `${API_BASE}/api/chat`;
+const HEALTH_URL = `${API_BASE}/api/health`;
 
 function iconFor(name) {
   const n = name.toLowerCase();
@@ -97,7 +99,7 @@ export default function Home() {
         const shop = params.get('shop');
         if (shop) setShopParam(shop);
         
-        const fetchUrl = shop ? `http://localhost:3001/api/config?shop=${shop}` : "http://localhost:3001/api/config";
+        const fetchUrl = shop ? `${API_BASE}/api/config?shop=${shop}` : `${API_BASE}/api/config`;
         const res = await fetch(fetchUrl);
         const data = await res.json();
         setConfig(data);
