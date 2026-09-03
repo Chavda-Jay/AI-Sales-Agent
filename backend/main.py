@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
     db_url = os.getenv("DATABASE_URL")
     if db_url:
         try:
-            db_pool = await asyncpg.create_pool(db_url)
+            db_pool = await asyncpg.create_pool(db_url, statement_cache_size=0)
             async with db_pool.acquire() as conn:
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS ext_id TEXT UNIQUE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS followed_up_at TIMESTAMP;")
@@ -747,45 +747,85 @@ async def get_analytics(shop: Optional[str] = None):
     }
 
 @app.get("/api/analytics/weekly")
-async def get_weekly_analytics():
+async def get_weekly_analytics(shop: Optional[str] = None):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT 
-                        d.day,
-                        COALESCE(leads.cnt, 0) AS leads,
-                        COALESCE(hot.cnt, 0) AS hot,
-                        COALESCE(ord.cnt, 0) AS orders
-                    FROM (
-                        SELECT generate_series(
-                            (CURRENT_DATE - INTERVAL '6 days')::date,
-                            CURRENT_DATE::date,
-                            '1 day'::interval
-                        )::date AS day
-                    ) d
-                    LEFT JOIN (
-                        SELECT DATE(created_at) AS day, COUNT(DISTINCT customer_id) AS cnt
-                        FROM conversations
-                        WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
-                        GROUP BY DATE(created_at)
-                    ) leads ON leads.day = d.day
-                    LEFT JOIN (
-                        SELECT DATE(c.last_interaction) AS day, COUNT(*) AS cnt
-                        FROM customers c
-                        WHERE c.segment IN ('HOT', 'CUSTOMER')
-                          AND c.last_interaction >= CURRENT_DATE - INTERVAL '6 days'
-                        GROUP BY DATE(c.last_interaction)
-                    ) hot ON hot.day = d.day
-                    LEFT JOIN (
-                        SELECT DATE(created_at) AS day, COUNT(*) AS cnt
-                        FROM orders
-                        WHERE status = 'confirmed'
-                          AND created_at >= CURRENT_DATE - INTERVAL '6 days'
-                        GROUP BY DATE(created_at)
-                    ) ord ON ord.day = d.day
-                    ORDER BY d.day
-                """)
+                if shop:
+                    query = f"""
+                        SELECT 
+                            d.day,
+                            COALESCE(leads.cnt, 0) AS leads,
+                            COALESCE(hot.cnt, 0) AS hot,
+                            COALESCE(ord.cnt, 0) AS orders
+                        FROM (
+                            SELECT generate_series(
+                                (CURRENT_DATE - INTERVAL '6 days')::date,
+                                CURRENT_DATE::date,
+                                '1 day'::interval
+                            )::date AS day
+                        ) d
+                        LEFT JOIN (
+                            SELECT DATE(conv.created_at) AS day, COUNT(DISTINCT conv.customer_id) AS cnt
+                            FROM conversations conv
+                            JOIN customers c ON conv.customer_id = c.id
+                            WHERE conv.created_at >= CURRENT_DATE - INTERVAL '6 days' AND c.shop = '{shop}'
+                            GROUP BY DATE(conv.created_at)
+                        ) leads ON leads.day = d.day
+                        LEFT JOIN (
+                            SELECT DATE(c.last_interaction) AS day, COUNT(*) AS cnt
+                            FROM customers c
+                            WHERE c.segment IN ('HOT', 'CUSTOMER')
+                              AND c.last_interaction >= CURRENT_DATE - INTERVAL '6 days' AND c.shop = '{shop}'
+                            GROUP BY DATE(c.last_interaction)
+                        ) hot ON hot.day = d.day
+                        LEFT JOIN (
+                            SELECT DATE(o.created_at) AS day, COUNT(*) AS cnt
+                            FROM orders o
+                            JOIN customers c ON o.customer_id = c.id
+                            WHERE o.status = 'confirmed'
+                              AND o.created_at >= CURRENT_DATE - INTERVAL '6 days' AND c.shop = '{shop}'
+                            GROUP BY DATE(o.created_at)
+                        ) ord ON ord.day = d.day
+                        ORDER BY d.day
+                    """
+                    rows = await conn.fetch(query)
+                else:
+                    rows = await conn.fetch("""
+                        SELECT 
+                            d.day,
+                            COALESCE(leads.cnt, 0) AS leads,
+                            COALESCE(hot.cnt, 0) AS hot,
+                            COALESCE(ord.cnt, 0) AS orders
+                        FROM (
+                            SELECT generate_series(
+                                (CURRENT_DATE - INTERVAL '6 days')::date,
+                                CURRENT_DATE::date,
+                                '1 day'::interval
+                            )::date AS day
+                        ) d
+                        LEFT JOIN (
+                            SELECT DATE(created_at) AS day, COUNT(DISTINCT customer_id) AS cnt
+                            FROM conversations
+                            WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
+                            GROUP BY DATE(created_at)
+                        ) leads ON leads.day = d.day
+                        LEFT JOIN (
+                            SELECT DATE(c.last_interaction) AS day, COUNT(*) AS cnt
+                            FROM customers c
+                            WHERE c.segment IN ('HOT', 'CUSTOMER')
+                              AND c.last_interaction >= CURRENT_DATE - INTERVAL '6 days'
+                            GROUP BY DATE(c.last_interaction)
+                        ) hot ON hot.day = d.day
+                        LEFT JOIN (
+                            SELECT DATE(created_at) AS day, COUNT(*) AS cnt
+                            FROM orders
+                            WHERE status = 'confirmed'
+                              AND created_at >= CURRENT_DATE - INTERVAL '6 days'
+                            GROUP BY DATE(created_at)
+                        ) ord ON ord.day = d.day
+                        ORDER BY d.day
+                    """)
                 result = []
                 day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
                 for row in rows:

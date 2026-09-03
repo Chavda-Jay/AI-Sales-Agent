@@ -255,7 +255,7 @@ export default function Dashboard() {
         setAnalytics(await aRes.json());
       }
 
-      const wRes = await fetch(WEEKLY_URL);
+      const wRes = await fetch(`${WEEKLY_URL}${qs}`);
       if (wRes.ok) {
         setWeeklyData(await wRes.json());
       }
