@@ -13,7 +13,6 @@ export default function MarketplaceHome() {
           <div className="mk-logo">AI Sales Agent</div>
           <nav className="mk-nav">
             <a href="#stores" className="mk-nav-link active">Stores</a>
-            <Link href="/dashboard" className="mk-nav-link">Dashboard</Link>
           </nav>
         </header>
 
