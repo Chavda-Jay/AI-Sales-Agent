@@ -360,7 +360,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
                 {stores.map(s => (
                   <div key={s.id} onClick={() => setSelectedShop(s.id)} style={{
                     background: c.panel, border: `1px solid rgba(14,165,233,0.3)`, borderRadius: '16px', padding: '24px',
@@ -613,7 +613,7 @@ export default function Dashboard() {
                   onClick={() => viewOrders(cust.id)}
                 >
                   <div style={{ ...styles.feedIcon, background: `${segColor(cust.segment)}20`, color: segColor(cust.segment) }}>
-                    {cust.segment === 'HOT' ? '≡ƒöÑ' : cust.segment === 'CUSTOMER' ? '≡ƒ¢ì∩╕Å' : '≡ƒÆ¼'}
+                    {cust.segment === 'HOT' ? '🔥' : cust.segment === 'CUSTOMER' ? '🛍️' : '💬'}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
