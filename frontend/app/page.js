@@ -31,7 +31,7 @@ export default function MarketplaceHome() {
               <h2>Urban Threads</h2>
               <span className="mk-badge">Clothing</span>
             </div>
-            <div className="mk-card-img" style={{ backgroundImage: 'url(/images/clothing_banner.jpg)' }}>
+            <div className="mk-card-img" style={{ backgroundImage: `url('/images/clothing_banner.jpg')` }}>
             </div>
             <div className="mk-card-body">
               <div className="mk-brand-info">
@@ -63,7 +63,7 @@ export default function MarketplaceHome() {
               <h2>Sharma Electronics</h2>
               <span className="mk-badge">Electronics</span>
             </div>
-            <div className="mk-card-img" style={{ backgroundImage: 'url(/images/electronics_banner.jpg)' }}>
+            <div className="mk-card-img" style={{ backgroundImage: `url('/images/electronics_banner.jpg')` }}>
             </div>
             <div className="mk-card-body">
               <div className="mk-brand-info">
