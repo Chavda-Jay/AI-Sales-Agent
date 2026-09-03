@@ -5,12 +5,14 @@
     {
       "name": "Samsung 43-inch Smart TV",
       "price": 24999,
-      "note": "4K UHD, Android TV, voice remote"
+      "note": "4K UHD, Android TV, voice remote",
+      "image_url": "/images/samsung_tv.jpg"
     },
     {
       "name": "LG Refrigerator 190L",
       "price": 15999,
-      "note": "single door, 5 star rating, 1 year warranty"
+      "note": "single door, 5 star rating, 1 year warranty",
+      "image_url": "/images/lg_fridge.jpg"
     },
     {
       "name": "Bajaj Mixer Grinder 750W",
@@ -25,43 +27,51 @@
     {
       "name": "Apple MacBook Pro M3",
       "price": 169900,
-      "note": "14-inch, 18GB RAM, 512GB SSD, Space Black"
+      "note": "14-inch, 18GB RAM, 512GB SSD, Space Black",
+      "image_url": "/images/macbook_pro.jpg"
     },
     {
       "name": "Sony PlayStation 5",
       "price": 54990,
-      "note": "Disc edition, includes 1 DualSense controller, 4K gaming"
+      "note": "Disc edition, includes 1 DualSense controller, 4K gaming",
+      "image_url": "/images/ps5_console.jpg"
     },
     {
       "name": "Dyson Airwrap Styler",
       "price": 45900,
-      "note": "Multi-styler for multiple hair types, includes premium case"
+      "note": "Multi-styler for multiple hair types, includes premium case",
+      "image_url": "/images/dyson_airwrap.jpg"
     },
     {
       "name": "GoPro HERO12 Black",
       "price": 40990,
-      "note": "5.3K HDR video, waterproof action camera"
+      "note": "5.3K HDR video, waterproof action camera",
+      "image_url": "/images/gopro_hero12.jpg"
     },
     {
       "name": "Apple iPad Air",
       "price": 59900,
-      "note": "M2 chip, 11-inch Liquid Retina display, WiFi"
+      "note": "M2 chip, 11-inch Liquid Retina display, WiFi",
+      "image_url": "/images/ipad_air.jpg"
     },
     {
       "name": "Philips Air Fryer",
       "price": 7999,
-      "note": "4.1 Liter, rapid air technology, digital touch"
+      "note": "4.1 Liter, rapid air technology, digital touch",
+      "image_url": "/images/air_fryer.jpg"
     },
     {
       "name": "Logitech MX Master 3S",
       "price": 8995,
-      "note": "Wireless performance mouse, ergonomic design"
+      "note": "Wireless performance mouse, ergonomic design",
+      "image_url": "/images/logitech_mouse.jpg"
     },
     {
       "name": "Amazon Echo Dot",
       "price": 3499,
-      "note": "5th Gen smart speaker with Alexa, Deep Sea Blue"
+      "note": "5th Gen smart speaker with Alexa, Deep Sea Blue",
+      "image_url": "/images/echo_dot.jpg"
     }
   ],
-  "policies": "Free delivery above ₹999, 10-day replacement guarantee, EMI available on cards, installation support included on TV and fridge."
+  "policies": "Free delivery above \u20b9999, 10-day replacement guarantee, EMI available on cards, installation support included on TV and fridge."
 }

@@ -188,6 +188,7 @@ h2 {
 .bubble p:last-child { margin-bottom: 0; }
 .bubble ul { margin: 8px 0 8px 24px; }
 .bubble strong { color: var(--primary); font-weight: 700; }
+.bubble img { max-width: 100%; border-radius: 8px; margin-top: 8px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.1); }
 
 /* Product List Styling */
 .bubble.agent ol {

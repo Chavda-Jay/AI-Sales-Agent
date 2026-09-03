@@ -1,8 +1,9 @@
 import os
 import json
 import re
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -10,6 +11,9 @@ import httpx
 import asyncpg  # type: ignore
 from contextlib import asynccontextmanager
 import asyncio
+# pyrefly: ignore [missing-import]
+import jwt
+from datetime import datetime, timedelta, timezone
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(BASE_DIR, ".env")
@@ -18,6 +22,22 @@ load_dotenv(dotenv_path=env_path, override=True)
 db_pool = None
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "qwen/qwen3.8-27b"
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-default-key-for-demo")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+
+security = HTTPBearer()
+
+def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
+        if payload.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Not authorized")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
 
 async def abandoned_chat_worker():
     while True:
@@ -126,6 +146,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+class LoginRequest(BaseModel):
+    password: str
+
+@app.post("/api/admin/login")
+def admin_login(req: LoginRequest):
+    if req.password == ADMIN_PASSWORD:
+        token = jwt.encode(
+            {"role": "admin", "exp": datetime.now(timezone.utc) + timedelta(days=7)},
+            SECRET_KEY,
+            algorithm="HS256"
+        )
+        return {"token": token}
+    raise HTTPException(status_code=401, detail="Invalid password")
+
 from fastapi.responses import JSONResponse
 import traceback
 import sys
@@ -183,10 +217,15 @@ async def chat(req: ChatRequest):
         raise HTTPException(status_code=400, detail="customerId and message are required")
 
     config = load_config(req.shop)
-    catalog_text = "\n".join([
-        f"{p['name']} — ₹{p['price']} — {p['note']}" 
-        for p in config.get("catalog", [])
-    ])
+    catalog_items = []
+    for p in config.get("catalog", []):
+        text = f"{p['name']} - ₹{p['price']} - {p['note']}"
+        if "image_url" in p:
+            # We add a hidden instruction for the AI about the image url
+            text += f" (Image Link: {p['image_url']})"
+        catalog_items.append(text)
+    
+    catalog_text = "\n".join(catalog_items)
 
     if req.customerId not in conversations:
         conversations[req.customerId] = []
@@ -248,12 +287,13 @@ Language rule (very important, follow exactly):
 Rules:
 - **FORMATTING (CRITICAL):** You must format your response beautifully and professionally.
   1. When listing products, use a NUMBERED LIST with emojis. Format each product EXACTLY like this example:
-     `1. 👕 **Cotton T-Shirt** — ₹599\\nSoft everyday wear, 5 colors available\\n\\n2. 👖 **Slim Fit Jeans** — ₹1299\\nStretch denim, all sizes\\n\\n`
+     `1. 👕 **Cotton T-Shirt** — ₹599\\nSoft everyday wear, 5 colors available\\n\\n![Image](/images/cotton_tshirt.jpg)\\n\\n2. 👖 **Slim Fit Jeans** — ₹1299\\nStretch denim, all sizes\\n\\n![Image](/images/slim_jeans.jpg)\\n\\n`
   2. Each product MUST be on its own numbered line with: emoji, **bold name**, dash (—), price on the first line. Description on the next line.
-  3. Add a friendly greeting line BEFORE the product list and a helpful closing line AFTER it.
-  4. Inside the JSON string, represent newlines as `\\n`. NEVER press Enter inside a JSON string.
-  5. Use double `\\n\\n` between products for clean spacing.
-  6. Keep prices as plain numbers (e.g., 599, NOT ₹5,99 or 1,299).
+  3. If an "(Image Link: /images/...)" is provided in the catalog for a product, YOU MUST display it using markdown `![Product Image](/images/...)` directly below the product description. This is mandatory for a rich user experience!
+  4. Add a friendly greeting line BEFORE the product list and a helpful closing line AFTER it.
+  5. Inside the JSON string, represent newlines as `\\n`. NEVER press Enter inside a JSON string.
+  6. Use double `\\n\\n` between products for clean spacing.
+  7. Keep prices as plain numbers (e.g., 599, NOT ₹5,99 or 1,299).
 - Never invent prices, stock, delivery dates or offers not listed above.
 - Be helpful, concise, human, persuasive without being pushy.
 - Ask only necessary questions to narrow a recommendation.
@@ -488,7 +528,7 @@ def health():
     return {"status": "ok"}
 
 @app.get("/api/customers")
-async def get_customers(shop: Optional[str] = None):
+async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
@@ -577,7 +617,7 @@ class ManagerReply(BaseModel):
     message: str
 
 @app.post("/api/handoffs/{handoff_id}/reply")
-async def manager_reply(handoff_id: int, req: ManagerReply):
+async def manager_reply(handoff_id: int, req: ManagerReply, _ = Depends(verify_admin)):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
@@ -610,7 +650,7 @@ async def manager_reply(handoff_id: int, req: ManagerReply):
     return {"status": "error"}
 
 @app.get("/api/handoffs")
-async def get_handoffs():
+async def get_handoffs(_ = Depends(verify_admin)):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
@@ -628,7 +668,7 @@ async def get_handoffs():
     return []
 
 @app.post("/api/handoffs/{handoff_id}/resolve")
-async def resolve_handoff(handoff_id: int):
+async def resolve_handoff(handoff_id: int, _ = Depends(verify_admin)):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
@@ -693,7 +733,7 @@ Return ONLY a raw JSON object with the "reply" field: {"reply": "your message"}"
     return {"status": "success"}
 
 @app.get("/api/analytics")
-async def get_analytics(shop: Optional[str] = None):
+async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
@@ -747,7 +787,7 @@ async def get_analytics(shop: Optional[str] = None):
     }
 
 @app.get("/api/analytics/weekly")
-async def get_weekly_analytics(shop: Optional[str] = None):
+async def get_weekly_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:

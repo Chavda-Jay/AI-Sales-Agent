@@ -7,6 +7,21 @@ import toast from 'react-hot-toast';
 
 const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const API_BASE = rawApi.replace(/\/+$/, '');
+
+const authFetch = async (url, options = {}) => {
+  if (typeof window !== 'undefined') {
+    const token = sessionStorage.getItem('admin_token');
+    if (!token) { window.location.href = '/dashboard/login'; return new Response(null, {status: 401}); }
+    const headers = { ...options.headers, 'Authorization': 'Bearer ' + token };
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401 || res.status === 403) {
+      window.location.href = '/dashboard/login';
+    }
+    return res;
+  }
+  return fetch(url, options);
+};
+
 const CUSTOMERS_URL = `${API_BASE}/api/customers`;
 const CONVERSATIONS_URL = `${API_BASE}/api/conversations`;
 const HANDOFFS_URL = `${API_BASE}/api/handoffs`;
@@ -143,6 +158,24 @@ const styles = {
 };
 
 export default function Dashboard() {
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = sessionStorage.getItem('admin_token');
+      if (!token) {
+        window.location.href = '/dashboard/login';
+      } else {
+        setIsAuthChecking(false);
+      }
+    }
+  }, []);
+
+  
+
+  
+  
+
   const [theme, setTheme] = useState('dark');
 
   useEffect(() => {
@@ -191,7 +224,7 @@ export default function Dashboard() {
 
   const viewOrders = async (customerId) => {
     try {
-      const res = await fetch(`${API_BASE}/api/customers/${customerId}/orders`);
+      const res = await authFetch(`${API_BASE}/api/customers/${customerId}/orders`);
       if (res.ok) {
         const data = await res.json();
         setSelectedOrders(data);
@@ -207,7 +240,7 @@ export default function Dashboard() {
     const cid = deleteCustomerId;
     setDeleteCustomerId(null);
     try {
-      const res = await fetch(`${API_BASE}/api/customers/${cid}`, { method: 'DELETE' });
+      const res = await authFetch(`${API_BASE}/api/customers/${cid}`, { method: 'DELETE' });
       if (res.ok) {
         setCustomers(prev => prev.filter(c => c.id !== cid));
         toast.success('Lead deleted successfully', { position: 'top-right' });
@@ -229,13 +262,13 @@ export default function Dashboard() {
     if (!isPolling) setLoading(true);
     try {
       const qs = shopId ? `?shop=${shopId}` : '';
-      const res = await fetch(`${CUSTOMERS_URL}${qs}`);
+      const res = await authFetch(`${CUSTOMERS_URL}${qs}`);
       if (res.ok) {
         const data = await res.json();
         setCustomers(data);
       }
 
-      const hRes = await fetch(HANDOFFS_URL);
+      const hRes = await authFetch(HANDOFFS_URL);
       if (hRes.ok) {
         const newHandoffs = await hRes.json();
         setHandoffs(prev => {
@@ -250,12 +283,12 @@ export default function Dashboard() {
         });
       }
 
-      const aRes = await fetch(`${ANALYTICS_URL}${qs}`);
+      const aRes = await authFetch(`${ANALYTICS_URL}${qs}`);
       if (aRes.ok) {
         setAnalytics(await aRes.json());
       }
 
-      const wRes = await fetch(`${WEEKLY_URL}${qs}`);
+      const wRes = await authFetch(`${WEEKLY_URL}${qs}`);
       if (wRes.ok) {
         setWeeklyData(await wRes.json());
       }
@@ -273,7 +306,10 @@ export default function Dashboard() {
     const intervalId = setInterval(() => {
       fetchCustomers(true, selectedShop);
     }, 3000);
-    return () => clearInterval(intervalId);
+    
+  
+
+  return () => clearInterval(intervalId);
   }, [selectedShop]);
     
   const stores = [
@@ -296,7 +332,7 @@ export default function Dashboard() {
       )}
 
       {/* Sidebar */}
-      <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`}>
+      <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`} style={{display: 'flex', flexDirection: 'column'}}>
         <div style={{ ...styles.navBrand, padding: '0 24px', marginBottom: '40px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '20px', fontWeight: '800' }}>
           <span style={{ color: '#0ea5e9' }}>▲</span> AI SALES AGENT
         </div>
@@ -319,7 +355,28 @@ export default function Dashboard() {
             <span>📊</span> Analytics <span style={{fontSize:'10px', background:'rgba(255,255,255,0.1)', padding:'2px 6px', borderRadius:'4px', marginLeft:'auto'}}>Soon</span>
           </div>
         </div>
-      </aside>
+      
+          <div style={{ marginTop: 'auto', marginBottom: '20px', padding: '0 20px' }}>
+            <button 
+              onClick={() => {
+                sessionStorage.removeItem('admin_token');
+                window.location.href = '/dashboard/login';
+              }}
+              style={{
+                background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444',
+                borderRadius: '8px', padding: '12px 16px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; e.currentTarget.style.transform = 'translateX(-2px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.transform = 'translateX(0)'; }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+              Logout
+            </button>
+          </div>
+        </aside>
+
 
       {/* Main Content Area */}
       <div className="dash-main">
@@ -648,6 +705,23 @@ export default function Dashboard() {
                       style={{ ...styles.resolveBtn, background: 'transparent', color: c.primary, border: `1px solid ${c.primary}` }}
                     >
                       View Details
+                    </button>
+                    <button 
+                      onClick={() => {
+                        sessionStorage.removeItem('admin_token');
+                        window.location.href = '/dashboard/login';
+                      }}
+                      style={{
+                        ...inter, fontSize: '13px', fontWeight: 600, color: '#ef4444',
+                        background: 'rgba(239, 68, 68, 0.1)', padding: '10px 16px', borderRadius: '8px',
+                        border: '1px solid rgba(239, 68, 68, 0.2)', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', marginTop: '12px'
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                      Logout
                     </button>
                   </div>
                 </div>

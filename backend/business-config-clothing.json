@@ -5,42 +5,50 @@
     {
       "name": "Cotton T-Shirt",
       "price": 599,
-      "note": "soft everyday wear, 5 colors"
+      "note": "soft everyday wear, 5 colors",
+      "image_url": "/images/cotton_tshirt.jpg"
     },
     {
       "name": "Slim Fit Jeans",
       "price": 1299,
-      "note": "stretch denim, all sizes"
+      "note": "stretch denim, all sizes",
+      "image_url": "/images/slim_jeans.jpg"
     },
     {
       "name": "Casual Sneakers",
       "price": 1999,
-      "note": "lightweight, all-day comfort"
+      "note": "lightweight, all-day comfort",
+      "image_url": "/images/casual_sneakers.jpg"
     },
     {
       "name": "Formal Shirt",
       "price": 899,
-      "note": "office wear, wrinkle-free"
+      "note": "office wear, wrinkle-free",
+      "image_url": "/images/formal_shirt.jpg"
     },
     {
       "name": "Winter Hoodie",
       "price": 1499,
-      "note": "fleece lined, warm, unisex"
+      "note": "fleece lined, warm, unisex",
+      "image_url": "/images/winter_hoodie.jpg"
     },
     {
       "name": "Men's Kurta Set",
       "price": 1799,
-      "note": "cotton, festive/ethnic wear, 3 colors"
+      "note": "cotton, festive/ethnic wear, 3 colors",
+      "image_url": "/images/mens_kurta.jpg"
     },
     {
       "name": "Denim Jacket",
       "price": 2299,
-      "note": "unisex, all-season layering"
+      "note": "unisex, all-season layering",
+      "image_url": "/images/denim_jacket.jpg"
     },
     {
       "name": "Leather Belt",
       "price": 499,
-      "note": "genuine leather, formal and casual"
+      "note": "genuine leather, formal and casual",
+      "image_url": "/images/leather_belt.jpg"
     },
     {
       "name": "Polo T-Shirt",
@@ -55,13 +63,15 @@
     {
       "name": "Aviator Sunglasses",
       "price": 999,
-      "note": "UV protection, classic metal frame"
+      "note": "UV protection, classic metal frame",
+      "image_url": "/images/aviator_sunglasses.jpg"
     },
     {
       "name": "Silk Saree",
       "price": 2999,
-      "note": "pure silk, traditional wear, 2 colors"
+      "note": "pure silk, traditional wear, 2 colors",
+      "image_url": "/images/silk_saree.jpg"
     }
   ],
-  "policies": "Free delivery above ₹799, 7-day easy exchange, COD available, UPI/cards accepted, size chart on request."
+  "policies": "Free delivery above \u20b9799, 7-day easy exchange, COD available, UPI/cards accepted, size chart on request."
 }
