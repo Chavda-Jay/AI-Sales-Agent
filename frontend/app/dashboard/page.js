@@ -159,6 +159,7 @@ export default function Dashboard() {
     localStorage.setItem('app-theme', theme);
   }, [theme]);
 
+  const [selectedShop, setSelectedShop] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [handoffs, setHandoffs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -224,10 +225,11 @@ export default function Dashboard() {
     setDeleteCustomerId(customerId);
   };
 
-  const fetchCustomers = async (isPolling = false) => {
+  const fetchCustomers = async (isPolling = false, shopId = selectedShop) => {
     if (!isPolling) setLoading(true);
     try {
-      const res = await fetch(CUSTOMERS_URL);
+      const qs = shopId ? `?shop=${shopId}` : '';
+      const res = await fetch(`${CUSTOMERS_URL}${qs}`);
       if (res.ok) {
         const data = await res.json();
         setCustomers(data);
@@ -248,7 +250,7 @@ export default function Dashboard() {
         });
       }
 
-      const aRes = await fetch(ANALYTICS_URL);
+      const aRes = await fetch(`${ANALYTICS_URL}${qs}`);
       if (aRes.ok) {
         setAnalytics(await aRes.json());
       }
@@ -264,86 +266,172 @@ export default function Dashboard() {
     }
   };
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   useEffect(() => {
-    fetchCustomers();
+    fetchCustomers(false, selectedShop);
     const intervalId = setInterval(() => {
-      fetchCustomers(true);
+      fetchCustomers(true, selectedShop);
     }, 3000);
     return () => clearInterval(intervalId);
-  }, []);
-
-  const resolveHandoff = async (id) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/handoffs/${id}/resolve`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        setHandoffs(prev => prev.map(h => h.id === id ? { ...h, status: 'resolved' } : h));
-      }
-    } catch(e) {
-      console.error(e);
-    }
-  };
-
-  const sendReply = async (id) => {
-    const text = replyTexts[id];
-    if (!text || !text.trim()) return;
+  }, [selectedShop]);
     
-    try {
-      const res = await fetch(`${API_BASE}/api/handoffs/${id}/reply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text.trim() })
-      });
-      
-      if (res.ok) {
-        setReplyTexts(prev => ({ ...prev, [id]: '' }));
-        fetchCustomers(true);
-      }
-    } catch(e) {
-      console.error(e);
-    }
-  };
-
-  const total = customers.length;
-  const hotCount = customers.filter(c => c.segment === 'HOT').length;
-  const warmCount = customers.filter(c => c.segment === 'WARM').length;
-  const coldCount = customers.filter(c => c.segment === 'COLD').length;
-  const pendingHandoffs = handoffs.filter(h => h.status === 'pending');
+  const stores = [
+    { id: 'clothing', name: 'Urban Threads', category: 'E-commerce Shop', icon: '👕', agents: 12, sales: '$142,500', leads: 85 },
+    { id: 'electronics', name: 'Sharma Electronics', category: 'Tech Retailer', icon: '💻', agents: 9, sales: '$98,320', leads: 58 }
+  ];
 
   return (
-    <div className="dash-page">
+    <div className="dash-page" style={{ display: 'flex', minHeight: '100vh' }}>
       
-      {/* Navbar */}
-      <nav className="dash-navbar">
-        <div style={{...styles.navBrand, fontSize: 'clamp(18px, 4vw, 24px)'}}>Store Dashboard</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
-          <button 
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            style={{
-              background: 'var(--panel2)', border: '1px solid var(--line)', color: 'var(--ivory)',
-              cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '8px 16px', borderRadius: '24px', fontWeight: 'bold', fontFamily: 'var(--font-heading)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-            }}
-            title="Toggle Theme"
-          >
-            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-          </button>
-          <div style={{ ...sora, fontSize: '13px', fontWeight: 600, color: c.muted, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '8px', height: '8px', background: c.cust, borderRadius: '50%', boxShadow: `0 0 10px ${c.cust}` }}></div>
-            Live Monitoring
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 190 }} onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div style={{ ...styles.navBrand, padding: '0 24px', marginBottom: '40px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ color: '#0ea5e9' }}>▲</span> AGENTIC CRM
+        </div>
+        
+        <div style={{ padding: '0 12px' }}>
+          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', ...inter, display: 'flex', gap: '12px', cursor: 'pointer', borderRadius: '8px' }}
+               onClick={() => setSelectedShop(null)}>
+            <span>🏠</span> Dashboard
+          </div>
+          <div style={{ padding: '12px', color: c.ivory, fontSize: '14px', ...inter, display: 'flex', gap: '12px', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.2)', borderRadius: '8px', cursor: 'pointer', marginTop: '8px' }}
+               onClick={() => setSelectedShop(null)}>
+            <span>🏪</span> My Stores
+          </div>
+          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', ...inter, display: 'flex', gap: '12px', cursor: 'pointer', marginTop: '8px' }}>
+            <span>⚙️</span> AI Settings
+          </div>
+          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', ...inter, display: 'flex', gap: '12px', cursor: 'pointer', marginTop: '8px' }}>
+            <span>📊</span> Analytics
           </div>
         </div>
-      </nav>
+      </aside>
 
-      <div className="dash-wrap">
-        {/* Header Title */}
-        <div style={styles.eyebrow}>AI CRM</div>
-        <div style={styles.titleRow}>
-          <h1 className="dash-h1">Customer Overview</h1>
-        </div>
-        <p style={styles.sub}>Monitor your live AI sales leads and manage customer handoffs in real-time.</p>
+      {/* Main Content Area */}
+      <div className="dash-main">
+        <nav className="dash-navbar" style={{ background: 'transparent', borderBottom: 'none' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+            <button 
+              className="dash-hamburger"
+              style={{ background: 'transparent', border: 'none', color: c.ivory, cursor: 'pointer', marginRight: '16px', display: 'none' }}
+              onClick={() => setSidebarOpen(true)}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+            <button 
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              style={{
+                background: 'var(--panel2)', border: '1px solid var(--line)', color: 'var(--ivory)',
+                cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '8px 16px', borderRadius: '24px', fontWeight: 'bold'
+              }}
+            >
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
+            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#0ea5e9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>A</div>
+          </div>
+        </nav>
+
+        <div className="dash-wrap" style={{ padding: '0 40px 100px', flex: 1, overflowY: 'auto' }}>
+          
+          {!selectedShop ? (
+            /* Connected Businesses View */
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+                <div>
+                  <h1 className="dash-h1" style={{ marginBottom: '8px' }}>Connected Businesses</h1>
+                  <p style={{ color: c.muted, margin: 0, fontSize: '15px' }}>Overview ({stores.length} Stores Active)</p>
+                </div>
+                <button style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 16px', borderRadius: '8px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  + Add New Store
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
+                {stores.map(s => (
+                  <div key={s.id} onClick={() => setSelectedShop(s.id)} style={{
+                    background: c.panel, border: `1px solid rgba(14,165,233,0.3)`, borderRadius: '16px', padding: '24px',
+                    cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 8px 32px rgba(14,165,233,0.05)',
+                    position: 'relative', overflow: 'hidden'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', background: 'linear-gradient(to top, rgba(14,165,233,0.1), transparent)' }}></div>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                        <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
+                          {s.icon}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>{s.name}</div>
+                          <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px' }}>{s.category}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 10px #22c55e' }}></div>
+                        <span style={{ fontSize: '20px', color: c.muted }}>...</span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '16px 0', borderTop: `1px solid ${c.line}`, borderBottom: `1px solid ${c.line}`, marginBottom: '16px' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: c.muted, fontSize: '12px', marginBottom: '4px' }}>
+                          <span>🤖</span> Active AI Agents
+                        </div>
+                        <div style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{s.agents}</div>
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: c.muted, fontSize: '12px', marginBottom: '4px' }}>
+                          <span>💰</span> Total Sales
+                        </div>
+                        <div style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{analytics?.orders_placed || 0}</div>
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: c.muted, fontSize: '12px', marginBottom: '4px' }}>
+                          <span>🔥</span> Hot Leads
+                        </div>
+                        <div style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{analytics?.hot_or_above || 0}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 2 }}>
+                      <div style={{ fontSize: '13px', color: '#0ea5e9', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
+                        Performance Graph
+                      </div>
+                      <div style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 600, border: '1px solid rgba(34,197,94,0.2)' }}>
+                        status <span style={{display:'inline-block', width:'6px', height:'6px', borderRadius:'50%', background:'#22c55e', marginLeft:'4px'}}></span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* Store Detail View */
+            <div>
+              <button 
+                onClick={() => setSelectedShop(null)}
+                style={{ background: 'transparent', border: 'none', color: '#0ea5e9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', fontWeight: 600, padding: 0 }}
+              >
+                ← Back to Stores
+              </button>
+              
+              {/* Header Title */}
+              <div style={styles.eyebrow}>AI CRM • {stores.find(s => s.id === selectedShop)?.name}</div>
+              <div style={styles.titleRow}>
+                <h1 className="dash-h1">Customer Overview</h1>
+              </div>
+              <p style={styles.sub}>Monitor your live AI sales leads and manage customer handoffs for this store.</p>
 
         {/* Top Row: Stat Cards */}
         <div className="dash-stats-grid">
@@ -358,9 +446,7 @@ export default function Dashboard() {
               <div style={{ ...styles.statVal, color: stat.color }}>{stat.val}</div>
             </div>
           ))}
-        </div>
-
-        {/* Middle Row: Graph & Needs Attention */}
+{/* Middle Row: Graph & Needs Attention */}
         <div className="dash-main-grid">
           
           {/* Left: Performance & Graph */}
@@ -389,176 +475,12 @@ export default function Dashboard() {
                         <div style={{ flex: '0 0 70px', ...mono, fontSize: '16px', fontWeight: 700, color: c.ivory }}>
                           {stage.count} <div style={{ fontSize: '11px', color: c.muted, fontWeight: 500 }}>({percent}%)</div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div style={{ ...styles.card, padding: '28px 28px 12px 12px', height: '360px', display: 'flex', flexDirection: 'column' }}>
-              <h2 style={{ ...styles.sectionTitle, marginBottom: '24px', paddingLeft: '16px' }}>7-Day Intent Trend</h2>
-              <div style={{ flex: 1 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weeklyData.length > 0 ? weeklyData : [
-                    { name: 'Mon', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Tue', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Wed', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Thu', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Fri', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Sat', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Sun', leads: 0, hot: 0, orders: 0 },
-                  ]}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2b3140" vertical={false} />
-                    <XAxis dataKey="name" stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: c.panel, border: `1px solid ${c.line}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} 
-                      itemStyle={{ fontWeight: 600, fontFamily: 'var(--font-inter, sans-serif)' }}
-                    />
-                    <Line type="monotone" dataKey="leads" name="Total Leads" stroke="#58a6ff" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
-                    <Line type="monotone" dataKey="hot" name="Hot Leads" stroke="#f85149" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
-                    <Line type="monotone" dataKey="orders" name="Orders" stroke="#3fb950" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
           </div>
-
-          {/* Right: Needs Attention */}
-          <div style={styles.card}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-              <h2 style={styles.sectionTitle}>Needs Attention</h2>
-              {pendingHandoffs.length > 0 && (
-                <span style={styles.badge(c.hot, '#fff')}>
-                  {pendingHandoffs.length} Pending
-                </span>
-              )}
-            </div>
-
-            {handoffs.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: c.muted, fontSize: '15px' }}>
-                No handoffs requested yet.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {pendingHandoffs.map(h => (
-                  <div key={h.id} style={styles.handoffCard}>
-                    <div style={{ flex: 1, marginRight: '16px' }}>
-                      <div style={{ fontWeight: 700, color: c.ivory, marginBottom: '6px', fontSize: '15px' }}>
-                        {h.name || 'Unknown Customer'}
-                      </div>
-                      <div style={{ color: c.hot, fontSize: '14px', fontWeight: 500 }}>
-                        Reason: {h.reason}
-                      </div>
-                      <div style={{ color: c.muted, fontSize: '12px', marginTop: '8px' }}>
-                        {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                          day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
-                        })}
-                      </div>
-                    </div>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '180px' }}>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <input 
-                          type="text" 
-                          className="manager-input"
-                          placeholder="Type reply..." 
-                          value={replyTexts[h.id] || ''}
-                          onChange={(e) => setReplyTexts(prev => ({ ...prev, [h.id]: e.target.value }))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') sendReply(h.id); }}
-                          style={{ 
-                            flex: 1, 
-                            border: `1px solid ${c.line}`, 
-                            borderRadius: '8px', 
-                            padding: '8px 12px',
-                            fontSize: '13px',
-                            background: c.panel2,
-                            color: c.ivory,
-                            outline: 'none'
-                          }}
-                        />
-                        <button onClick={() => sendReply(h.id)} style={{ ...styles.resolveBtn, background: c.cust, color: '#fff', border: 'none' }}>
-                          Send
-                        </button>
-                      </div>
-                      <button onClick={() => resolveHandoff(h.id)} style={styles.resolveBtn}>
-                        Mark as Resolved
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Bottom Row: Live Timeline Feed */}
-        <div style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '24px 28px', borderBottom: `1px solid ${c.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={styles.sectionTitle}>Live Activity Feed</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: c.cust, fontWeight: 600 }}>
-               <div style={{ width: '8px', height: '8px', background: c.cust, borderRadius: '50%', boxShadow: `0 0 10px ${c.cust}` }} />
-               Syncing live...
-            </div>
-          </div>
-          <div style={{ padding: '24px' }}>
-            {customers.length === 0 ? (
-              <div style={{ textAlign: 'center', color: c.muted, padding: '40px' }}>No live activity yet.</div>
-            ) : (
-              customers.slice(0, 15).map(cust => (
-                <div 
-                  key={cust.id} 
-                  style={styles.feedCard}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = c.panel2;
-                    e.currentTarget.style.transform = 'translateX(4px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = c.panel;
-                    e.currentTarget.style.transform = 'translateX(0)';
-                  }}
-                  onClick={() => viewOrders(cust.id)}
-                >
-                  <div style={{ ...styles.feedIcon, background: `${segColor(cust.segment)}20`, color: segColor(cust.segment) }}>
-                    {cust.segment === 'HOT' ? '🔥' : cust.segment === 'CUSTOMER' ? '🛍️' : '💬'}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: 600, color: c.ivory, fontSize: '15px' }}>{cust.name || 'Anonymous Visitor'}</span>
-                      <span style={styles.badge(segColor(cust.segment), segTextColor(cust.segment))}>{cust.segment}</span>
-                    </div>
-                    <div style={{ color: c.muted, fontSize: '13px' }}>
-                      Intent Score: <strong style={{ color: c.ivory, ...mono }}>{cust.intent_score || 0}/100</strong> • 
-                      Last active: {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                        day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
-                      }) : 'just now'}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button 
-                      onClick={(e) => handleDeleteCustomer(e, cust.id)}
-                      style={{ ...styles.resolveBtn, background: 'transparent', color: c.hot, border: `1px solid ${c.hot}`, padding: '8px 12px' }}
-                      title="Delete"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                    </button>
-                    <button 
-                      onClick={(e) => viewConversation(e, cust.id, cust.name)}
-                      style={{ ...styles.resolveBtn, background: 'transparent', color: c.primary, border: `1px solid ${c.primary}` }}
-                    >
-                      View Details
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
+        )}
+      </div>
       </div>
 
-      {showOrderModal && (
+{showOrderModal && (
         <div className="modal-overlay" onClick={() => setShowOrderModal(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setShowOrderModal(false)}>✖</button>

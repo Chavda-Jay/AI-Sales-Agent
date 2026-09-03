@@ -89,6 +89,7 @@ async def lifespan(app: FastAPI):
             async with db_pool.acquire() as conn:
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS ext_id TEXT UNIQUE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS followed_up_at TIMESTAMP;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS shop TEXT;")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS handoffs (
                         id SERIAL PRIMARY KEY,
@@ -259,8 +260,8 @@ Rules:
 - **NUMBER FORMATTING:** Do NOT use commas in prices or numbers in your 'reply' (e.g., write 1098, not 1,098 or 10,098).
 - Answer strictly and perfectly according to what the customer asks. Do not make illogical product suggestions (e.g., never suggest a leather belt with a silk saree).
 - **COUPON/DISCOUNT:** If the customer mentions the coupon code 'FIRST10', acknowledge it excitedly and apply a 10% discount to their purchase. When setting 'order_amount' in the JSON, calculate and provide the discounted price. Clearly mention the discount applied in your 'reply'.
-- When the customer shows clear purchase intent (e.g., asking for delivery, confirming an order, or asking about sizes), naturally ask for their name and phone number (if not already provided). Do not ask upfront in the first message.
-- **ORDER DETAILS FORM:** If the customer is ready to buy but you need their specific details (like size, color, name, phone number) to place the order, set `"requires_details"` to `true`. This will show a clean form in their chat window for them to fill out. Otherwise, keep it `false`.
+- When the customer shows clear purchase intent, ask them for their product preferences (like Size or Color) in the chat if applicable. Do not make assumptions (e.g. sneakers need numeric sizes, shirts need S/M/L).
+- **ORDER DETAILS FORM:** Once product preferences are finalized and the customer is ready to checkout, set `"requires_details"` to `true`. This will show a shipping form (Name, Phone, Address) in their chat window. Do not manually ask for their name/phone in your text reply if you are setting this to true; let the form do it.
 - If the customer mentions their name or phone number anywhere in the conversation, acknowledge it naturally and include it in your JSON response.
 - HUMAN HANDOFF: If the customer sounds angry/frustrated, asks for a human/manager, mentions legal/fraud/payment disputes, asks for an extreme discount/exception, or asks a question completely outside your catalog/policy knowledge, set "needs_human" to true and provide a short "handoff_reason". Acknowledge this naturally in your "reply" (e.g. "I'll connect you with our team right away for this."). Otherwise, set "needs_human" to false and "handoff_reason" to null.
 - ORDER CONFIRMATION: If the customer clearly confirms they want to place an order (e.g., "order confirm karo", "yes place my order"), set "order_ready" to true, and provide the "order_product" and "order_amount" (numeric price). Otherwise, set these to false/null.
@@ -422,8 +423,8 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
 
                 if not customer_id:
                     customer_id = await conn.fetchval(
-                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0)
+                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score, shop) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop
                     )
                 else:
                     await conn.execute(
@@ -434,6 +435,7 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                             last_interaction = NOW(),
                             name = COALESCE($4, name),
                             phone = COALESCE($5, phone),
+                            shop = COALESCE($6, shop),
                             followed_up_at = NULL
                         WHERE id = $3
                         """,
@@ -441,7 +443,8 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                         parsed.get("intent_score", 0), 
                         customer_id,
                         c_name,
-                        c_phone
+                        c_phone,
+                        req.shop
                     )
                 
                 await conn.execute(
@@ -485,15 +488,23 @@ def health():
     return {"status": "ok"}
 
 @app.get("/api/customers")
-async def get_customers():
+async def get_customers(shop: Optional[str] = None):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT id, ext_id, name, phone, segment, intent_score, last_interaction 
-                    FROM customers 
-                    ORDER BY last_interaction DESC NULLS LAST
-                """)
+                if shop:
+                    rows = await conn.fetch("""
+                        SELECT id, ext_id, name, phone, segment, intent_score, last_interaction, shop
+                        FROM customers 
+                        WHERE shop = $1
+                        ORDER BY last_interaction DESC NULLS LAST
+                    """, shop)
+                else:
+                    rows = await conn.fetch("""
+                        SELECT id, ext_id, name, phone, segment, intent_score, last_interaction, shop
+                        FROM customers 
+                        ORDER BY last_interaction DESC NULLS LAST
+                    """)
                 return [dict(row) for row in rows]
         except Exception as e:
             print(f"Warning: Database error fetching customers: {e}")
@@ -682,20 +693,37 @@ Return ONLY a raw JSON object with the "reply" field: {"reply": "your message"}"
     return {"status": "success"}
 
 @app.get("/api/analytics")
-async def get_analytics():
+async def get_analytics(shop: Optional[str] = None):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
-                total_conversations = await conn.fetchval("SELECT COUNT(DISTINCT customer_id) FROM conversations")
-                warm_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('WARM', 'HOT', 'CUSTOMER')")
-                hot_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('HOT', 'CUSTOMER')")
-                orders_placed = await conn.fetchval("SELECT COUNT(id) FROM orders WHERE status = 'confirmed'")
-                
+                if shop:
+                    total_conversations = await conn.fetchval("""
+                        SELECT COUNT(DISTINCT conv.customer_id) 
+                        FROM conversations conv
+                        JOIN customers cus ON conv.customer_id = cus.id
+                        WHERE cus.shop = $1
+                    """, shop)
+                    warm_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('WARM', 'HOT', 'CUSTOMER') AND shop = $1", shop)
+                    hot_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('HOT', 'CUSTOMER') AND shop = $1", shop)
+                    orders_placed = await conn.fetchval("""
+                        SELECT COUNT(o.id) 
+                        FROM orders o
+                        JOIN customers cus ON o.customer_id = cus.id
+                        WHERE o.status = 'confirmed' AND cus.shop = $1
+                    """, shop)
+                    avg_intent_score_val = await conn.fetchval("SELECT AVG(intent_score) FROM customers WHERE shop = $1", shop)
+                else:
+                    total_conversations = await conn.fetchval("SELECT COUNT(DISTINCT customer_id) FROM conversations")
+                    warm_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('WARM', 'HOT', 'CUSTOMER')")
+                    hot_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('HOT', 'CUSTOMER')")
+                    orders_placed = await conn.fetchval("SELECT COUNT(id) FROM orders WHERE status = 'confirmed'")
+                    avg_intent_score_val = await conn.fetchval("SELECT AVG(intent_score) FROM customers")
+
                 conversion_rate = 0.0
                 if total_conversations and total_conversations > 0:
                     conversion_rate = round((orders_placed / total_conversations) * 100, 1)
                 
-                avg_intent_score_val = await conn.fetchval("SELECT AVG(intent_score) FROM customers")
                 avg_intent_score = round(avg_intent_score_val) if avg_intent_score_val else 0
 
                 return {
