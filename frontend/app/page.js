@@ -10,14 +10,11 @@ export default function MarketplaceHome() {
         
         {/* Header */}
         <header className="mk-header">
-          <div className="mk-logo">AISALES.IO</div>
+          <div className="mk-logo">AI Sales Agent</div>
           <nav className="mk-nav">
-            <a href="#" className="mk-nav-link active">Explore</a>
-            <a href="#" className="mk-nav-link">Features</a>
-            <a href="#" className="mk-nav-link">Pricing</a>
-            <a href="#" className="mk-nav-link">Support</a>
+            <a href="#stores" className="mk-nav-link active">Stores</a>
+            <Link href="/dashboard" className="mk-nav-link">Dashboard</Link>
           </nav>
-          <button className="mk-get-started">Get Started</button>
         </header>
 
         {/* Hero */}
@@ -27,7 +24,7 @@ export default function MarketplaceHome() {
         </section>
 
         {/* Store Cards — only actual configs */}
-        <section className="mk-grid mk-grid-2">
+        <section className="mk-grid mk-grid-2" id="stores">
           
           {/* Card 1: Urban Threads Clothing */}
           <Link href="/store?shop=clothing" className="mk-card mk-glow-purple" style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -35,10 +32,7 @@ export default function MarketplaceHome() {
               <h2>Urban Threads</h2>
               <span className="mk-badge">Clothing</span>
             </div>
-            <div className="mk-card-img" style={{ backgroundImage: 'url(/images/formal_shirt.jpg)' }}>
-              <div className="mk-img-overlay">
-                <h3>Urban<br/>Threads</h3>
-              </div>
+            <div className="mk-card-img" style={{ backgroundImage: 'url(/images/clothing_banner.jpg)' }}>
             </div>
             <div className="mk-card-body">
               <div className="mk-brand-info">
@@ -70,10 +64,7 @@ export default function MarketplaceHome() {
               <h2>Sharma Electronics</h2>
               <span className="mk-badge">Electronics</span>
             </div>
-            <div className="mk-card-img" style={{ backgroundImage: 'url(/images/smart_tv.jpg)' }}>
-              <div className="mk-img-overlay mk-overlay-blue">
-                <h3>Sharma<br/>Electronics</h3>
-              </div>
+            <div className="mk-card-img" style={{ backgroundImage: 'url(/images/electronics_banner.jpg)' }}>
             </div>
             <div className="mk-card-body">
               <div className="mk-brand-info">
