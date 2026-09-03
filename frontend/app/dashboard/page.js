@@ -475,12 +475,181 @@ export default function Dashboard() {
                         <div style={{ flex: '0 0 70px', ...mono, fontSize: '16px', fontWeight: 700, color: c.ivory }}>
                           {stage.count} <div style={{ fontSize: '11px', color: c.muted, fontWeight: 500 }}>({percent}%)</div>
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div style={{ ...styles.card, padding: '28px 28px 12px 12px', height: '360px', display: 'flex', flexDirection: 'column' }}>
+              <h2 style={{ ...styles.sectionTitle, marginBottom: '24px', paddingLeft: '16px' }}>7-Day Intent Trend</h2>
+              <div style={{ flex: 1 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyData.length > 0 ? weeklyData : [
+                    { name: 'Mon', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Tue', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Wed', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Thu', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Fri', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Sat', leads: 0, hot: 0, orders: 0 },
+                    { name: 'Sun', leads: 0, hot: 0, orders: 0 },
+                  ]}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2b3140" vertical={false} />
+                    <XAxis dataKey="name" stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: c.panel, border: `1px solid ${c.line}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} 
+                      itemStyle={{ fontWeight: 600, fontFamily: 'var(--font-inter, sans-serif)' }}
+                    />
+                    <Line type="monotone" dataKey="leads" name="Total Leads" stroke="#58a6ff" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
+                    <Line type="monotone" dataKey="hot" name="Hot Leads" stroke="#f85149" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
+                    <Line type="monotone" dataKey="orders" name="Orders" stroke="#3fb950" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Needs Attention */}
+          <div style={styles.card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+              <h2 style={styles.sectionTitle}>Needs Attention</h2>
+              {pendingHandoffs.length > 0 && (
+                <span style={styles.badge(c.hot, '#fff')}>
+                  {pendingHandoffs.length} Pending
+                </span>
+              )}
+            </div>
+
+            {handoffs.length === 0 ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: c.muted, fontSize: '15px' }}>
+                No handoffs requested yet.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {pendingHandoffs.map(h => (
+                  <div key={h.id} style={styles.handoffCard}>
+                    <div style={{ flex: 1, marginRight: '16px' }}>
+                      <div style={{ fontWeight: 700, color: c.ivory, marginBottom: '6px', fontSize: '15px' }}>
+                        {h.name || 'Unknown Customer'}
+                      </div>
+                      <div style={{ color: c.hot, fontSize: '14px', fontWeight: 500 }}>
+                        Reason: {h.reason}
+                      </div>
+                      <div style={{ color: c.muted, fontSize: '12px', marginTop: '8px' }}>
+                        {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
+                          day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
+                        })}
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '180px' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input 
+                          type="text" 
+                          className="manager-input"
+                          placeholder="Type reply..." 
+                          value={replyTexts[h.id] || ''}
+                          onChange={(e) => setReplyTexts(prev => ({ ...prev, [h.id]: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') sendReply(h.id); }}
+                          style={{ 
+                            flex: 1, 
+                            border: `1px solid ${c.line}`, 
+                            borderRadius: '8px', 
+                            padding: '8px 12px',
+                            fontSize: '13px',
+                            background: c.panel2,
+                            color: c.ivory,
+                            outline: 'none'
+                          }}
+                        />
+                        <button onClick={() => sendReply(h.id)} style={{ ...styles.resolveBtn, background: c.cust, color: '#fff', border: 'none' }}>
+                          Send
+                        </button>
+                      </div>
+                      <button onClick={() => resolveHandoff(h.id)} style={styles.resolveBtn}>
+                        Mark as Resolved
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom Row: Live Timeline Feed */}
+        <div style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '24px 28px', borderBottom: `1px solid ${c.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={styles.sectionTitle}>Live Activity Feed</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: c.cust, fontWeight: 600 }}>
+               <div style={{ width: '8px', height: '8px', background: c.cust, borderRadius: '50%', boxShadow: `0 0 10px ${c.cust}` }} />
+               Syncing live...
+            </div>
+          </div>
+          <div style={{ padding: '24px' }}>
+            {customers.length === 0 ? (
+              <div style={{ textAlign: 'center', color: c.muted, padding: '40px' }}>No live activity yet.</div>
+            ) : (
+              customers.slice(0, 15).map(cust => (
+                <div 
+                  key={cust.id} 
+                  style={styles.feedCard}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = c.panel2;
+                    e.currentTarget.style.transform = 'translateX(4px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = c.panel;
+                    e.currentTarget.style.transform = 'translateX(0)';
+                  }}
+                  onClick={() => viewOrders(cust.id)}
+                >
+                  <div style={{ ...styles.feedIcon, background: `${segColor(cust.segment)}20`, color: segColor(cust.segment) }}>
+                    {cust.segment === 'HOT' ? '≡ƒöÑ' : cust.segment === 'CUSTOMER' ? '≡ƒ¢ì∩╕Å' : '≡ƒÆ¼'}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 600, color: c.ivory, fontSize: '15px' }}>{cust.name || 'Anonymous Visitor'}</span>
+                      <span style={styles.badge(segColor(cust.segment), segTextColor(cust.segment))}>{cust.segment}</span>
+                    </div>
+                    <div style={{ color: c.muted, fontSize: '13px' }}>
+                      Intent Score: <strong style={{ color: c.ivory, ...mono }}>{cust.intent_score || 0}/100</strong> ΓÇó 
+                      Last active: {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
+                        day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
+                      }) : 'just now'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button 
+                      onClick={(e) => handleDeleteCustomer(e, cust.id)}
+                      style={{ ...styles.resolveBtn, background: 'transparent', color: c.hot, border: `1px solid ${c.hot}`, padding: '8px 12px' }}
+                      title="Delete"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </button>
+                    <button 
+                      onClick={(e) => viewConversation(e, cust.id, cust.name)}
+                      style={{ ...styles.resolveBtn, background: 'transparent', color: c.primary, border: `1px solid ${c.primary}` }}
+                    >
+                      View Details
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+      </div>
+
+      
           </div>
         )}
       </div>
-      </div>
 
-{showOrderModal && (
+      {showOrderModal && (
         <div className="modal-overlay" onClick={() => setShowOrderModal(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setShowOrderModal(false)}>✖</button>
