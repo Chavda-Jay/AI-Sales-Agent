@@ -762,42 +762,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      <footer className="store-footer">
-        <div className="footer-content">
-          <div className="footer-brand">
-            <h2>AI Sales Agent</h2>
-            <p>Autonomous B2C customer acquisition, sales & conversion platform powered by advanced AI. Real-time analytics and intelligent automation.</p>
-          </div>
-          <div className="footer-links">
-            <h3>Platform</h3>
-            <ul>
-              <li><a href="/">Storefront</a></li>
-              <li><a href="/dashboard">Dashboard</a></li>
-              <li><a href="#">Analytics</a></li>
-            </ul>
-          </div>
-          <div className="footer-links">
-            <h3>Features</h3>
-            <ul>
-              <li><a href="#">AI Chatbot</a></li>
-              <li><a href="#">Lead Scoring</a></li>
-              <li><a href="#">Auto Follow-up</a></li>
-            </ul>
-          </div>
-          <div className="footer-links">
-            <h3>Support</h3>
-            <ul>
-              <li><a href="#">Documentation</a></li>
-              <li><a href="#">API Reference</a></li>
-              <li><a href="#">Contact</a></li>
-            </ul>
-          </div>
-        </div>
-        <div className="footer-bottom">
-          <div>&copy; {new Date().getFullYear()} AI Sales Agent. All rights reserved.</div>
-          <div>Powered by Advanced B2C AI Sales Agent</div>
-        </div>
-      </footer>
 
     </div>
   );
