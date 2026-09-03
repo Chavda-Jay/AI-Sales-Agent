@@ -446,6 +446,7 @@ export default function Dashboard() {
               <div style={{ ...styles.statVal, color: stat.color }}>{stat.val}</div>
             </div>
           ))}
+        </div>
 {/* Middle Row: Graph & Needs Attention */}
         <div className="dash-main-grid">
           
@@ -642,11 +643,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-      </div>
-
-      
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
 
       {showOrderModal && (
