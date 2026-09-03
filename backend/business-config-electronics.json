@@ -21,6 +21,46 @@
       "name": "boAt Bluetooth Earphones",
       "price": 1299,
       "note": "20 hours battery, sweatproof"
+    },
+    {
+      "name": "Apple MacBook Pro M3",
+      "price": 169900,
+      "note": "14-inch, 18GB RAM, 512GB SSD, Space Black"
+    },
+    {
+      "name": "Sony PlayStation 5",
+      "price": 54990,
+      "note": "Disc edition, includes 1 DualSense controller, 4K gaming"
+    },
+    {
+      "name": "Dyson Airwrap Styler",
+      "price": 45900,
+      "note": "Multi-styler for multiple hair types, includes premium case"
+    },
+    {
+      "name": "GoPro HERO12 Black",
+      "price": 40990,
+      "note": "5.3K HDR video, waterproof action camera"
+    },
+    {
+      "name": "Apple iPad Air",
+      "price": 59900,
+      "note": "M2 chip, 11-inch Liquid Retina display, WiFi"
+    },
+    {
+      "name": "Philips Air Fryer",
+      "price": 7999,
+      "note": "4.1 Liter, rapid air technology, digital touch"
+    },
+    {
+      "name": "Logitech MX Master 3S",
+      "price": 8995,
+      "note": "Wireless performance mouse, ergonomic design"
+    },
+    {
+      "name": "Amazon Echo Dot",
+      "price": 3499,
+      "note": "5th Gen smart speaker with Alexa, Deep Sea Blue"
     }
   ],
   "policies": "Free delivery above ₹999, 10-day replacement guarantee, EMI available on cards, installation support included on TV and fridge."

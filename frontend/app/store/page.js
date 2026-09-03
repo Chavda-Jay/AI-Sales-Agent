@@ -16,6 +16,14 @@ function iconFor(name) {
   else if (n.includes('t-shirt') || n.includes('tshirt') || n.includes('cotton shirt')) imgSrc = '/images/mens_tshirt.jpg';
   else if (n.includes('shirt')) imgSrc = '/images/formal_shirt.jpg';
   else if (n.includes('sneaker') || n.includes('shoe')) imgSrc = '/images/casual_sneakers.jpg';
+  else if (n.includes('macbook')) imgSrc = '/images/macbook_pro.jpg';
+  else if (n.includes('playstation') || n.includes('ps5')) imgSrc = '/images/playstation5.jpg';
+  else if (n.includes('dyson') || n.includes('airwrap')) imgSrc = '/images/dyson_airwrap.jpg';
+  else if (n.includes('gopro') || n.includes('hero')) imgSrc = '/images/gopro.jpg';
+  else if (n.includes('ipad')) imgSrc = '/images/ipad_air.jpg';
+  else if (n.includes('air fryer') || n.includes('fryer')) imgSrc = '/images/air_fryer.jpg';
+  else if (n.includes('logitech') || n.includes('mouse')) imgSrc = '/images/logitech_mouse.jpg';
+  else if (n.includes('echo') || n.includes('alexa')) imgSrc = '/images/echo_dot.jpg';
   else if (n.includes('tv') || n.includes('smart')) imgSrc = '/images/smart_tv.jpg';
   else if (n.includes('refrigerator')) imgSrc = '/images/refrigerator.jpg';
   else if (n.includes('mixer') || n.includes('grinder')) imgSrc = '/images/mixer.jpg';
