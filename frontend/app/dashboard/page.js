@@ -281,6 +281,12 @@ export default function Dashboard() {
     { id: 'electronics', name: 'Sharma Electronics', category: 'Tech Retailer', icon: '💻', agents: 9, sales: '$98,320', leads: 58 }
   ];
 
+  const total = customers.length;
+  const hotCount = customers.filter(c => c.segment === 'HOT').length;
+  const warmCount = customers.filter(c => c.segment === 'WARM').length;
+  const coldCount = customers.filter(c => c.segment === 'COLD').length;
+  const pendingHandoffs = handoffs.filter(h => h.status === 'pending');
+
   return (
     <div className="dash-page" style={{ display: 'flex', minHeight: '100vh' }}>
       
@@ -352,13 +358,6 @@ export default function Dashboard() {
                   <h1 className="dash-h1" style={{ marginBottom: '8px' }}>Connected Businesses</h1>
                   <p style={{ color: c.muted, margin: 0, fontSize: '15px' }}>Overview ({stores.length} Stores Active)</p>
                 </div>
-                <button 
-                  style={{ background: '#0ea5e9', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(14,165,233,0.3)', transition: 'transform 0.1s' }} 
-                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} 
-                  onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-                >
-                  <span style={{ fontSize: '16px' }}>+</span> Add New Store
-                </button>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px' }}>
