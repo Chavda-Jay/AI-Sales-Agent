@@ -307,8 +307,8 @@ export default function Dashboard() {
             <span>🏪</span> My Stores
           </div>
 
-          <div style={{ padding: '12px', color: selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: selectedShop ? 'pointer' : 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
-               onClick={() => { if(!selectedShop && stores.length > 0) setSelectedShop(stores[0].id) }}>
+          <div style={{ padding: '12px', color: selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
+               onClick={() => {}}>
             <span>🏠</span> Store Dashboard
           </div>
 
@@ -621,7 +621,7 @@ export default function Dashboard() {
                       <span style={styles.badge(segColor(cust.segment), segTextColor(cust.segment))}>{cust.segment}</span>
                     </div>
                     <div style={{ color: c.muted, fontSize: '13px' }}>
-                      Intent Score: <strong style={{ color: c.ivory, ...mono }}>{cust.intent_score || 0}/100</strong> ΓÇó 
+                      Intent Score: <strong style={{ color: c.ivory, ...mono }}>{cust.intent_score || 0}/100</strong> • 
                       Last active: {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
                         day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
                       }) : 'just now'}
