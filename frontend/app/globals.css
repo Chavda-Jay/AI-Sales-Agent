@@ -935,20 +935,32 @@ h2 {
   background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
 }
-.mk-btn-pink {
-  background: linear-gradient(135deg, #ec4899, #f43f5e);
-  box-shadow: 0 4px 15px rgba(236, 72, 153, 0.3);
-}
 .mk-chat-btn:hover {
   transform: scale(1.05);
 }
 
+.mk-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.mk-products-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
 @media (max-width: 1024px) {
-  .mk-grid { grid-template-columns: repeat(2, 1fr); }
+  .mk-grid-2 { grid-template-columns: repeat(2, 1fr); }
   .mk-header { max-width: 100%; margin-top: 0; border-radius: 0; border: none; border-bottom: 1px solid rgba(255,255,255,0.1); }
 }
 @media (max-width: 768px) {
-  .mk-grid { grid-template-columns: 1fr; }
+  .mk-grid, .mk-grid-2 { grid-template-columns: 1fr; }
   .mk-nav { display: none; }
   .mk-hero h1 { font-size: 32px; }
 }
