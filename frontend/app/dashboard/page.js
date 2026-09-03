@@ -348,7 +348,7 @@ export default function Dashboard() {
           </div>
         </nav>
 
-        <div className="dash-wrap" style={{ padding: '0 40px 100px', flex: 1, overflowY: 'auto' }}>
+        <div className="dash-wrap">
           
           {!selectedShop ? (
             /* Connected Businesses View */
@@ -360,7 +360,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+              <div className="dash-stores-grid">
                 {stores.map(s => (
                   <div key={s.id} onClick={() => setSelectedShop(s.id)} style={{
                     background: c.panel, border: `1px solid rgba(14,165,233,0.3)`, borderRadius: '16px', padding: '24px',

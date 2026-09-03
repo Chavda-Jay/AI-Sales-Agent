@@ -691,6 +691,8 @@ h2 {
   max-width: 1600px;
   margin: 0 auto;
   padding: 40px 40px 100px;
+  flex: 1;
+  overflow-y: auto;
 }
 .dash-stats-grid {
   display: grid;
@@ -710,6 +712,11 @@ h2 {
 .dash-main-grid > * {
   min-width: 0;
 }
+.dash-stores-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
 
 @media (max-width: 1024px) {
   .dash-stats-grid { grid-template-columns: repeat(2, 1fr); }
@@ -719,6 +726,7 @@ h2 {
   .dash-wrap { padding: 24px 16px 80px; }
   .dash-stats-grid { grid-template-columns: 1fr; gap: 16px; margin-bottom: 24px; }
   .dash-main-grid { grid-template-columns: 1fr; gap: 16px; margin-bottom: 24px; }
+  .dash-stores-grid { grid-template-columns: 1fr; gap: 16px; }
   .dash-navbar { padding: 16px; flex-wrap: wrap; gap: 16px; justify-content: center; text-align: center; }
   .dash-h1 { font-size: 24px; }
   .dash-tabs { gap: 16px !important; overflow-x: auto; white-space: nowrap; padding-bottom: 4px; }
