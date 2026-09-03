@@ -291,24 +291,26 @@ export default function Dashboard() {
 
       {/* Sidebar */}
       <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div style={{ ...styles.navBrand, padding: '0 24px', marginBottom: '40px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: '#0ea5e9' }}>▲</span> AGENTIC CRM
+        <div style={{ ...styles.navBrand, padding: '0 24px', marginBottom: '40px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '20px', fontWeight: '800' }}>
+          <span style={{ color: '#0ea5e9' }}>▲</span> AI SALES AGENT
         </div>
         
         <div style={{ padding: '0 12px' }}>
-          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', ...inter, display: 'flex', gap: '12px', cursor: 'pointer', borderRadius: '8px' }}
-               onClick={() => setSelectedShop(null)}>
-            <span>🏠</span> Dashboard
-          </div>
-          <div style={{ padding: '12px', color: c.ivory, fontSize: '14px', ...inter, display: 'flex', gap: '12px', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.2)', borderRadius: '8px', cursor: 'pointer', marginTop: '8px' }}
+          <div style={{ padding: '12px', color: !selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer' }}
                onClick={() => setSelectedShop(null)}>
             <span>🏪</span> My Stores
           </div>
-          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', ...inter, display: 'flex', gap: '12px', cursor: 'pointer', marginTop: '8px' }}>
-            <span>⚙️</span> AI Settings
+
+          <div style={{ padding: '12px', color: selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: selectedShop ? 'pointer' : 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
+               onClick={() => { if(!selectedShop && stores.length > 0) setSelectedShop(stores[0].id) }}>
+            <span>🏠</span> Store Dashboard
           </div>
-          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', ...inter, display: 'flex', gap: '12px', cursor: 'pointer', marginTop: '8px' }}>
-            <span>📊</span> Analytics
+
+          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: 'not-allowed', marginTop: '8px', opacity: 0.5 }}>
+            <span>⚙️</span> AI Settings <span style={{fontSize:'10px', background:'rgba(255,255,255,0.1)', padding:'2px 6px', borderRadius:'4px', marginLeft:'auto'}}>Soon</span>
+          </div>
+          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: 'not-allowed', marginTop: '8px', opacity: 0.5 }}>
+            <span>📊</span> Analytics <span style={{fontSize:'10px', background:'rgba(255,255,255,0.1)', padding:'2px 6px', borderRadius:'4px', marginLeft:'auto'}}>Soon</span>
           </div>
         </div>
       </aside>
@@ -345,17 +347,21 @@ export default function Dashboard() {
           {!selectedShop ? (
             /* Connected Businesses View */
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
                 <div>
                   <h1 className="dash-h1" style={{ marginBottom: '8px' }}>Connected Businesses</h1>
                   <p style={{ color: c.muted, margin: 0, fontSize: '15px' }}>Overview ({stores.length} Stores Active)</p>
                 </div>
-                <button style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 16px', borderRadius: '8px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  + Add New Store
+                <button 
+                  style={{ background: '#0ea5e9', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(14,165,233,0.3)', transition: 'transform 0.1s' }} 
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} 
+                  onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                >
+                  <span style={{ fontSize: '16px' }}>+</span> Add New Store
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px' }}>
                 {stores.map(s => (
                   <div key={s.id} onClick={() => setSelectedShop(s.id)} style={{
                     background: c.panel, border: `1px solid rgba(14,165,233,0.3)`, borderRadius: '16px', padding: '24px',
