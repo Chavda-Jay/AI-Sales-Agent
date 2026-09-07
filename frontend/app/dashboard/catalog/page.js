@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sora, Inter } from 'next/font/google';
 import toast, { Toaster } from 'react-hot-toast';
@@ -54,7 +54,7 @@ const styles = {
   input: { width: '100%', padding: '12px', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, borderRadius: '8px', marginTop: '8px', marginBottom: '16px' }
 };
 
-export default function CatalogManager() {
+function CatalogManagerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const shop = searchParams.get('shop');
@@ -294,5 +294,13 @@ export default function CatalogManager() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function CatalogManager() {
+  return (
+    <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: c.bg, color: c.ivory, fontFamily: 'Sora, sans-serif' }}>Loading...</div>}>
+      <CatalogManagerContent />
+    </Suspense>
   );
 }
