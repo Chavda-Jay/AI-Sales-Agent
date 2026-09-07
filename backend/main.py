@@ -48,18 +48,19 @@ async def abandoned_chat_worker():
         try:
             async with db_pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT id, ext_id, name, segment
-                    FROM customers
-                    WHERE segment IN ('WARM', 'HOT')
-                      AND last_interaction < NOW() - INTERVAL '90 seconds'
-                      AND (followed_up_at IS NULL OR followed_up_at < last_interaction)
+                    SELECT c.id, c.ext_id, c.name, c.segment, b.slug as shop_slug, c.business_id
+                    FROM customers c
+                    JOIN businesses b ON c.business_id = b.id
+                    WHERE c.segment IN ('WARM', 'HOT')
+                      AND c.last_interaction < NOW() - INTERVAL '90 seconds'
+                      AND (c.followed_up_at IS NULL OR c.followed_up_at < c.last_interaction)
                 """)
                 for row in rows:
                     customer_id = row['id']
                     ext_id = row['ext_id']
                     
                     try:
-                        config = load_config()
+                        config = await load_config_from_db(row['shop_slug'], conn)
                     except:
                         continue
                     
@@ -69,7 +70,10 @@ The customer was interested (segment: {row['segment']}) but went silent.
 Write a very short, natural follow-up message to re-engage them. 
 Return ONLY raw JSON: {{"reply": "your message"}}
 """
-                    messages = [{"role": "system", "content": system_prompt}]
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": "The customer has been inactive for a few minutes. Please generate a short follow-up message to re-engage them."}
+                    ]
                     
                     async with httpx.AsyncClient() as client:
                         try:
@@ -80,16 +84,27 @@ Return ONLY raw JSON: {{"reply": "your message"}}
                                 timeout=10.0
                             )
                             data = groq_response.json()
+                            if "error" in data:
+                                print(f"API Error for {ext_id}: {data['error']}")
+                                continue
                             raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                            if not raw:
+                                print(f"API returned empty response for {ext_id}")
+                                continue
                             raw = re.sub(r'^```json', '', raw)
                             raw = re.sub(r'^```', '', raw)
                             raw = re.sub(r'```$', '', raw).strip()
-                            parsed = json.loads(raw)
+                            try:
+                                parsed = json.loads(raw)
+                            except json.JSONDecodeError:
+                                print(f"Invalid JSON returned for {ext_id}: {raw}")
+                                continue
+                                
                             reply = parsed.get("reply", "Hi, are you still there? Let me know if you need help!")
                             
                             await conn.execute(
-                                "INSERT INTO conversations (customer_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5)",
-                                customer_id, None, reply, 0, row['segment']
+                                "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
+                                customer_id, row['business_id'], None, reply, 0, row['segment']
                             )
                             await conn.execute("UPDATE customers SET followed_up_at = NOW() WHERE id = $1", customer_id)
                             print(f"Sent proactive follow up to {ext_id}")
@@ -110,6 +125,9 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS ext_id TEXT UNIQUE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS followed_up_at TIMESTAMP;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS shop TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
+                await conn.execute("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
+                await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS handoffs (
                         id SERIAL PRIMARY KEY,
@@ -148,15 +166,24 @@ app = FastAPI(lifespan=lifespan)
 
 class LoginRequest(BaseModel):
     password: str
+    shop: Optional[str] = None
 
 @app.post("/api/admin/login")
-def admin_login(req: LoginRequest):
+async def admin_login(req: LoginRequest):
     if req.password == ADMIN_PASSWORD:
-        token = jwt.encode(
-            {"role": "admin", "exp": datetime.now(timezone.utc) + timedelta(days=7)},
-            SECRET_KEY,
-            algorithm="HS256"
-        )
+        payload = {"role": "admin", "exp": datetime.now(timezone.utc) + timedelta(days=7)}
+        
+        if req.shop and req.shop != "master" and db_pool:
+            try:
+                async with db_pool.acquire() as conn:
+                    business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", req.shop)
+                    if business_id:
+                        payload["business_id"] = business_id
+                        payload["shop"] = req.shop
+            except Exception as e:
+                print(f"Error fetching business_id for login: {e}")
+
+        token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
         return {"token": token}
     raise HTTPException(status_code=401, detail="Invalid password")
 
@@ -188,16 +215,27 @@ class HandoffRequest(BaseModel):
 
 conversations = {}
 
-def load_config(shop_name=None):
-    if shop_name:
-        specific_path = os.path.join(BASE_DIR, f"business-config-{shop_name}.json")
-        if os.path.exists(specific_path):
-            with open(specific_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+async def load_config_from_db(slug: str, conn):
+    business = await conn.fetchrow("""
+        SELECT id, brand_name, language, policies 
+        FROM businesses WHERE slug = $1
+    """, slug)
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+        
+    items = await conn.fetch("""
+        SELECT id, name, price, note, image_url 
+        FROM catalog_items WHERE business_id = $1
+        ORDER BY id ASC
+    """, business['id'])
     
-    config_path = os.path.join(BASE_DIR, "business-config.json")
-    with open(config_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return {
+        "business_id": business['id'],
+        "brandName": business['brand_name'],
+        "language": business['language'],
+        "policies": business['policies'],
+        "catalog": [dict(i) for i in items]
+    }
 
 def detect_language(text: str) -> str:
     if re.search(r'[\u0A80-\u0AFF]', text):
@@ -216,39 +254,35 @@ async def chat(req: ChatRequest):
     if not req.customerId or not req.message:
         raise HTTPException(status_code=400, detail="customerId and message are required")
 
-    config = load_config(req.shop)
-    catalog_items = []
-    for p in config.get("catalog", []):
-        text = f"{p['name']} - ₹{p['price']} - {p['note']}"
-        if "image_url" in p:
-            # We add a hidden instruction for the AI about the image url
-            text += f" (Image Link: {p['image_url']})"
-        catalog_items.append(text)
-    
-    catalog_text = "\n".join(catalog_items)
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    async with db_pool.acquire() as conn:
+        config = await load_config_from_db(req.shop, conn)
+        business_id = config['business_id']
+        
+        catalog_items = []
+        for p in config.get("catalog", []):
+            text = f"{p['name']} - ₹{p['price']} - {p['note']}"
+            if "image_url" in p and p["image_url"]:
+                text += f" (Image Link: {p['image_url']})"
+            catalog_items.append(text)
+        
+        catalog_text = "\n".join(catalog_items)
 
-    if req.customerId not in conversations:
-        conversations[req.customerId] = []
-    
-    # Check if AI is paused (pending handoff)
-    is_paused = False
-    if db_pool:
-        try:
-            async with db_pool.acquire() as conn:
-                c_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
-                if c_id:
-                    pending = await conn.fetchval("SELECT id FROM handoffs WHERE customer_id = $1 AND status = 'pending'", c_id)
-                    if pending:
-                        is_paused = True
-                        
-                        # Save the user's message to the database so the manager sees it
-                        await conn.execute(
-                            "INSERT INTO conversations (customer_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5)",
-                            c_id, req.message, None, 100, 'HOT'
-                        )
-        except:
-            pass
-
+        if req.customerId not in conversations:
+            conversations[req.customerId] = []
+        
+        is_paused = False
+        c_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
+        if c_id:
+            pending = await conn.fetchval("SELECT id FROM handoffs WHERE customer_id = $1 AND status = 'pending'", c_id)
+            if pending:
+                is_paused = True
+                await conn.execute(
+                    "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
+                    c_id, business_id, req.message, None, 100, 'HOT'
+                )
     history = conversations[req.customerId]
     
     if is_paused:
@@ -463,8 +497,8 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
 
                 if not customer_id:
                     customer_id = await conn.fetchval(
-                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score, shop) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop
+                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score, shop, business_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id
                     )
                 else:
                     await conn.execute(
@@ -476,6 +510,7 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                             name = COALESCE($4, name),
                             phone = COALESCE($5, phone),
                             shop = COALESCE($6, shop),
+                            business_id = COALESCE($7, business_id),
                             followed_up_at = NULL
                         WHERE id = $3
                         """,
@@ -484,18 +519,19 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                         customer_id,
                         c_name,
                         c_phone,
-                        req.shop
+                        req.shop,
+                        business_id
                     )
                 
                 await conn.execute(
-                    "INSERT INTO conversations (customer_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5)",
-                    customer_id, req.message, parsed.get("reply", ""), parsed.get("intent_score", 0), parsed.get("segment", "COLD")
+                    "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
+                    customer_id, business_id, req.message, parsed.get("reply", ""), parsed.get("intent_score", 0), parsed.get("segment", "COLD")
                 )
                 
                 if parsed.get("needs_human"):
                     await conn.execute(
-                        "INSERT INTO handoffs (customer_id, reason) VALUES ($1, $2)",
-                        customer_id, parsed.get("handoff_reason", "Customer requested human assistance")
+                        "INSERT INTO handoffs (customer_id, business_id, reason) VALUES ($1, $2, $3)",
+                        customer_id, business_id, parsed.get("handoff_reason", "Customer requested human assistance")
                     )
                 
                 if parsed.get("order_ready"):
@@ -504,11 +540,11 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                     prod_name = parsed.get("order_product")
                     prod_id = None
                     if prod_name:
-                        prod_id = await conn.fetchval("SELECT id FROM products WHERE name ILIKE $1 LIMIT 1", f"%{prod_name}%")
+                        prod_id = await conn.fetchval("SELECT id FROM catalog_items WHERE business_id = $1 AND name ILIKE $2 LIMIT 1", business_id, f"%{prod_name}%")
                     
                     await conn.execute(
-                        "INSERT INTO orders (customer_id, product_id, status, amount) VALUES ($1, $2, $3, $4)",
-                        customer_id, prod_id, 'confirmed', parsed.get("order_amount")
+                        "INSERT INTO orders (customer_id, business_id, product_id, status, amount) VALUES ($1, $2, $3, $4, $5)",
+                        customer_id, business_id, prod_id, 'confirmed', parsed.get("order_amount")
                     )
                     parsed["order_id"] = order_id
         except Exception as e:
@@ -517,11 +553,19 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
     return parsed
 
 @app.get("/api/config")
-def get_config(shop: str = None):
-    try:
-        return load_config(shop)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Could not load business config")
+async def get_config(shop: str = None):
+    if not shop:
+        raise HTTPException(status_code=400, detail="shop parameter is required")
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                return await load_config_from_db(shop, conn)
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            raise HTTPException(status_code=500, detail="Could not load business config")
+    raise HTTPException(status_code=500, detail="Database not configured")
 
 @app.get("/api/health")
 def health():
@@ -534,16 +578,18 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
             async with db_pool.acquire() as conn:
                 if shop:
                     rows = await conn.fetch("""
-                        SELECT id, ext_id, name, phone, segment, intent_score, last_interaction, shop
-                        FROM customers 
-                        WHERE shop = $1
-                        ORDER BY last_interaction DESC NULLS LAST
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop
+                        FROM customers c
+                        JOIN businesses b ON c.business_id = b.id
+                        WHERE b.slug = $1
+                        ORDER BY c.last_interaction DESC NULLS LAST
                     """, shop)
                 else:
                     rows = await conn.fetch("""
-                        SELECT id, ext_id, name, phone, segment, intent_score, last_interaction, shop
-                        FROM customers 
-                        ORDER BY last_interaction DESC NULLS LAST
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop
+                        FROM customers c
+                        LEFT JOIN businesses b ON c.business_id = b.id
+                        ORDER BY c.last_interaction DESC NULLS LAST
                     """)
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -559,7 +605,7 @@ async def get_customer_orders(customer_id: int):
                 rows = await conn.fetch("""
                     SELECT o.id, o.status, o.amount, o.created_at, p.name as product_name
                     FROM orders o
-                    LEFT JOIN products p ON o.product_id = p.id
+                    LEFT JOIN catalog_items p ON o.product_id = p.id
                     WHERE o.customer_id = $1
                     ORDER BY o.created_at DESC
                 """, customer_id)
@@ -742,17 +788,31 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                         SELECT COUNT(DISTINCT conv.customer_id) 
                         FROM conversations conv
                         JOIN customers cus ON conv.customer_id = cus.id
-                        WHERE cus.shop = $1
+                        JOIN businesses b ON cus.business_id = b.id
+                        WHERE b.slug = $1
                     """, shop)
-                    warm_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('WARM', 'HOT', 'CUSTOMER') AND shop = $1", shop)
-                    hot_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('HOT', 'CUSTOMER') AND shop = $1", shop)
+                    warm_or_above = await conn.fetchval("""
+                        SELECT COUNT(c.id) FROM customers c 
+                        JOIN businesses b ON c.business_id = b.id 
+                        WHERE c.segment IN ('WARM', 'HOT', 'CUSTOMER') AND b.slug = $1
+                    """, shop)
+                    hot_or_above = await conn.fetchval("""
+                        SELECT COUNT(c.id) FROM customers c 
+                        JOIN businesses b ON c.business_id = b.id 
+                        WHERE c.segment IN ('HOT', 'CUSTOMER') AND b.slug = $1
+                    """, shop)
                     orders_placed = await conn.fetchval("""
                         SELECT COUNT(o.id) 
                         FROM orders o
                         JOIN customers cus ON o.customer_id = cus.id
-                        WHERE o.status = 'confirmed' AND cus.shop = $1
+                        JOIN businesses b ON cus.business_id = b.id
+                        WHERE o.status = 'confirmed' AND b.slug = $1
                     """, shop)
-                    avg_intent_score_val = await conn.fetchval("SELECT AVG(intent_score) FROM customers WHERE shop = $1", shop)
+                    avg_intent_score_val = await conn.fetchval("""
+                        SELECT AVG(c.intent_score) FROM customers c
+                        JOIN businesses b ON c.business_id = b.id
+                        WHERE b.slug = $1
+                    """, shop)
                 else:
                     total_conversations = await conn.fetchval("SELECT COUNT(DISTINCT customer_id) FROM conversations")
                     warm_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('WARM', 'HOT', 'CUSTOMER')")
@@ -809,22 +869,25 @@ async def get_weekly_analytics(shop: Optional[str] = None, _ = Depends(verify_ad
                             SELECT DATE(conv.created_at) AS day, COUNT(DISTINCT conv.customer_id) AS cnt
                             FROM conversations conv
                             JOIN customers c ON conv.customer_id = c.id
-                            WHERE conv.created_at >= CURRENT_DATE - INTERVAL '6 days' AND c.shop = '{shop}'
+                            JOIN businesses b ON c.business_id = b.id
+                            WHERE conv.created_at >= CURRENT_DATE - INTERVAL '6 days' AND b.slug = '{shop}'
                             GROUP BY DATE(conv.created_at)
                         ) leads ON leads.day = d.day
                         LEFT JOIN (
                             SELECT DATE(c.last_interaction) AS day, COUNT(*) AS cnt
                             FROM customers c
+                            JOIN businesses b ON c.business_id = b.id
                             WHERE c.segment IN ('HOT', 'CUSTOMER')
-                              AND c.last_interaction >= CURRENT_DATE - INTERVAL '6 days' AND c.shop = '{shop}'
+                              AND c.last_interaction >= CURRENT_DATE - INTERVAL '6 days' AND b.slug = '{shop}'
                             GROUP BY DATE(c.last_interaction)
                         ) hot ON hot.day = d.day
                         LEFT JOIN (
                             SELECT DATE(o.created_at) AS day, COUNT(*) AS cnt
                             FROM orders o
                             JOIN customers c ON o.customer_id = c.id
+                            JOIN businesses b ON c.business_id = b.id
                             WHERE o.status = 'confirmed'
-                              AND o.created_at >= CURRENT_DATE - INTERVAL '6 days' AND c.shop = '{shop}'
+                              AND o.created_at >= CURRENT_DATE - INTERVAL '6 days' AND b.slug = '{shop}'
                             GROUP BY DATE(o.created_at)
                         ) ord ON ord.day = d.day
                         ORDER BY d.day
@@ -921,3 +984,171 @@ async def delete_customer(customer_id: int):
             print(f"Error deleting customer: {e}")
             raise HTTPException(status_code=500, detail="Database error")
     return {"status": "error", "message": "No DB connection"}
+
+class CatalogItem(BaseModel):
+    name: str
+    price: float
+    note: str = ""
+    image_url: Optional[str] = None
+
+class BusinessRequest(BaseModel):
+    slug: str
+    brand_name: str
+    language: str
+    policies: str
+    catalog: list[CatalogItem] = []
+
+@app.post("/api/businesses")
+async def create_business(req: BusinessRequest):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        async with db_pool.acquire() as conn:
+            business_id = await conn.fetchval("""
+                INSERT INTO businesses (slug, brand_name, language, policies)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id
+            """, req.slug, req.brand_name, req.language, req.policies)
+            
+            for item in req.catalog:
+                await conn.execute("""
+                    INSERT INTO catalog_items (business_id, name, price, note, image_url)
+                    VALUES ($1, $2, $3, $4, $5)
+                """, business_id, item.name, item.price, item.note, item.image_url)
+                
+            return {"status": "success", "business_id": business_id}
+    except asyncpg.UniqueViolationError:
+        raise HTTPException(status_code=400, detail="Business slug already exists")
+    except Exception as e:
+        print(f"Error creating business: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+@app.put("/api/businesses/{slug}/catalog")
+async def update_catalog(slug: str, items: list[CatalogItem], credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
+        admin_business_id = payload.get("business_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    try:
+        async with db_pool.acquire() as conn:
+            business = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", slug)
+            if not business:
+                raise HTTPException(status_code=404, detail="Business not found")
+                
+            business_id = business['id']
+            if admin_business_id != business_id:
+                raise HTTPException(status_code=403, detail="Not authorized to edit this business's catalog")
+                
+            async with conn.transaction():
+                await conn.execute("DELETE FROM catalog_items WHERE business_id = $1", business_id)
+                for item in items:
+                    await conn.execute("""
+                        INSERT INTO catalog_items (business_id, name, price, note, image_url)
+                        VALUES ($1, $2, $3, $4, $5)
+                    """, business_id, item.name, item.price, item.note, item.image_url)
+            return {"status": "success", "message": "Catalog updated"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error updating catalog: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+@app.post("/api/businesses/{slug}/catalog")
+async def add_catalog_item(slug: str, item: CatalogItem, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
+        admin_business_id = payload.get("business_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    try:
+        async with db_pool.acquire() as conn:
+            business = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", slug)
+            if not business:
+                raise HTTPException(status_code=404, detail="Business not found")
+                
+            business_id = business['id']
+            if admin_business_id != business_id:
+                raise HTTPException(status_code=403, detail="Not authorized to edit this business's catalog")
+                
+            item_id = await conn.fetchval("""
+                INSERT INTO catalog_items (business_id, name, price, note, image_url)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+            """, business_id, item.name, item.price, item.note, item.image_url)
+            return {"status": "success", "id": item_id}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error adding catalog item: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+@app.put("/api/businesses/{slug}/catalog/{item_id}")
+async def edit_catalog_item(slug: str, item_id: int, item: CatalogItem, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
+        admin_business_id = payload.get("business_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    try:
+        async with db_pool.acquire() as conn:
+            business = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", slug)
+            if not business:
+                raise HTTPException(status_code=404, detail="Business not found")
+                
+            business_id = business['id']
+            if admin_business_id != business_id:
+                raise HTTPException(status_code=403, detail="Not authorized to edit this business's catalog")
+                
+            await conn.execute("""
+                UPDATE catalog_items
+                SET name = $1, price = $2, note = $3, image_url = $4
+                WHERE id = $5 AND business_id = $6
+            """, item.name, item.price, item.note, item.image_url, item_id, business_id)
+            return {"status": "success"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error editing catalog item: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+@app.delete("/api/businesses/{slug}/catalog/{item_id}")
+async def delete_catalog_item(slug: str, item_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
+        admin_business_id = payload.get("business_id")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    try:
+        async with db_pool.acquire() as conn:
+            business = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", slug)
+            if not business:
+                raise HTTPException(status_code=404, detail="Business not found")
+                
+            business_id = business['id']
+            if admin_business_id != business_id:
+                raise HTTPException(status_code=403, detail="Not authorized to edit this business's catalog")
+                
+            await conn.execute("DELETE FROM catalog_items WHERE id = $1 AND business_id = $2", item_id, business_id)
+            return {"status": "success"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error deleting catalog item: {e}")
+        raise HTTPException(status_code=500, detail="Database error")

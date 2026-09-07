@@ -13,6 +13,7 @@ const API_BASE = rawApi.replace(/\/+$/, '');
 
 export default function AdminLogin() {
   const [password, setPassword] = useState('');
+  const [shop, setShop] = useState('master');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -23,16 +24,16 @@ export default function AdminLogin() {
       return;
     }
     setLoading(true);
-    
+
     try {
       const res = await fetch(`${API_BASE}/api/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password, shop })
       });
-      
+
       const data = await res.json();
-      
+
       if (res.ok && data.token) {
         sessionStorage.setItem("admin_token", data.token);
         toast.success("Login successful!");
@@ -58,31 +59,43 @@ export default function AdminLogin() {
             <span style={{ color: '#0ea5e9' }}>AI</span> SALES AGENT
           </div>
           <h1 className="login-title">Admin Access</h1>
-          <p className="login-subtitle">Enter your master passcode to access the dashboard.</p>
+          <p className="login-subtitle">Select your store and enter the master passcode.</p>
         </div>
-        
+
         <form onSubmit={handleLogin} className="login-form">
           <div className="input-group">
-            <input 
-              type="password" 
-              placeholder="Enter Passcode..." 
+            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Select Store</label>
+            <select
+              value={shop}
+              onChange={(e) => setShop(e.target.value)}
+              className="login-select"
+              style={{ marginBottom: '20px' }}
+            >
+              <option value="master">All Stores (Super Admin)</option>
+              <option value="urban-threads">Urban Threads</option>
+              <option value="sharma-electronics">Sharma Electronics</option>
+            </select>
+            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Master Passcode</label>
+            <input
+              type="password"
+              placeholder="Enter Passcode..."
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="login-input"
               autoFocus
             />
           </div>
-          
+
           <button type="submit" disabled={loading} className="login-button">
             {loading ? 'Verifying...' : 'Access Dashboard'}
           </button>
         </form>
-        
+
         <div className="login-footer">
           <p>Secure Area • Unauthorized access prohibited</p>
         </div>
       </div>
-      
+
       <style jsx>{`
         .login-page {
           min-height: 100vh;
@@ -145,6 +158,32 @@ export default function AdminLogin() {
           flex-direction: column;
           gap: 24px;
         }
+
+        .login-select {
+          width: 100%;
+          background: rgba(15, 17, 21, 0.8) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 16px center;
+          background-size: 18px;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 12px;
+          padding: 16px 48px 16px 20px;
+          font-size: 15px;
+          color: #ffffff;
+          outline: none;
+          transition: all 0.2s ease;
+          appearance: none;
+          cursor: pointer;
+        }
+
+        .login-select:focus {
+          border-color: #0ea5e9;
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+        }
+
+        .login-select option {
+          background-color: #1e2128;
+          color: #ffffff;
+          padding: 12px;
+        }
         
         .login-input {
           width: 100%;
@@ -198,7 +237,7 @@ export default function AdminLogin() {
           margin-top: 32px;
           text-align: center;
           font-size: 12px;
-          color: #475569;
+          color: #64748b;
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
@@ -207,6 +246,10 @@ export default function AdminLogin() {
           .login-container {
             padding: 32px 24px;
             border-radius: 20px;
+          }
+          
+          .login-title {
+            font-size: 24px;
           }
         }
       `}</style>

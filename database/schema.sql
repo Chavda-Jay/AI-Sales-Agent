@@ -1,8 +1,27 @@
 -- Run this in Supabase (SQL Editor) or any PostgreSQL database
 -- This creates the minimum tables described in Section 7 of the blueprint
 
+CREATE TABLE businesses (
+  id SERIAL PRIMARY KEY,
+  slug TEXT UNIQUE NOT NULL,
+  brand_name TEXT NOT NULL,
+  language TEXT DEFAULT 'English + Hindi mix (Hinglish)',
+  policies TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE catalog_items (
+  id SERIAL PRIMARY KEY,
+  business_id INT REFERENCES businesses(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  price NUMERIC NOT NULL,
+  note TEXT,
+  image_url TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
 CREATE TABLE customers (
   id SERIAL PRIMARY KEY,
+  business_id INT REFERENCES businesses(id),
   name TEXT,
   phone TEXT,
   city TEXT,
@@ -25,6 +44,7 @@ CREATE TABLE products (
 
 CREATE TABLE orders (
   id SERIAL PRIMARY KEY,
+  business_id INT REFERENCES businesses(id),
   customer_id INT REFERENCES customers(id),
   product_id INT REFERENCES products(id),
   status TEXT DEFAULT 'pending',    -- pending / confirmed / delivered / returned
@@ -34,6 +54,7 @@ CREATE TABLE orders (
 
 CREATE TABLE conversations (
   id SERIAL PRIMARY KEY,
+  business_id INT REFERENCES businesses(id),
   customer_id INT REFERENCES customers(id),
   message TEXT,
   reply TEXT,
@@ -42,9 +63,4 @@ CREATE TABLE conversations (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Sample data for the clothing store example
-INSERT INTO products (name, price, description, stock) VALUES
-('Men''s Cotton T-Shirt', 599, 'Soft everyday wear, 5 colors', 100),
-('Slim Fit Jeans', 1299, 'Stretch denim, all sizes', 60),
-('Casual Sneakers', 1999, 'Lightweight, all-day comfort', 40),
-('Formal Shirt', 899, 'Office wear, wrinkle-free', 80);
+-- We no longer use products table or sample data here. Using catalog_items and python script instead.

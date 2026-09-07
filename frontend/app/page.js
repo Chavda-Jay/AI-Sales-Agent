@@ -26,7 +26,7 @@ export default function MarketplaceHome() {
         <section className="mk-grid mk-grid-2" id="stores">
           
           {/* Card 1: Urban Threads Clothing */}
-          <Link href="/store?shop=clothing" className="mk-card mk-glow-purple" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Link href="/store?shop=urban-threads" className="mk-card mk-glow-purple" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="mk-card-top">
               <h2>Urban Threads</h2>
               <span className="mk-badge">Clothing</span>
@@ -58,7 +58,7 @@ export default function MarketplaceHome() {
           </Link>
 
           {/* Card 2: Sharma Electronics */}
-          <Link href="/store?shop=electronics" className="mk-card mk-glow-blue" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Link href="/store?shop=sharma-electronics" className="mk-card mk-glow-blue" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="mk-card-top">
               <h2>Sharma Electronics</h2>
               <span className="mk-badge">Electronics</span>

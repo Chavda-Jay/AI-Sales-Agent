@@ -292,7 +292,7 @@ export default function Home() {
       </div>
 
       <div className="store-grid">
-        {config?.catalog.map((p, i) => (
+        {config?.catalog?.map((p, i) => (
           <div className="store-product" key={i}>
             <div className="store-product-img">
               {iconFor(p.name)}

@@ -313,8 +313,8 @@ export default function Dashboard() {
   }, [selectedShop]);
     
   const stores = [
-    { id: 'clothing', name: 'Urban Threads', category: 'E-commerce Shop', icon: '👕', agents: 12, sales: '$142,500', leads: 85 },
-    { id: 'electronics', name: 'Sharma Electronics', category: 'Tech Retailer', icon: '💻', agents: 9, sales: '$98,320', leads: 58 }
+    { id: 'urban-threads', name: 'Urban Threads', category: 'E-commerce Shop', icon: '👕', agents: 12, sales: '$142,500', leads: 85 },
+    { id: 'sharma-electronics', name: 'Sharma Electronics', category: 'Tech Retailer', icon: '💻', agents: 9, sales: '$98,320', leads: 58 }
   ];
 
   const total = customers.length;
@@ -346,6 +346,14 @@ export default function Dashboard() {
           <div style={{ padding: '12px', color: selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
                onClick={() => {}}>
             <span>🏠</span> Store Dashboard
+          </div>
+
+          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s' }}
+               onClick={() => { if(selectedShop) window.location.href = `/dashboard/catalog?shop=${selectedShop}`; }}
+               onMouseEnter={e => { if(selectedShop) e.currentTarget.style.color = '#fff'; }}
+               onMouseLeave={e => { if(selectedShop) e.currentTarget.style.color = c.muted; }}
+               >
+            <span>🏷️</span> Manage Catalog
           </div>
 
           <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: 'not-allowed', marginTop: '8px', opacity: 0.5 }}>
