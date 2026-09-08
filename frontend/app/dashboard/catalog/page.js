@@ -63,6 +63,31 @@ function CatalogManagerContent() {
   const [loading, setLoading] = useState(true);
   const [modalMode, setModalMode] = useState(null); // 'add' | 'edit' | 'delete' | null
   const [currentItem, setCurrentItem] = useState({ name: '', price: '', note: '', image_url: '' });
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const toastId = toast.loading("Uploading image...");
+    try {
+      const res = await fetch(`${API_BASE}/api/upload`, {
+        method: "POST",
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        setCurrentItem({ ...currentItem, image_url: API_BASE + data.url });
+        toast.success("Image uploaded", { id: toastId });
+      } else {
+        toast.error(data.detail || "Upload failed", { id: toastId });
+      }
+    } catch (err) {
+      toast.error("Network error during upload", { id: toastId });
+    }
+  };
   const [itemToDelete, setItemToDelete] = useState(null);
 
   useEffect(() => {
@@ -241,8 +266,14 @@ function CatalogManagerContent() {
               <label style={{ fontSize: '12px', fontWeight: 600, color: c.muted, textTransform: 'uppercase' }}>Note (Optional)</label>
               <input type="text" value={currentItem.note} onChange={e => setCurrentItem({ ...currentItem, note: e.target.value })} style={styles.input} placeholder="e.g. Available in S, M, L" />
 
-              <label style={{ fontSize: '12px', fontWeight: 600, color: c.muted, textTransform: 'uppercase' }}>Image URL (Optional)</label>
-              <input type="text" value={currentItem.image_url} onChange={e => setCurrentItem({ ...currentItem, image_url: e.target.value })} style={styles.input} placeholder="https://..." />
+              <div className="img-upload-row">
+                <label style={{ fontSize: '12px', fontWeight: 600, color: c.muted, textTransform: 'uppercase' }}>Image URL / Upload (Optional)</label>
+                <label style={{ fontSize: '12px', color: '#0ea5e9', cursor: 'pointer', fontWeight: 600 }}>
+                  Upload Photo
+                  <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+                </label>
+              </div>
+              <input type="text" value={currentItem.image_url} onChange={e => setCurrentItem({ ...currentItem, image_url: e.target.value })} style={styles.input} placeholder="https://... or upload photo" />
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
                 <button onClick={() => setModalMode(null)} style={{ background: 'transparent', color: c.ivory, border: 'none', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
@@ -291,6 +322,17 @@ function CatalogManagerContent() {
             width: 100%;
             padding: 8px !important;
           }
+          .img-upload-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+          }
+        }
+        
+        .img-upload-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
         }
       `}</style>
     </div>

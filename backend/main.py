@@ -1,7 +1,11 @@
 import os
 import json
 import re
-from fastapi import FastAPI, HTTPException, Depends
+import logging
+import uuid
+import shutil
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -14,6 +18,16 @@ import asyncio
 # pyrefly: ignore [missing-import]
 import jwt
 from datetime import datetime, timedelta, timezone
+# pyrefly: ignore [missing-import]
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(BASE_DIR, ".env")
@@ -137,6 +151,15 @@ async def lifespan(app: FastAPI):
                         created_at TIMESTAMP DEFAULT NOW()
                     )
                 """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS admin_users (
+                        id SERIAL PRIMARY KEY,
+                        business_id INT REFERENCES businesses(id) ON DELETE CASCADE,
+                        email TEXT UNIQUE NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """)
                 rows = await conn.fetch("""
                     SELECT c.ext_id, conv.message, conv.reply 
                     FROM conversations conv
@@ -164,16 +187,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+import os
+if not os.path.exists("uploads"):
+    os.makedirs("uploads")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 class LoginRequest(BaseModel):
     password: str
     shop: Optional[str] = None
+    email: Optional[str] = None
 
 @app.post("/api/admin/login")
 async def admin_login(req: LoginRequest):
-    if req.password == ADMIN_PASSWORD:
+    # Check if global admin
+    if req.password == ADMIN_PASSWORD and req.shop:
         payload = {"role": "admin", "exp": datetime.now(timezone.utc) + timedelta(days=7)}
         
-        if req.shop and req.shop != "master" and db_pool:
+        if req.shop != "master" and db_pool:
             try:
                 async with db_pool.acquire() as conn:
                     business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", req.shop)
@@ -185,7 +215,115 @@ async def admin_login(req: LoginRequest):
 
         token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
         return {"token": token}
-    raise HTTPException(status_code=401, detail="Invalid password")
+        
+    # Check against admin_users table
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                user = None
+                if req.email:
+                    user = await conn.fetchrow("""
+                        SELECT u.id, u.business_id, u.password_hash, b.slug 
+                        FROM admin_users u
+                        JOIN businesses b ON u.business_id = b.id
+                        WHERE u.email = $1
+                    """, req.email)
+                elif req.shop and req.shop != "master":
+                    user = await conn.fetchrow("""
+                        SELECT u.id, u.business_id, u.password_hash, b.slug 
+                        FROM admin_users u
+                        JOIN businesses b ON u.business_id = b.id
+                        WHERE b.slug = $1
+                    """, req.shop)
+                    
+                if user and verify_password(req.password, user['password_hash']):
+                    payload = {
+                        "role": "admin", 
+                        "business_id": user['business_id'],
+                        "shop": user['slug'],
+                        "exp": datetime.now(timezone.utc) + timedelta(days=7)
+                    }
+                    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+                    return {"token": token}
+        except Exception as e:
+            print(f"Error checking user credentials: {e}")
+            
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+class SignupRequest(BaseModel):
+    business_name: str
+    slug: Optional[str] = None
+    owner_email: str
+    password: str
+    language: str
+    policies: str
+    catalog_items: list[dict]
+
+@app.post("/api/signup")
+async def signup(req: SignupRequest):
+    if not req.business_name or not req.owner_email:
+        raise HTTPException(status_code=400, detail="Business name and owner email are required")
+    if len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not req.catalog_items or len(req.catalog_items) == 0:
+        raise HTTPException(status_code=400, detail="At least 1 product is required")
+        
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", req.owner_email):
+        raise HTTPException(status_code=400, detail="Invalid email format")
+        
+    slug = req.slug or re.sub(r'[^a-z0-9]+', '-', req.business_name.lower()).strip('-')
+    if not slug:
+        raise HTTPException(status_code=400, detail="Invalid business name")
+    
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    try:
+        async with db_pool.acquire() as conn:
+            existing_slug = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", slug)
+            if existing_slug:
+                raise HTTPException(status_code=400, detail="This name is taken")
+                
+            existing_email = await conn.fetchval("SELECT id FROM admin_users WHERE email = $1", req.owner_email)
+            if existing_email:
+                raise HTTPException(status_code=400, detail="An account with this email already exists")
+                
+            hashed_pw = get_password_hash(req.password)
+            
+            async with conn.transaction():
+                business_id = await conn.fetchval("""
+                    INSERT INTO businesses (slug, brand_name, language, policies)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id
+                """, slug, req.business_name, req.language, req.policies)
+                
+                await conn.execute("""
+                    INSERT INTO admin_users (business_id, email, password_hash)
+                    VALUES ($1, $2, $3)
+                """, business_id, req.owner_email, hashed_pw)
+                
+                for item in req.catalog_items:
+                    await conn.execute("""
+                        INSERT INTO catalog_items (business_id, name, price, note, image_url)
+                        VALUES ($1, $2, $3, $4, $5)
+                    """, business_id, item.get('name'), float(item.get('price', 0)), item.get('note', ''), item.get('image_url'))
+            
+            payload = {
+                "role": "admin", 
+                "business_id": business_id,
+                "shop": slug,
+                "exp": datetime.now(timezone.utc) + timedelta(days=7)
+            }
+            token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+            return {"token": token, "shop": slug}
+            
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"Signup error: {e}\n{tb}")
+        raise HTTPException(status_code=500, detail=f"Failed to create account: {str(e)}")
 
 from fastapi.responses import JSONResponse
 import traceback
@@ -1152,3 +1290,33 @@ async def delete_catalog_item(slug: str, item_id: int, credentials: HTTPAuthoriz
     except Exception as e:
         print(f"Error deleting catalog item: {e}")
         raise HTTPException(status_code=500, detail="Database error")
+
+@app.get("/api/public/businesses")
+async def get_public_businesses():
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT 
+                b.slug, b.brand_name, b.language,
+                (SELECT count(*) FROM catalog_items WHERE business_id = b.id) as product_count,
+                (SELECT min(price) FROM catalog_items WHERE business_id = b.id) as min_price,
+                (SELECT max(price) FROM catalog_items WHERE business_id = b.id) as max_price
+            FROM businesses b
+            ORDER BY b.created_at ASC
+        """)
+        
+        stores = []
+        for idx, r in enumerate(rows):
+            stores.append({
+                "slug": r["slug"],
+                "name": r["brand_name"],
+                "language": r["language"],
+                "product_count": r["product_count"] or 0,
+                "min_price": float(r['min_price'] or 0),
+                "max_price": float(r['max_price'] or 0),
+                "idx": idx
+            })
+            
+        return stores

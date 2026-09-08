@@ -19,6 +19,14 @@ CREATE TABLE catalog_items (
   image_url TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE admin_users (
+  id SERIAL PRIMARY KEY,
+  business_id INT REFERENCES businesses(id) ON DELETE CASCADE,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
 CREATE TABLE customers (
   id SERIAL PRIMARY KEY,
   business_id INT REFERENCES businesses(id),

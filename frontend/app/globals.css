@@ -999,8 +999,20 @@ h2 {
   .mk-grid-2 { grid-template-columns: repeat(2, 1fr); }
   .mk-header { max-width: 100%; margin-top: 0; border-radius: 0; border: none; border-bottom: 1px solid rgba(255,255,255,0.1); }
 }
+
+.mk-cta-section {
+  margin-top: 80px; text-align: center; padding: 60px 24px; background: rgba(99, 102, 241, 0.05); border-radius: 24px; border: 1px solid rgba(99, 102, 241, 0.1);
+}
+.mk-cta-section h2 { font-size: 32px; margin-bottom: 16px; font-family: var(--font-heading); }
+.mk-cta-section p { color: #9ca3af; max-width: 600px; margin: 0 auto 32px; font-size: 18px; line-height: 1.6; }
+
 @media (max-width: 768px) {
   .mk-grid, .mk-grid-2 { grid-template-columns: 1fr; }
-  .mk-nav { display: none; }
+  .mk-nav { flex-wrap: wrap; justify-content: center; gap: 16px; margin-top: 16px; display: flex; }
+  .mk-header { flex-direction: column; padding: 20px 16px; }
   .mk-hero h1 { font-size: 32px; }
+  .mk-cta-section { padding: 40px 16px; margin-top: 40px; }
+  .mk-cta-section h2 { font-size: 26px; }
+  .mk-cta-section p { font-size: 15px; }
+  .mk-get-started { padding: 8px 16px; font-size: 14px; }
 }

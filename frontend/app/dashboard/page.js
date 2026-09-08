@@ -160,6 +160,8 @@ const styles = {
 export default function Dashboard() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const token = sessionStorage.getItem('admin_token');
@@ -167,6 +169,14 @@ export default function Dashboard() {
         window.location.href = '/dashboard/login';
       } else {
         setIsAuthChecking(false);
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          if (payload.shop && payload.shop !== 'master') {
+            setSelectedShop(payload.shop);
+          } else {
+            setIsSuperAdmin(true);
+          }
+        } catch(e) {}
       }
     }
   }, []);
@@ -202,6 +212,7 @@ export default function Dashboard() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [replyTexts, setReplyTexts] = useState({});
   const [weeklyData, setWeeklyData] = useState([]);
+  const [stores, setStores] = useState([]);
   const [selectedConvo, setSelectedConvo] = useState(null);
   const [selectedCustName, setSelectedCustName] = useState('');
   const [showConvoModal, setShowConvoModal] = useState(false);
@@ -262,6 +273,14 @@ export default function Dashboard() {
     if (!isPolling) setLoading(true);
     try {
       const qs = shopId ? `?shop=${shopId}` : '';
+      
+      if (isSuperAdmin && !shopId) {
+        const storesRes = await authFetch(`${API_BASE}/api/businesses`);
+        if (storesRes.ok) {
+           setStores(await storesRes.json());
+        }
+      }
+
       const res = await authFetch(`${CUSTOMERS_URL}${qs}`);
       if (res.ok) {
         const data = await res.json();
@@ -310,12 +329,9 @@ export default function Dashboard() {
   
 
   return () => clearInterval(intervalId);
-  }, [selectedShop]);
+  }, [selectedShop, isSuperAdmin]);
     
-  const stores = [
-    { id: 'urban-threads', name: 'Urban Threads', category: 'E-commerce Shop', icon: '👕', agents: 12, sales: '$142,500', leads: 85 },
-    { id: 'sharma-electronics', name: 'Sharma Electronics', category: 'Tech Retailer', icon: '💻', agents: 9, sales: '$98,320', leads: 58 }
-  ];
+    
 
   const total = customers.length;
   const hotCount = customers.filter(c => c.segment === 'HOT').length;
@@ -338,10 +354,12 @@ export default function Dashboard() {
         </div>
         
         <div style={{ padding: '0 12px' }}>
-          <div style={{ padding: '12px', color: !selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer' }}
-               onClick={() => setSelectedShop(null)}>
-            <span>🏪</span> My Stores
-          </div>
+          {isSuperAdmin && (
+            <div style={{ padding: '12px', color: !selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer' }}
+                 onClick={() => setSelectedShop(null)}>
+              <span>🏪</span> My Stores
+            </div>
+          )}
 
           <div style={{ padding: '12px', color: selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
                onClick={() => {}}>
@@ -415,7 +433,7 @@ export default function Dashboard() {
 
         <div className="dash-wrap">
           
-          {!selectedShop ? (
+          {!selectedShop && isSuperAdmin ? (
             /* Connected Businesses View */
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
@@ -489,23 +507,25 @@ export default function Dashboard() {
           ) : (
             /* Store Detail View */
             <div>
-              <button 
-                onClick={() => setSelectedShop(null)}
-                style={{ 
-                  background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.3)', color: '#0ea5e9', 
-                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', 
-                  marginBottom: '32px', fontWeight: 600, padding: '8px 16px', borderRadius: '8px',
-                  transition: 'all 0.2s', fontSize: '14px'
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(14,165,233,0.2)'; e.currentTarget.style.transform = 'translateX(-2px)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(14,165,233,0.1)'; e.currentTarget.style.transform = 'translateX(0)'; }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-                Back to Stores
-              </button>
+              {isSuperAdmin && (
+                <button 
+                  onClick={() => setSelectedShop(null)}
+                  style={{ 
+                    background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.3)', color: '#0ea5e9', 
+                    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', 
+                    marginBottom: '32px', fontWeight: 600, padding: '8px 16px', borderRadius: '8px',
+                    transition: 'all 0.2s', fontSize: '14px'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(14,165,233,0.2)'; e.currentTarget.style.transform = 'translateX(-2px)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(14,165,233,0.1)'; e.currentTarget.style.transform = 'translateX(0)'; }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                  Back to Stores
+                </button>
+              )}
               
               {/* Header Title */}
-              <div style={styles.eyebrow}>AI CRM • {stores.find(s => s.id === selectedShop)?.name}</div>
+              <div style={styles.eyebrow}>AI CRM • {selectedShop}</div>
               <div style={styles.titleRow}>
                 <h1 className="dash-h1">Customer Overview</h1>
               </div>

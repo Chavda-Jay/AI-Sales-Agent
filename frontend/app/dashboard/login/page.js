@@ -13,23 +13,34 @@ const API_BASE = rawApi.replace(/\/+$/, '');
 
 export default function AdminLogin() {
   const [password, setPassword] = useState('');
-  const [shop, setShop] = useState('master');
+  const [shop, setShop] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (!shop) {
+      toast.error("Please enter your email");
+      return;
+    }
     if (!password) {
-      toast.error("Please enter the admin password");
+      toast.error("Please enter the password");
       return;
     }
     setLoading(true);
+
+    const isEmail = shop.includes('@');
+    const payload = {
+      password,
+      shop: isEmail ? undefined : (shop || 'master'),
+      email: isEmail ? shop : undefined
+    };
 
     try {
       const res = await fetch(`${API_BASE}/api/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, shop })
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json();
@@ -58,27 +69,25 @@ export default function AdminLogin() {
           <div className="login-brand" style={sora.style}>
             <span style={{ color: '#0ea5e9' }}>AI</span> SALES AGENT
           </div>
-          <h1 className="login-title">Admin Access</h1>
-          <p className="login-subtitle">Select your store and enter the master passcode.</p>
+          <h1 className="login-title">Welcome Back</h1>
+          <p className="login-subtitle">Enter your email and password to access your dashboard.</p>
         </div>
 
         <form onSubmit={handleLogin} className="login-form">
           <div className="input-group">
-            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Select Store</label>
-            <select
+            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Email Address</label>
+            <input
+              type="text"
+              placeholder="name@company.com"
               value={shop}
               onChange={(e) => setShop(e.target.value)}
-              className="login-select"
-              style={{ marginBottom: '20px' }}
-            >
-              <option value="master">All Stores (Super Admin)</option>
-              <option value="urban-threads">Urban Threads</option>
-              <option value="sharma-electronics">Sharma Electronics</option>
-            </select>
-            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Master Passcode</label>
+              className="login-input"
+              style={{ marginBottom: '20px', textAlign: 'left', letterSpacing: 'normal' }}
+            />
+            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Password</label>
             <input
               type="password"
-              placeholder="Enter Passcode..."
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="login-input"
@@ -87,12 +96,15 @@ export default function AdminLogin() {
           </div>
 
           <button type="submit" disabled={loading} className="login-button">
-            {loading ? 'Verifying...' : 'Access Dashboard'}
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 
         <div className="login-footer">
           <p>Secure Area • Unauthorized access prohibited</p>
+          <p style={{ marginTop: '16px' }}>
+            New business? <a href="/signup" style={{ color: '#0ea5e9', textDecoration: 'none', fontWeight: 600 }}>Sign up here</a>
+          </p>
         </div>
       </div>
 
