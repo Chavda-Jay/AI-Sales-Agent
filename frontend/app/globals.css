@@ -1,4 +1,8 @@
 :root {
+  --shadow-lg: 0 24px 64px rgba(0,0,0,0.4);
+  --shadow-sm: 0 4px 12px rgba(0,0,0,0.1);
+  --btn-shadow: 0 4px 12px rgba(14, 165, 233, 0.2);
+  --progress-line: rgba(248, 250, 252, 0.1);
   --bg: #000000;
   --panel: #0A0A0A;
   --panel2: #141414;
@@ -21,6 +25,10 @@
 }
 
 body.light-theme {
+  --shadow-lg: 0 24px 64px rgba(0,0,0,0.08);
+  --shadow-sm: 0 4px 12px rgba(0,0,0,0.05);
+  --btn-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+  --progress-line: rgba(0, 0, 0, 0.1);
   --bg: #f9fafb;
   --panel: #ffffff;
   --panel2: #f3f4f6;

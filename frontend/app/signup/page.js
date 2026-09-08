@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sora, Inter, JetBrains_Mono } from 'next/font/google';
 import toast, { Toaster } from 'react-hot-toast';
@@ -17,6 +17,21 @@ export default function Signup() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [theme, setTheme] = useState('dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('app-theme') || 'dark';
+    setTheme(savedTheme);
+  }, []);
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.body.classList.add('light-theme');
+    } else {
+      document.body.classList.remove('light-theme');
+    }
+    localStorage.setItem('app-theme', theme);
+  }, [theme]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -159,13 +174,20 @@ export default function Signup() {
   };
 
   return (
-    <div className={`signup-page ${inter.className}`}>
+    <div className={`signup-page ${inter.className}`} style={{ position: 'relative' }}>
+      <button 
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        className="theme-toggle-btn"
+        title="Toggle Theme"
+      >
+        {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+      </button>
       <Toaster position="top-right" />
       <div className="signup-container">
         
         <div className="signup-header">
           <div className="signup-brand" style={sora.style}>
-            <span style={{ color: '#0ea5e9' }}>AI</span> SALES AGENT
+            <span style={{ color: 'var(--primary)' }}>AI</span> SALES AGENT
           </div>
           <h1 className="signup-title" style={sora.style}>Create your Store</h1>
           <p className="signup-subtitle">Join us and set up your AI sales assistant.</p>
@@ -313,7 +335,7 @@ export default function Signup() {
                     <div className="input-group" style={{ marginTop: '12px' }}>
                       <div className="img-upload-row">
                         <label className={jetbrains.className}>Image URL / Upload (Optional)</label>
-                        <label style={{ fontSize: '12px', color: '#0ea5e9', cursor: 'pointer', fontWeight: 600 }}>
+                        <label style={{ fontSize: '12px', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}>
                           Upload Photo
                           <input type="file" accept="image/*" onChange={(e) => handleImageUpload(index, e)} style={{ display: 'none' }} />
                         </label>
@@ -358,27 +380,52 @@ export default function Signup() {
       </div>
 
       <style jsx>{`
+        .theme-toggle-btn {
+          position: absolute;
+          top: 24px;
+          right: 24px;
+          background: var(--panel2);
+          border: 1px solid var(--line);
+          color: var(--ivory);
+          cursor: pointer;
+          font-size: 13px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 16px;
+          border-radius: 24px;
+          font-weight: bold;
+          font-family: var(--font-heading);
+          box-shadow: var(--shadow-sm);
+          transition: all 0.3s ease;
+          z-index: 100;
+        }
+        .theme-toggle-btn:hover {
+          background: var(--line);
+          transform: translateY(-2px);
+        }
+
         .signup-page {
           min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 40px 20px;
-          background: #0f172a;
+          background: var(--bg);
           background-image: 
             radial-gradient(circle at 15% 50%, rgba(14, 165, 233, 0.08), transparent 25%),
             radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.05), transparent 25%);
-          color: #f8fafc;
+          color: var(--ivory);
         }
         
         .signup-container {
-          background: #1e293b;
-          border: 1px solid rgba(248, 250, 252, 0.12);
+          background: var(--panel);
+          border: 1px solid var(--line);
           border-radius: 14px;
           padding: 40px;
           width: 100%;
           max-width: 500px;
-          box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+          box-shadow: var(--shadow-lg);
         }
 
         .slide-in {
@@ -406,12 +453,12 @@ export default function Signup() {
           font-size: 26px;
           font-weight: 600;
           margin: 0 0 8px 0;
-          color: #0ea5e9;
+          color: var(--primary);
         }
         
         .signup-subtitle {
           font-size: 14px;
-          color: #94a3b8;
+          color: var(--muted);
           margin: 0;
         }
 
@@ -431,21 +478,21 @@ export default function Signup() {
           left: 0;
           right: 0;
           height: 2px;
-          background: rgba(248, 250, 252, 0.1);
+          background: var(--progress-line);
           z-index: 1;
           transform: translateY(-50%);
         }
 
         .progress-fill {
           height: 100%;
-          background: #0ea5e9;
+          background: var(--primary);
           transition: width 0.3s ease;
         }
 
         .progress-step {
           position: relative;
           z-index: 2;
-          background: #1e293b;
+          background: var(--panel);
           padding: 0 4px;
         }
 
@@ -453,25 +500,25 @@ export default function Signup() {
           width: 28px;
           height: 28px;
           border-radius: 50%;
-          background: #0f172a;
+          background: var(--bg);
           border: 2px solid rgba(248, 250, 252, 0.2);
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 12px;
-          color: #94a3b8;
+          color: var(--muted);
           transition: all 0.3s ease;
         }
 
         .progress-step.active .step-circle {
-          border-color: #0ea5e9;
-          color: #0ea5e9;
+          border-color: var(--primary);
+          color: var(--primary);
           background: rgba(14, 165, 233, 0.1);
         }
 
         .progress-step.completed .step-circle {
-          background: #0ea5e9;
-          border-color: #0ea5e9;
+          background: var(--primary);
+          border-color: var(--primary);
           color: #ffffff;
         }
 
@@ -479,7 +526,7 @@ export default function Signup() {
           text-align: center;
           font-size: 11px;
           letter-spacing: 0.1em;
-          color: #0ea5e9;
+          color: var(--primary);
           margin-bottom: 32px;
         }
         
@@ -503,19 +550,19 @@ export default function Signup() {
 
         .input-group label {
           font-size: 12px;
-          color: #94a3b8;
+          color: var(--muted);
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
         
         .signup-input, .signup-select {
           width: 100%;
-          background: #0f172a;
-          border: 1px solid rgba(248, 250, 252, 0.12);
+          background: var(--bg);
+          border: 1px solid var(--line);
           border-radius: 8px;
           padding: 14px 16px;
           font-size: 14px;
-          color: #f8fafc;
+          color: var(--ivory);
           outline: none;
           transition: all 0.2s ease;
         }
@@ -530,12 +577,12 @@ export default function Signup() {
         }
 
         .signup-select option {
-          background: #1e293b;
-          color: #f8fafc;
+          background: var(--panel);
+          color: var(--ivory);
         }
         
         .signup-input:focus, .signup-select:focus {
-          border-color: #0ea5e9;
+          border-color: var(--primary);
           box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
         }
 
@@ -560,13 +607,13 @@ export default function Signup() {
         }
 
         .help-text {
-          color: #94a3b8;
+          color: var(--muted);
           font-size: 12px;
           margin: 0;
         }
 
         .section-desc {
-          color: #94a3b8;
+          color: var(--muted);
           font-size: 14px;
           margin-bottom: 16px;
         }
@@ -611,13 +658,13 @@ export default function Signup() {
 
         .product-title {
           font-size: 14px;
-          color: #0ea5e9;
+          color: var(--primary);
         }
 
         .btn-remove {
           background: transparent;
           border: none;
-          color: #94a3b8;
+          color: var(--muted);
           cursor: pointer;
           padding: 4px;
           border-radius: 4px;
@@ -638,7 +685,7 @@ export default function Signup() {
         .btn-secondary {
           background: transparent;
           border: 1px dashed rgba(248, 250, 252, 0.2);
-          color: #94a3b8;
+          color: var(--muted);
           padding: 12px;
           border-radius: 8px;
           cursor: pointer;
@@ -648,8 +695,8 @@ export default function Signup() {
         }
 
         .btn-secondary:hover {
-          border-color: #0ea5e9;
-          color: #0ea5e9;
+          border-color: var(--primary);
+          color: var(--primary);
           background: rgba(14, 165, 233, 0.05);
         }
         
@@ -664,7 +711,7 @@ export default function Signup() {
           padding: 14px;
           border-radius: 8px;
           border: none;
-          background: #0ea5e9;
+          background: var(--primary);
           color: #ffffff;
           font-size: 15px;
           font-weight: 600;
@@ -685,9 +732,9 @@ export default function Signup() {
         .btn-back {
           padding: 14px 24px;
           border-radius: 8px;
-          border: 1px solid rgba(248, 250, 252, 0.12);
+          border: 1px solid var(--line);
           background: transparent;
-          color: #f8fafc;
+          color: var(--ivory);
           font-size: 15px;
           font-weight: 500;
           cursor: pointer;
@@ -706,11 +753,11 @@ export default function Signup() {
           margin-top: 32px;
           text-align: center;
           font-size: 14px;
-          color: #94a3b8;
+          color: var(--muted);
         }
 
         .signup-footer a {
-          color: #0ea5e9;
+          color: var(--primary);
           text-decoration: none;
           font-weight: 600;
           margin-left: 4px;

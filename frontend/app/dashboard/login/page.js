@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sora, Inter } from 'next/font/google';
 import toast, { Toaster } from 'react-hot-toast';
@@ -16,6 +16,21 @@ export default function AdminLogin() {
   const [shop, setShop] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const [theme, setTheme] = useState('dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('app-theme') || 'dark';
+    setTheme(savedTheme);
+  }, []);
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.body.classList.add('light-theme');
+    } else {
+      document.body.classList.remove('light-theme');
+    }
+    localStorage.setItem('app-theme', theme);
+  }, [theme]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -62,12 +77,19 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className={`login-page ${inter.className}`}>
+    <div className={`login-page ${inter.className}`} style={{ position: 'relative' }}>
+      <button 
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        className="theme-toggle-btn"
+        title="Toggle Theme"
+      >
+        {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+      </button>
       <Toaster position="top-right" />
       <div className="login-container">
         <div className="login-header">
           <div className="login-brand" style={sora.style}>
-            <span style={{ color: '#0ea5e9' }}>AI</span> SALES AGENT
+            <span style={{ color: 'var(--primary)' }}>AI</span> SALES AGENT
           </div>
           <h1 className="login-title">Welcome Back</h1>
           <p className="login-subtitle">Enter your email and password to access your dashboard.</p>
@@ -75,7 +97,7 @@ export default function AdminLogin() {
 
         <form onSubmit={handleLogin} className="login-form">
           <div className="input-group">
-            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Email Address</label>
+            <label style={{ display: 'block', fontSize: '13px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Email Address</label>
             <input
               type="text"
               placeholder="name@company.com"
@@ -84,7 +106,7 @@ export default function AdminLogin() {
               className="login-input"
               style={{ marginBottom: '20px', textAlign: 'left', letterSpacing: 'normal' }}
             />
-            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Password</label>
+            <label style={{ display: 'block', fontSize: '13px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Password</label>
             <input
               type="password"
               placeholder="••••••••"
@@ -103,27 +125,54 @@ export default function AdminLogin() {
         <div className="login-footer">
           <p>Secure Area • Unauthorized access prohibited</p>
           <p style={{ marginTop: '16px' }}>
-            New business? <a href="/signup" style={{ color: '#0ea5e9', textDecoration: 'none', fontWeight: 600 }}>Sign up here</a>
+            New business? <a href="/signup" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>Sign up here</a>
           </p>
         </div>
       </div>
 
       <style jsx>{`
+        .theme-toggle-btn {
+          position: absolute;
+          top: 24px;
+          right: 24px;
+          background: var(--panel2);
+          border: 1px solid var(--line);
+          color: var(--ivory);
+          cursor: pointer;
+          font-size: 13px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 16px;
+          border-radius: 24px;
+          font-weight: bold;
+          font-family: var(--font-heading);
+          box-shadow: var(--shadow-sm);
+          transition: all 0.3s ease;
+          z-index: 100;
+        }
+        .theme-toggle-btn:hover {
+          background: var(--line);
+          transform: translateY(-2px);
+        }
+
         .login-page {
+          transition: all 0.3s ease;
           min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 20px;
-          background: #0f1115;
+          background: var(--bg);
           background-image: 
             radial-gradient(circle at 15% 50%, rgba(14, 165, 233, 0.08), transparent 25%),
             radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08), transparent 25%);
-          color: #e2e8f0;
+          color: var(--ivory);
         }
         
         .login-container {
-          background: rgba(30, 33, 40, 0.6);
+          transition: all 0.3s ease;
+          background: var(--panel);
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
           border: 1px solid rgba(255,255,255,0.05);
@@ -131,7 +180,7 @@ export default function AdminLogin() {
           padding: 48px;
           width: 100%;
           max-width: 440px;
-          box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+          box-shadow: var(--shadow-lg);
           animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
         }
         
@@ -161,7 +210,7 @@ export default function AdminLogin() {
         
         .login-subtitle {
           font-size: 14px;
-          color: #94a3b8;
+          color: var(--muted);
           margin: 0;
         }
         
@@ -187,7 +236,7 @@ export default function AdminLogin() {
         }
 
         .login-select:focus {
-          border-color: #0ea5e9;
+          border-color: var(--primary);
           box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
         }
 
@@ -198,6 +247,7 @@ export default function AdminLogin() {
         }
         
         .login-input {
+          transition: all 0.3s ease;
           width: 100%;
           background: rgba(15, 17, 21, 0.6);
           border: 1px solid rgba(255,255,255,0.1);
@@ -212,13 +262,13 @@ export default function AdminLogin() {
         }
         
         .login-input:focus {
-          border-color: #0ea5e9;
+          border-color: var(--primary);
           box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
         }
         
         .login-input::placeholder {
           letter-spacing: normal;
-          color: #64748b;
+          color: var(--muted);
         }
         
         .login-button {
@@ -226,7 +276,7 @@ export default function AdminLogin() {
           padding: 16px;
           border-radius: 12px;
           border: none;
-          background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+          background: linear-gradient(135deg, var(--primary), #3b82f6);
           color: white;
           font-size: 16px;
           font-weight: 600;
@@ -249,13 +299,14 @@ export default function AdminLogin() {
           margin-top: 32px;
           text-align: center;
           font-size: 12px;
-          color: #64748b;
+          color: var(--muted);
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
         
         @media (max-width: 480px) {
           .login-container {
+          transition: all 0.3s ease;
             padding: 32px 24px;
             border-radius: 20px;
           }

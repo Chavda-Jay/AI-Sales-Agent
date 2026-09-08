@@ -1291,6 +1291,22 @@ async def delete_catalog_item(slug: str, item_id: int, credentials: HTTPAuthoriz
         print(f"Error deleting catalog item: {e}")
         raise HTTPException(status_code=500, detail="Database error")
 
+@app.get("/api/businesses")
+async def get_all_businesses(_ = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT 
+                b.slug as id, b.brand_name as name,
+                (SELECT count(*) FROM customers WHERE business_id = b.id) as customers_count,
+                (SELECT count(*) FROM conversations WHERE business_id = b.id) as chats_count
+            FROM businesses b
+            ORDER BY b.created_at ASC
+        """)
+        return [dict(r) for r in rows]
+
 @app.get("/api/public/businesses")
 async def get_public_businesses():
     if not db_pool:

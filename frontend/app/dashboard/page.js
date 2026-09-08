@@ -457,11 +457,11 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
                       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                         <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
-                          {s.icon}
+                          {s.icon || (s.name ? s.name.charAt(0).toUpperCase() : 'S')}
                         </div>
                         <div>
                           <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>{s.name}</div>
-                          <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px' }}>{s.category}</div>
+                          <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px' }}>{s.category || 'Retail'}</div>
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -475,7 +475,7 @@ export default function Dashboard() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: c.muted, fontSize: '12px', marginBottom: '4px' }}>
                           <span>🤖</span> Active AI Agents
                         </div>
-                        <div style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{s.agents}</div>
+                        <div style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{s.agents || 1}</div>
                       </div>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: c.muted, fontSize: '12px', marginBottom: '4px' }}>
