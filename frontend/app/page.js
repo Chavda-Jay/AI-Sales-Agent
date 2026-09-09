@@ -37,14 +37,14 @@ export default function MarketplaceHome() {
         {/* Store Cards — Dynamic */}
         <section className="mk-grid mk-grid-2" id="stores">
           {stores.map((store, index) => {
-            const isBlue = index % 2 === 1;
-            const glowClass = isBlue ? 'mk-glow-blue' : 'mk-glow-purple';
-            const iconClass = isBlue ? 'mk-icon-blue' : '';
-            const btnClass = isBlue ? 'mk-btn-blue' : '';
-            const defaultIcon = isBlue ? '📺' : '👕';
-            const defaultBadge = isBlue ? 'Electronics' : 'Retail';
-            const defaultTag = isBlue ? 'Tech & Gadgets' : 'Apparel & Fashion';
-            const bgImage = isBlue ? '/images/electronics_banner.jpg' : '/images/clothing_banner.jpg';
+            const isElectronics = store.slug.includes('electronic');
+            const glowClass = isElectronics ? 'mk-glow-blue' : 'mk-glow-purple';
+            const iconClass = isElectronics ? 'mk-icon-blue' : '';
+            const btnClass = isElectronics ? 'mk-btn-blue' : '';
+            const defaultIcon = isElectronics ? '📺' : '👕';
+            const defaultBadge = isElectronics ? 'Electronics' : 'Retail';
+            const defaultTag = isElectronics ? 'Tech & Gadgets' : 'Apparel & Fashion';
+            const bgImage = isElectronics ? '/images/electronics_banner.jpg' : '/images/clothing_banner.jpg';
             
             return (
               <Link key={store.slug} href={`/store?shop=${store.slug}`} className={`mk-card ${glowClass}`} style={{ textDecoration: 'none', color: 'inherit' }}>

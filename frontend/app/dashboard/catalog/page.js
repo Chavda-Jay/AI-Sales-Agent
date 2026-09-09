@@ -79,7 +79,8 @@ function CatalogManagerContent() {
       });
       const data = await res.json();
       if (res.ok && data.url) {
-        setCurrentItem({ ...currentItem, image_url: API_BASE + data.url });
+        const finalUrl = data.url.startsWith('http') ? data.url : API_BASE + data.url;
+        setCurrentItem({ ...currentItem, image_url: finalUrl });
         toast.success("Image uploaded", { id: toastId });
       } else {
         toast.error(data.detail || "Upload failed", { id: toastId });

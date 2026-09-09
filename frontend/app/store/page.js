@@ -58,6 +58,9 @@ export default function Home() {
   const [shopParam, setShopParam] = useState(null);
   const [theme, setTheme] = useState('dark');
   const [isListening, setIsListening] = useState(false);
+  const [cart, setCart] = useState([]);
+  const [toastMsg, setToastMsg] = useState(null);
+  const [isCartOpen, setIsCartOpen] = useState(false);
 
 
   useEffect(() => {
@@ -112,7 +115,14 @@ export default function Home() {
       try {
         const params = new URLSearchParams(window.location.search);
         const shop = params.get('shop');
-        if (shop) setShopParam(shop);
+        if (shop) {
+          setShopParam(shop);
+          if (shop.includes('electronic')) {
+            setTheme('light');
+          } else {
+            setTheme('dark');
+          }
+        }
         
         const fetchUrl = shop ? `${API_BASE}/api/config?shop=${shop}` : `${API_BASE}/api/config`;
         const res = await fetch(fetchUrl);
@@ -268,38 +278,75 @@ export default function Home() {
   return (
     <>
       <nav className="navbar" style={{ justifyContent: 'space-between' }}>
-        <div style={{ width: '100px' }}></div> {/* Spacer for centering nav-brand */}
+        <div style={{ width: '120px' }}></div>
         <div className="nav-brand">
           {config?.brandName || 'Store'}
         </div>
-        <button 
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          style={{
-            background: 'var(--panel2)', border: '1px solid var(--line)', color: 'var(--ivory)',
-            cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '8px 16px', borderRadius: '24px', fontWeight: 'bold', fontFamily: 'var(--font-heading)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-          }}
-          title="Toggle Theme"
-        >
-          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-        </button>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', width: '120px', justifyContent: 'flex-end' }}>
+          <button 
+            className="nav-cart-btn"
+            onClick={() => setIsCartOpen(true)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+            {cart.length > 0 && <span className="cart-badge">{cart.length}</span>}
+          </button>
+          <button 
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="theme-toggle-btn"
+            title="Toggle Theme"
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+        </div>
       </nav>
+      
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div className="toast-notification">
+          {toastMsg}
+        </div>
+      )}
 
-      <div className="store-hero">
-        <h1>{config ? `Welcome to ${config.brandName}` : 'Premium Store'}</h1>
-        <p>Discover our exclusive collection of high-quality products. Expertly crafted for those who demand the best.</p>
+      {/* Hero Banner */}
+      <div 
+        className="store-hero"
+        style={{
+          backgroundImage: `url(${shopParam?.includes('electronic') ? '/images/electronics_banner.jpg' : '/images/clothing_banner.jpg'})`
+        }}
+      >
+        <div className="hero-overlay" />
+        <div className="hero-content">
+          <span className="hero-tag">{shopParam?.includes('electronic') ? '✦ New Arrivals' : '✦ New Season'}</span>
+          <h1>{shopParam?.includes('electronic') ? 'Latest Tech\nGadgets' : 'Spring\nCollection'}</h1>
+          <p>{config ? `Discover premium products at ${config.brandName}` : 'Premium quality products'}</p>
+          <button className="hero-btn" onClick={() => {
+            const grid = document.querySelector('.store-grid');
+            if (grid) grid.scrollIntoView({ behavior: 'smooth' });
+          }}>EXPLORE COLLECTION</button>
+        </div>
       </div>
 
+      {/* Products */}
       <div className="store-grid">
         {config?.catalog?.map((p, i) => (
           <div className="store-product" key={i}>
             <div className="store-product-img">
-              {iconFor(p.name)}
+              {p.image_url ? (
+                <img src={p.image_url} alt={p.name} />
+              ) : (
+                iconFor(p.name)
+              )}
             </div>
             <div className="store-product-info">
               <div className="store-product-name">{p.name}</div>
-              <div className="store-product-price">₹{p.price}</div>
+              <div className="store-product-price">₹{Number(p.price).toLocaleString('en-IN')}</div>
+              <button className="add-to-cart-btn" onClick={() => {
+                setCart(prev => [...prev, { ...p, selected: true }]);
+                setToastMsg(`Added ${p.name} to cart!`);
+                setTimeout(() => setToastMsg(null), 2500);
+              }}>
+                Add to Cart
+              </button>
             </div>
           </div>
         ))}
@@ -347,6 +394,77 @@ export default function Home() {
           <div>Powered by Advanced B2C AI Sales Agent</div>
         </div>
       </footer>
+
+      {/* Cart Drawer */}
+      <div className={`cart-drawer-overlay ${isCartOpen ? 'open' : ''}`} onClick={() => setIsCartOpen(false)}></div>
+      <div className={`cart-drawer ${isCartOpen ? 'open' : ''}`}>
+        <div className="cart-drawer-header">
+          <h2>Your Cart</h2>
+          <button className="close-cart-btn" onClick={() => setIsCartOpen(false)}>✕</button>
+        </div>
+        
+        <div className="cart-drawer-body">
+          {cart.length === 0 ? (
+            <div className="empty-cart">
+              <p>Your cart is empty.</p>
+            </div>
+          ) : (
+            <div className="cart-items-list">
+              {cart.map((item, idx) => (
+                <div className="cart-item" key={idx} style={{ opacity: item.selected === false ? 0.6 : 1 }}>
+                  <input 
+                    type="checkbox" 
+                    checked={item.selected !== false} 
+                    onChange={(e) => {
+                      setCart(prev => prev.map((c, i) => i === idx ? { ...c, selected: e.target.checked } : c));
+                    }}
+                    style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                  />
+                  <div className="cart-item-img">
+                    {item.image_url ? <img src={item.image_url} alt={item.name} /> : iconFor(item.name)}
+                  </div>
+                  <div className="cart-item-info">
+                    <div className="cart-item-name" style={{ textDecoration: item.selected === false ? 'line-through' : 'none' }}>{item.name}</div>
+                    <div className="cart-item-price">₹{Number(item.price).toLocaleString('en-IN')}</div>
+                  </div>
+                  <button className="cart-item-remove" onClick={() => {
+                    setCart(prev => prev.filter((_, i) => i !== idx));
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {cart.length > 0 && (
+          <div className="cart-drawer-footer">
+            <div className="cart-total">
+              <span>Total:</span>
+              <span>₹{cart.filter(i => i.selected !== false).reduce((sum, item) => sum + Number(item.price), 0).toLocaleString('en-IN')}</span>
+            </div>
+            <button 
+              className="checkout-ai-btn" 
+              disabled={cart.filter(i => i.selected !== false).length === 0}
+              style={{ opacity: cart.filter(i => i.selected !== false).length === 0 ? 0.5 : 1 }}
+              onClick={() => {
+                const selectedItems = cart.filter(i => i.selected !== false);
+                if (selectedItems.length === 0) return;
+                
+                const items = selectedItems.map(item => item.name).join(', ');
+                const textToSend = `I have ${selectedItems.length} items selected in my cart: ${items}. I am ready to checkout.`;
+                
+                setIsCartOpen(false);
+                setIsChatOpen(true);
+                handleSendText(textToSend);
+              }}
+            >
+              Checkout with AI Agent
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="chat-widget-container">
         {isChatOpen && (

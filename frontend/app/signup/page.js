@@ -70,7 +70,8 @@ export default function Signup() {
       });
       const data = await res.json();
       if (res.ok && data.url) {
-        handleProductChange(index, 'image_url', API_BASE + data.url);
+        const finalUrl = data.url.startsWith('http') ? data.url : API_BASE + data.url;
+        handleProductChange(index, 'image_url', finalUrl);
         toast.success("Image uploaded", { id: toastId });
       } else {
         toast.error(data.detail || "Upload failed", { id: toastId });

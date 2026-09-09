@@ -4,12 +4,12 @@ import re
 import logging
 import uuid
 import shutil
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, Depends, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional
 from dotenv import load_dotenv
 import httpx
 import asyncpg  # type: ignore
@@ -20,6 +20,8 @@ import jwt
 from datetime import datetime, timedelta, timezone
 # pyrefly: ignore [missing-import]
 from passlib.context import CryptContext
+# pyrefly: ignore [missing-import]s
+from supabase import create_client, Client
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -34,6 +36,12 @@ env_path = os.path.join(BASE_DIR, ".env")
 load_dotenv(dotenv_path=env_path, override=True)
 
 db_pool = None
+supabase_client = None
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "qwen/qwen3.8-27b"
 
@@ -160,19 +168,6 @@ async def lifespan(app: FastAPI):
                         created_at TIMESTAMP DEFAULT NOW()
                     )
                 """)
-                rows = await conn.fetch("""
-                    SELECT c.ext_id, conv.message, conv.reply 
-                    FROM conversations conv
-                    JOIN customers c ON c.id = conv.customer_id
-                    WHERE c.ext_id IS NOT NULL
-                    ORDER BY conv.created_at ASC
-                """)
-                for row in rows:
-                    ext_id = row['ext_id']
-                    if ext_id not in conversations:
-                        conversations[ext_id] = []
-                    conversations[ext_id].append({"role": "user", "content": row['message']})
-                    conversations[ext_id].append({"role": "assistant", "content": json.dumps({"reply": row['reply']})})
             print("Database connected and history loaded.")
         except Exception as e:
             print(f"Warning: Could not connect to database or load history. Using in-memory fallback. Error: {e}")
@@ -187,7 +182,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-import os
 if not os.path.exists("uploads"):
     os.makedirs("uploads")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
@@ -199,7 +193,6 @@ class LoginRequest(BaseModel):
 
 @app.post("/api/admin/login")
 async def admin_login(req: LoginRequest):
-    # Check if global admin
     if req.password == ADMIN_PASSWORD and req.shop:
         payload = {"role": "admin", "exp": datetime.now(timezone.utc) + timedelta(days=7)}
         
@@ -216,7 +209,6 @@ async def admin_login(req: LoginRequest):
         token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
         return {"token": token}
         
-    # Check against admin_users table
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
@@ -424,7 +416,6 @@ async def chat(req: ChatRequest):
     history = conversations[req.customerId]
     
     if is_paused:
-        # Append to memory history
         history.append({"role": "user", "content": req.message})
         return {
             "reply": "⏳ Please wait, our store manager is reviewing your message...",
@@ -497,7 +488,6 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
   "order_amount": numeric price or null
 }}"""
 
-    # Keep only the last 6 messages to prevent hitting Token Per Minute limits
     messages = [{"role": "system", "content": system_prompt}] + history[-6:] + [{"role": "user", "content": req.message}]
 
     async with httpx.AsyncClient() as client:
@@ -525,39 +515,27 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
         raise HTTPException(status_code=500, detail=data["error"].get("message", "Groq API error"))
 
     raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-    print(f"[DEBUG RAW LENGTH] {len(raw)}")
-    print(f"[DEBUG RAW FIRST 800] {raw[:800].encode('ascii', 'replace').decode('ascii')}")
     
-    # Strip markdown code fences (```json ... ``` or ``` ... ```)
     raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
     raw = re.sub(r'\s*```\s*$', '', raw, flags=re.MULTILINE)
     raw = raw.strip()
 
     parsed = None
     
-    # Strategy 1: Direct JSON parse
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
         pass
     
-    # Strategy 2: Fix literal newlines inside JSON strings
-    # The AI often puts actual Enter keys inside JSON string values which breaks parsing
     if parsed is None:
         try:
-            # Find the JSON object
             start = raw.find('{')
             end = raw.rfind('}')
             if start != -1 and end != -1:
                 json_str = raw[start:end+1]
-                # Replace all literal newlines with \\n, then fix the ones between keys
-                # Step 1: Replace ALL newlines with a placeholder
                 fixed = json_str.replace('\n', '<<<NL>>>')
-                # Step 2: Restore newlines that should be between JSON key-value pairs
-                # These are newlines between: "value", or "value" } or number, etc.
-                fixed = re.sub(r'<<<NL>>>', '\n', fixed)  # restore all as real newlines
+                fixed = re.sub(r'<<<NL>>>', '\n', fixed)
                 
-                # Alternative approach: read char by char and escape newlines inside strings
                 result = []
                 in_string = False
                 escape_next = False
@@ -583,16 +561,12 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                 
                 fixed = ''.join(result)
                 parsed = json.loads(fixed)
-                print("[DEBUG] Strategy 2 (newline fix) succeeded")
         except Exception as e2:
-            print(f"[DEBUG] Strategy 2 failed: {e2}")
+            pass
     
-    # Strategy 4: Extract reply field with regex as last resort
     if parsed is None:
-        print(f"[WARN] All JSON parse strategies failed. Raw: {raw[:300].encode('ascii', 'replace').decode('ascii')}")
         extracted_reply = "I'd be happy to help! Could you please ask me again?"
         try:
-            # Try to extract reply from malformed JSON
             reply_match = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)"', raw, re.DOTALL)
             if reply_match:
                 extracted_reply = reply_match.group(1).replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
@@ -620,13 +594,10 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
     history.append({"role": "user", "content": req.message})
     history.append({"role": "assistant", "content": json.dumps(parsed)})
     
-    print(f"[{req.customerId}] score={parsed.get('intent_score')} segment={parsed.get('segment')}")
-
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
                 customer_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
-                
                 c_name = parsed.get("customer_name")
                 c_phone = parsed.get("customer_phone")
                 
@@ -708,6 +679,35 @@ async def get_config(shop: str = None):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+# --- Image Upload Endpoint ---
+@app.post("/api/upload")
+async def upload_image(file: UploadFile = File(...)):
+    if not supabase_client:
+        raise HTTPException(status_code=500, detail="Supabase Storage not configured.")
+        
+    try:
+        file_extension = file.filename.split('.')[-1]
+        unique_filename = f"{uuid.uuid4()}.{file_extension}"
+        
+        contents = await file.read()
+        
+        supabase_client.storage.from_("product-images").upload(
+            unique_filename,
+            contents,
+            {"content-type": file.content_type}
+        )
+        
+        public_url = supabase_client.storage.from_("product-images").get_public_url(unique_filename)
+        
+        if isinstance(public_url, str):
+            return {"url": public_url}
+        else:
+            raise ValueError(f"Unexpected return type from get_public_url: {type(public_url)}")
+            
+    except Exception as e:
+        print(f"Error during file upload: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image.")
 
 @app.get("/api/customers")
 async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
@@ -877,7 +877,7 @@ CRITICAL RULE: You MUST write the message in the exact language and script that 
 Start the message with the ✅ emoji.
 Return ONLY a raw JSON object with the "reply" field: {"reply": "your message"}"""
                     
-                    messages = [{"role": "system", "content": system_prompt}] + history[-3:] # Last 3 msgs for context
+                    messages = [{"role": "system", "content": system_prompt}] + history[-3:] 
                     
                     try:
                         async with httpx.AsyncClient() as client:
@@ -1111,11 +1111,9 @@ async def delete_customer(customer_id: int):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
-                # Delete child rows first (foreign key constraints)
                 await conn.execute("DELETE FROM conversations WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM orders WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM handoffs WHERE customer_id = $1", customer_id)
-                # Now delete the customer
                 await conn.execute("DELETE FROM customers WHERE id = $1", customer_id)
                 return {"status": "success", "message": "Customer deleted"}
         except Exception as e:
@@ -1155,8 +1153,6 @@ async def create_business(req: BusinessRequest):
                 """, business_id, item.name, item.price, item.note, item.image_url)
                 
             return {"status": "success", "business_id": business_id}
-    except asyncpg.UniqueViolationError:
-        raise HTTPException(status_code=400, detail="Business slug already exists")
     except Exception as e:
         print(f"Error creating business: {e}")
         raise HTTPException(status_code=500, detail="Database error")
