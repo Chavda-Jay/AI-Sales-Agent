@@ -13,29 +13,18 @@ const API_BASE = rawApi.replace(/\/+$/, '');
 
 export default function AdminLogin() {
   const [password, setPassword] = useState('');
-  const [shop, setShop] = useState('');
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const [theme, setTheme] = useState('dark');
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('app-theme') || 'dark';
-    setTheme(savedTheme);
-  }, []);
-
-  useEffect(() => {
-    if (theme === 'light') {
-      document.body.classList.add('light-theme');
-    } else {
-      document.body.classList.remove('light-theme');
-    }
-    localStorage.setItem('app-theme', theme);
-  }, [theme]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!shop) {
+    if (!email) {
       toast.error("Please enter your email");
+      return;
+    }
+    if (!email.includes('@')) {
+      toast.error("Please enter a valid email address");
       return;
     }
     if (!password) {
@@ -44,12 +33,7 @@ export default function AdminLogin() {
     }
     setLoading(true);
 
-    const isEmail = shop.includes('@');
-    const payload = {
-      password,
-      shop: isEmail ? undefined : (shop || 'master'),
-      email: isEmail ? shop : undefined
-    };
+    const payload = { email, password };
 
     try {
       const res = await fetch(`${API_BASE}/api/admin/login`, {
@@ -78,13 +62,6 @@ export default function AdminLogin() {
 
   return (
     <div className={`login-page ${inter.className}`} style={{ position: 'relative' }}>
-      <button 
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="theme-toggle-btn"
-        title="Toggle Theme"
-      >
-        {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-      </button>
       <Toaster position="top-right" />
       <div className="login-container">
         <div className="login-header">
@@ -99,10 +76,10 @@ export default function AdminLogin() {
           <div className="input-group">
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 500, textAlign: 'left', paddingLeft: '4px' }}>Email Address</label>
             <input
-              type="text"
+              type="email"
               placeholder="name@company.com"
-              value={shop}
-              onChange={(e) => setShop(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="login-input"
               style={{ marginBottom: '20px', textAlign: 'left', letterSpacing: 'normal' }}
             />
@@ -131,30 +108,6 @@ export default function AdminLogin() {
       </div>
 
       <style jsx>{`
-        .theme-toggle-btn {
-          position: absolute;
-          top: 24px;
-          right: 24px;
-          background: var(--panel2);
-          border: 1px solid var(--line);
-          color: var(--ivory);
-          cursor: pointer;
-          font-size: 13px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 16px;
-          border-radius: 24px;
-          font-weight: bold;
-          font-family: var(--font-heading);
-          box-shadow: var(--shadow-sm);
-          transition: all 0.3s ease;
-          z-index: 100;
-        }
-        .theme-toggle-btn:hover {
-          background: var(--line);
-          transform: translateY(-2px);
-        }
 
         .login-page {
           transition: all 0.3s ease;

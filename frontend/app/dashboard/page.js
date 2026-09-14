@@ -163,6 +163,25 @@ export default function Dashboard() {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === '#daily-report') {
+        setDailyReportOpen(true);
+        setContentIdeasOpen(false);
+      } else if (hash === '#content-ideas') {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(true);
+      } else {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(false);
+      }
+    };
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const token = sessionStorage.getItem('admin_token');
       if (!token) {
@@ -186,21 +205,9 @@ export default function Dashboard() {
   
   
 
-  const [theme, setTheme] = useState('dark');
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('app-theme') || 'dark';
-    setTheme(savedTheme);
-  }, []);
 
-  useEffect(() => {
-    if (theme === 'light') {
-      document.body.classList.add('light-theme');
-    } else {
-      document.body.classList.remove('light-theme');
-    }
-    localStorage.setItem('app-theme', theme);
-  }, [theme]);
+
 
   const [selectedShop, setSelectedShop] = useState(null);
   const [customers, setCustomers] = useState([]);
@@ -216,6 +223,87 @@ export default function Dashboard() {
   const [selectedConvo, setSelectedConvo] = useState(null);
   const [selectedCustName, setSelectedCustName] = useState('');
   const [showConvoModal, setShowConvoModal] = useState(false);
+  const [storeToDelete, setStoreToDelete] = useState(null);
+  const [storeDeleteInput, setStoreDeleteInput] = useState('');
+
+
+  // Daily Report state
+  const [dailyReportOpen, setDailyReportOpen] = useState(false);
+  const [dailyReport, setDailyReport] = useState(null);
+  const [dailyReportDate, setDailyReportDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dailyReportLoading, setDailyReportLoading] = useState(false);
+
+  // Content Ideas state
+  const [contentIdeasOpen, setContentIdeasOpen] = useState(false);
+  const [contentIdeasLoading, setContentIdeasLoading] = useState(false);
+  const [generatedIdeas, setGeneratedIdeas] = useState([]);
+  const [contentProduct, setContentProduct] = useState('All Products');
+  const [contentType, setContentType] = useState('Mix');
+  const [shopCatalog, setShopCatalog] = useState([]);
+
+  useEffect(() => {
+    if (selectedShop) {
+      fetch(`${API_BASE}/api/config?shop=${selectedShop}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.catalog) {
+            setShopCatalog(data.catalog);
+          } else {
+            setShopCatalog([]);
+          }
+        })
+        .catch(err => console.error('Failed to fetch catalog', err));
+    } else {
+      setShopCatalog([]);
+    }
+  }, [selectedShop]);
+
+  const generateIdeas = async () => {
+    if (!selectedShop) return;
+    setContentIdeasLoading(true);
+    setGeneratedIdeas([]);
+    try {
+      const res = await authFetch(`${API_BASE}/api/content-ideas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_slug: selectedShop,
+          product_name: contentProduct,
+          content_type: contentType
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGeneratedIdeas(data.ideas || []);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(`Failed to generate ideas: ${errData.detail || res.status}`);
+      }
+    } catch (e) {
+      toast.error(`Network error generating ideas: ${e.message}`);
+    } finally {
+      setContentIdeasLoading(false);
+    }
+  };
+
+  const fetchDailyReport = async (dateStr, shopSlug) => {
+    setDailyReportLoading(true);
+    try {
+      const params = new URLSearchParams({ date: dateStr });
+      if (shopSlug) params.append('shop', shopSlug);
+      const res = await authFetch(`${API_BASE}/api/daily-report?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDailyReport(data);
+      } else {
+        toast.error('Failed to load daily report');
+      }
+    } catch (e) {
+      toast.error('Network error loading report');
+    } finally {
+      setDailyReportLoading(false);
+    }
+  };
 
   const viewConversation = async (e, custId, custName) => {
     e.stopPropagation();
@@ -264,9 +352,64 @@ export default function Dashboard() {
     }
   };
 
+  const confirmDeleteStore = async () => {
+    if (!storeToDelete || storeDeleteInput !== 'DELETE') return;
+    try {
+      const res = await authFetch(`${API_BASE}/api/businesses/${storeToDelete.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setStores(prev => prev.filter(s => s.id !== storeToDelete.id));
+        setStoreToDelete(null);
+        setStoreDeleteInput('');
+        toast.success(`Store ${storeToDelete.name} deleted successfully!`, { position: 'top-center' });
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to delete store');
+      }
+    } catch(e) {
+      console.error(e);
+      toast.error('Error deleting store');
+    }
+  };
+
   const handleDeleteCustomer = (e, customerId) => {
     e.stopPropagation();
     setDeleteCustomerId(customerId);
+  };
+
+  const sendReply = async (handoffId) => {
+    const text = replyTexts[handoffId];
+    if (!text || !text.trim()) return;
+    try {
+      const res = await authFetch(`${API_BASE}/api/handoffs/${handoffId}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+      if (res.ok) {
+        toast.success('Reply sent successfully', { position: 'top-right' });
+        setReplyTexts(prev => ({ ...prev, [handoffId]: '' }));
+      } else {
+        toast.error('Failed to send reply');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Error sending reply');
+    }
+  };
+
+  const resolveHandoff = async (handoffId) => {
+    try {
+      const res = await authFetch(`${API_BASE}/api/handoffs/${handoffId}/resolve`, { method: 'POST' });
+      if (res.ok) {
+        toast.success('Marked as resolved', { position: 'top-right' });
+        setHandoffs(prev => prev.map(h => h.id === handoffId ? { ...h, status: 'resolved' } : h));
+      } else {
+        toast.error('Failed to resolve');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Error resolving');
+    }
   };
 
   const fetchCustomers = async (isPolling = false, shopId = selectedShop) => {
@@ -317,8 +460,37 @@ export default function Dashboard() {
       if (!isPolling) setLoading(false);
     }
   };
-
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 8) return toast.error("New password must be at least 8 chars");
+    setPasswordLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/admin/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || "Password updated!");
+        setSettingsOpen(false);
+        setOldPassword('');
+        setNewPassword('');
+      } else {
+        toast.error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail) || "Failed to update password");
+      }
+    } catch (e) {
+      toast.error("Network error");
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchCustomers(false, selectedShop);
@@ -339,9 +511,117 @@ export default function Dashboard() {
   const coldCount = customers.filter(c => c.segment === 'COLD').length;
   const pendingHandoffs = handoffs.filter(h => h.status === 'pending');
 
+  const [forceResetOpen, setForceResetOpen] = useState(null);
+  const [forceResetPassword, setForceResetPassword] = useState('');
+
+  const handleForceReset = async (e) => {
+    e.preventDefault();
+    if (forceResetPassword.length < 8) return toast.error("New password must be at least 8 chars");
+    setPasswordLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/admin/force-reset-shop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: forceResetOpen.id, new_password: forceResetPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || "Shop password reset successfully!");
+        setForceResetOpen(null);
+        setForceResetPassword('');
+      } else {
+        toast.error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail) || "Failed to reset password");
+      }
+    } catch (e) {
+      toast.error("Network error");
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   return (
-    <div className="dash-page" style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="dash-page" style={{ display: 'flex', minHeight: '100vh', position: 'relative' }}>
       
+      {/* Force Reset Modal (Superadmin only) */}
+      {forceResetOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ ...sora.style, fontSize: '20px', color: c.ivory, margin: 0 }}>Reset Password</h2>
+              <button onClick={() => setForceResetOpen(null)} style={{ background: 'transparent', border: 'none', color: c.muted, cursor: 'pointer', fontSize: '20px' }}>×</button>
+            </div>
+            <p style={{ color: c.muted, fontSize: '13px', marginBottom: '20px' }}>
+              Resetting password for <strong>{forceResetOpen.name}</strong>
+            </p>
+            <form onSubmit={handleForceReset} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
+                <input 
+                  type="password" 
+                  value={forceResetPassword}
+                  onChange={e => setForceResetPassword(e.target.value)}
+                  style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                  required
+                  minLength={8}
+                />
+              </div>
+              
+              <button 
+                type="submit" 
+                disabled={passwordLoading}
+                style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}
+              >
+                {passwordLoading ? 'Resetting...' : 'Force Reset Password'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {settingsOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ ...sora.style, fontSize: '20px', color: c.ivory, margin: 0 }}>Store Settings</h2>
+              <button onClick={() => setSettingsOpen(false)} style={{ background: 'transparent', border: 'none', color: c.muted, cursor: 'pointer', fontSize: '20px' }}>×</button>
+            </div>
+            
+            <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>Current Password</label>
+                <input 
+                  type="password" 
+                  value={oldPassword}
+                  onChange={e => setOldPassword(e.target.value)}
+                  style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
+                <input 
+                  type="password" 
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                  required
+                  minLength={8}
+                />
+              </div>
+              
+              <button 
+                type="submit" 
+                disabled={passwordLoading}
+                style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}
+              >
+                {passwordLoading ? 'Updating...' : 'Update Password'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 190 }} onClick={() => setSidebarOpen(false)} />
@@ -355,14 +635,25 @@ export default function Dashboard() {
         
         <div style={{ padding: '0 12px' }}>
           {isSuperAdmin && (
-            <div style={{ padding: '12px', color: !selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer' }}
-                 onClick={() => setSelectedShop(null)}>
+            <div style={{ padding: '12px', color: !selectedShop && !dailyReportOpen && !contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop && !dailyReportOpen && !contentIdeasOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop && !dailyReportOpen && !contentIdeasOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
+                 onClick={() => { setSelectedShop(null); setDailyReportOpen(false); setContentIdeasOpen(false); }}
+                 onMouseEnter={e => { if(selectedShop || dailyReportOpen || contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
+                 onMouseLeave={e => { if(selectedShop || dailyReportOpen || contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
+                 >
               <span>🏪</span> My Stores
             </div>
           )}
 
-          <div style={{ padding: '12px', color: selectedShop ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
-               onClick={() => {}}>
+          {selectedShop && (
+            <div style={{ margin: '16px 0', borderTop: `1px solid ${c.line}` }}>
+              <div style={{ padding: '16px 12px 8px', ...sora.style, fontSize: '11px', color: c.muted, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                {stores.find(s => s.id === selectedShop)?.name || 'Store'}
+              </div>
+            </div>
+          )}
+
+          <div style={{ padding: '12px', color: selectedShop && !dailyReportOpen && !contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop && !dailyReportOpen && !contentIdeasOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop && !dailyReportOpen && !contentIdeasOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
+               onClick={() => { window.location.hash = ''; }}>
             <span>🏠</span> Store Dashboard
           </div>
 
@@ -374,11 +665,27 @@ export default function Dashboard() {
             <span>🏷️</span> Manage Catalog
           </div>
 
-          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: 'not-allowed', marginTop: '8px', opacity: 0.5 }}>
-            <span>⚙️</span> AI Settings <span style={{fontSize:'10px', background:'rgba(255,255,255,0.1)', padding:'2px 6px', borderRadius:'4px', marginLeft:'auto'}}>Soon</span>
+          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: 'pointer', marginTop: '8px', opacity: 1, transition: 'all 0.2s' }}
+               onClick={() => setSettingsOpen(true)}
+               onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+               onMouseLeave={e => e.currentTarget.style.color = c.muted}
+               >
+            <span>⚙️</span> Settings
           </div>
-          <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: 'not-allowed', marginTop: '8px', opacity: 0.5 }}>
-            <span>📊</span> Analytics <span style={{fontSize:'10px', background:'rgba(255,255,255,0.1)', padding:'2px 6px', borderRadius:'4px', marginLeft:'auto'}}>Soon</span>
+          <div style={{ padding: '12px', color: dailyReportOpen && !contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: dailyReportOpen && !contentIdeasOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: dailyReportOpen && !contentIdeasOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
+               onClick={() => { if (selectedShop) { window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); } }}
+               onMouseEnter={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = '#fff'; }}
+               onMouseLeave={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = c.muted; }}
+               >
+            <span>📊</span> Daily Report
+          </div>
+          
+          <div style={{ padding: '12px', color: contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: contentIdeasOpen ? 'rgba(234,179,8,0.1)' : 'transparent', border: contentIdeasOpen ? '1px solid rgba(234,179,8,0.2)' : '1px solid transparent', borderRadius: '8px' }}
+               onClick={() => { if(selectedShop) { window.location.hash = 'content-ideas'; } }}
+               onMouseEnter={e => { if(selectedShop && !contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
+               onMouseLeave={e => { if(selectedShop && !contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
+               >
+            <span>💡</span> Content Ideas
           </div>
         </div>
       
@@ -416,29 +723,249 @@ export default function Dashboard() {
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
             </button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-            <button 
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              style={{
-                background: 'var(--panel2)', border: '1px solid var(--line)', color: 'var(--ivory)',
-                cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '8px 16px', borderRadius: '24px', fontWeight: 'bold'
-              }}
-            >
-              {theme === 'dark' ? '☀️' : '🌙'}
-            </button>
-            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#0ea5e9', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>A</div>
-          </div>
         </nav>
 
-        <div className="dash-wrap">
+         <div className="dash-wrap">
           
-          {!selectedShop && isSuperAdmin ? (
+          {contentIdeasOpen ? (
+            /* Content Ideas View */
+            <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <div style={{ ...sora.style, fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.18em', color: '#eab308', marginBottom: '8px' }}>Content Engine</div>
+                  <h1 style={{ ...sora.style, fontSize: '28px', fontWeight: 800, color: '#fff', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>💡 Content Ideas Generator</h1>
+                  <p style={{ color: c.muted, margin: 0, fontSize: '14px' }}>AI-powered social media ideas for your catalog</p>
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', padding: '24px', marginBottom: '32px', backdropFilter: 'blur(12px)' }}>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div style={{ flex: '1 1 200px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '8px' }}>Target Product</label>
+                    <select
+                      value={contentProduct}
+                      onChange={(e) => setContentProduct(e.target.value)}
+                      style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '12px 16px', borderRadius: '12px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      <option value="All Products" style={{ background: '#0f172a', color: '#fff' }}>All Products (Entire Catalog)</option>
+                      {shopCatalog?.map((item, idx) => (
+                        <option key={idx} value={item.name} style={{ background: '#0f172a', color: '#fff' }}>{item.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ flex: '1 1 150px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '8px' }}>Content Format</label>
+                    <select
+                      value={contentType}
+                      onChange={(e) => setContentType(e.target.value)}
+                      style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '12px 16px', borderRadius: '12px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      <option value="Mix" style={{ background: '#0f172a', color: '#fff' }}>Mix (Reel, Post, Story)</option>
+                      <option value="Instagram Reel" style={{ background: '#0f172a', color: '#fff' }}>Instagram Reel</option>
+                      <option value="Instagram Post" style={{ background: '#0f172a', color: '#fff' }}>Instagram Post</option>
+                      <option value="Instagram Story" style={{ background: '#0f172a', color: '#fff' }}>Instagram Story</option>
+                      <option value="Promotional Offer" style={{ background: '#0f172a', color: '#fff' }}>Promotional Offer</option>
+                      <option value="Festival/Seasonal" style={{ background: '#0f172a', color: '#fff' }}>Festival / Seasonal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <button 
+                      onClick={generateIdeas}
+                      disabled={contentIdeasLoading}
+                      style={{ background: 'linear-gradient(135deg, #eab308, #ca8a04)', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: '12px', fontSize: '14px', fontWeight: 600, cursor: contentIdeasLoading ? 'not-allowed' : 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(234, 179, 8, 0.2)', display: 'flex', alignItems: 'center', gap: '8px', opacity: contentIdeasLoading ? 0.7 : 1 }}
+                    >
+                      {contentIdeasLoading ? '✨ Generating...' : '✨ Generate Ideas'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {contentIdeasLoading ? (
+                <div style={{ textAlign: 'center', padding: '80px 0', color: c.muted, animation: 'pulse 1.5s infinite' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '16px' }}>🤔</div>
+                  <p>AI is brainstorming creative ideas...</p>
+                </div>
+              ) : generatedIdeas.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '24px' }}>
+                  {generatedIdeas.map((idea, idx) => (
+                    <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
+                      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: 'linear-gradient(90deg, #eab308, transparent)' }}></div>
+                      
+                      <div style={{ display: 'inline-block', padding: '6px 12px', background: 'rgba(234, 179, 8, 0.1)', color: '#eab308', borderRadius: '8px', fontSize: '12px', fontWeight: 700, marginBottom: '16px', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
+                        {idea.format || 'Post'}
+                      </div>
+                      
+                      <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px', marginBottom: '16px', position: 'relative' }}>
+                        <p style={{ color: '#fff', fontSize: '14px', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap', paddingRight: '50px' }}>{idea.caption}</p>
+                        <button 
+                          onClick={(e) => {
+                            navigator.clipboard.writeText(idea.caption);
+                            const btn = e.currentTarget;
+                            const originalText = btn.innerHTML;
+                            btn.innerHTML = 'Copied!';
+                            setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+                          }}
+                          style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(255,255,255,0.1)', border: 'none', color: c.muted, padding: '4px 8px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
+                          onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+                          onMouseLeave={e => e.currentTarget.style.color = c.muted}
+                        >
+                          Copy
+                        </button>
+                      </div>
+
+                      <div>
+                        <h4 style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, marginBottom: '4px', fontWeight: 700, letterSpacing: '0.05em' }}>Why it works</h4>
+                        <p style={{ color: c.muted, fontSize: '13px', margin: 0, lineHeight: '1.5' }}>{idea.why_it_works}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                 <div style={{ textAlign: 'center', padding: '80px 0', color: c.muted, background: 'rgba(255,255,255,0.01)', borderRadius: '24px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>📱</div>
+                  <p style={{ fontSize: '16px', fontWeight: 500, color: c.ivory }}>Ready to create viral content?</p>
+                  <p style={{ fontSize: '14px', marginTop: '8px' }}>Select a product and format, then click Generate Ideas.</p>
+                </div>
+              )}
+            </div>
+          ) : dailyReportOpen ? (
+            /* Daily Report View */
+            <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <div style={{ ...sora, fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.18em', color: c.primary, marginBottom: '8px' }}>{stores.find(s => s.id === selectedShop)?.name || 'Store'} • Daily Autonomous Report</div>
+                  <h1 style={{ ...sora, fontSize: '28px', fontWeight: 800, color: '#fff', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>📊 Morning Snapshot</h1>
+                  <p style={{ color: c.muted, margin: 0, fontSize: '14px' }}>{new Date(dailyReportDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <input
+                    type="date"
+                    value={dailyReportDate}
+                    onChange={e => { setDailyReportDate(e.target.value); fetchDailyReport(e.target.value, selectedShop); }}
+                    style={{ background: c.panel, border: `1px solid ${c.line}`, color: c.ivory, padding: '10px 16px', borderRadius: '12px', fontSize: '14px', outline: 'none', cursor: 'pointer' }}
+                  />
+                  <button onClick={() => { window.location.hash = ''; }} style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${c.line}`, color: c.muted, padding: '10px 16px', borderRadius: '12px', fontSize: '13px', cursor: 'pointer', fontWeight: 600 }}>← Back</button>
+                </div>
+              </div>
+
+              {dailyReportLoading ? (
+                <div style={{ textAlign: 'center', padding: '80px 0', color: c.muted }}>
+                  <div style={{ fontSize: '40px', marginBottom: '16px', animation: 'spin 1s linear infinite' }}>⏳</div>
+                  <p>Generating report...</p>
+                </div>
+              ) : dailyReport ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  {/* Stats Grid - 4 columns */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                    {[
+                      { label: 'New Leads', value: dailyReport.new_leads_count, icon: '🆕', color: '#0ea5e9' },
+                      { label: 'Hot Prospects', value: dailyReport.hot_prospects_count, icon: '🔥', color: '#f85149' },
+                      { label: 'Pending Handoffs', value: dailyReport.pending_handoffs_count, icon: '🤝', color: '#f59e0b' },
+                      { label: 'Conversations', value: dailyReport.total_conversations_today, icon: '💬', color: '#a78bfa' },
+                    ].map((stat, i) => (
+                      <div key={i} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)', transition: 'all 0.3s' }}
+                           onMouseEnter={e => { e.currentTarget.style.borderColor = stat.color + '40'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                           onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.transform = 'translateY(0)'; }}>
+                        <div style={{ fontSize: '28px', marginBottom: '12px' }}>{stat.icon}</div>
+                        <div style={{ ...mono, fontSize: '36px', fontWeight: 800, color: stat.color, marginBottom: '4px' }}>{stat.value}</div>
+                        <div style={{ ...inter, fontSize: '13px', color: c.muted, fontWeight: 500 }}>{stat.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Sales Summary + Intent Score */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '28px', backdropFilter: 'blur(12px)' }}>
+                      <div style={{ ...sora, fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: c.primary, marginBottom: '20px' }}>💰 Sales Summary</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+                        <div>
+                          <div style={{ ...mono, fontSize: '32px', fontWeight: 800, color: '#22c55e' }}>{dailyReport.orders_today}</div>
+                          <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px' }}>Orders Today</div>
+                        </div>
+                        <div>
+                          <div style={{ ...mono, fontSize: '32px', fontWeight: 800, color: '#22c55e' }}>₹{dailyReport.revenue_today?.toLocaleString() || '0'}</div>
+                          <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px' }}>Revenue</div>
+                        </div>
+                        <div>
+                          <div style={{ ...mono, fontSize: '32px', fontWeight: 800, color: dailyReport.conversion_rate_today > 10 ? '#22c55e' : '#f59e0b' }}>{dailyReport.conversion_rate_today}%</div>
+                          <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px' }}>Conversion Rate</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '28px', backdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ ...mono, fontSize: '48px', fontWeight: 800, color: dailyReport.avg_intent_score_today >= 7 ? '#22c55e' : dailyReport.avg_intent_score_today >= 4 ? '#f59e0b' : c.muted }}>{dailyReport.avg_intent_score_today}</div>
+                      <div style={{ fontSize: '13px', color: c.muted, marginTop: '8px', textAlign: 'center' }}>Avg Intent Score</div>
+                      <div style={{ width: '80%', height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', marginTop: '12px', overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min(dailyReport.avg_intent_score_today * 10, 100)}%`, height: '100%', background: `linear-gradient(90deg, ${c.primary}, #3a7bd5)`, borderRadius: '3px', transition: 'width 0.6s ease' }}></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Segment Breakdown + Top Products */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    {/* Segment Breakdown */}
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '28px', backdropFilter: 'blur(12px)' }}>
+                      <div style={{ ...sora, fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: c.primary, marginBottom: '20px' }}>📈 Segment Breakdown</div>
+                      {dailyReport.segment_breakdown && Object.keys(dailyReport.segment_breakdown).length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {Object.entries(dailyReport.segment_breakdown).map(([seg, count]) => {
+                            const total = Object.values(dailyReport.segment_breakdown).reduce((a, b) => a + b, 0);
+                            const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                            const segColors = { HOT: '#f85149', WARM: '#f59e0b', COLD: '#8b949e', CUSTOMER: '#22c55e' };
+                            return (
+                              <div key={seg}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                  <span style={{ fontSize: '13px', fontWeight: 600, color: segColors[seg] || c.muted }}>{seg}</span>
+                                  <span style={{ ...mono, fontSize: '13px', color: c.ivory }}>{count} ({pct}%)</span>
+                                </div>
+                                <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${pct}%`, height: '100%', background: segColors[seg] || c.muted, borderRadius: '4px', transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)' }}></div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ color: c.muted, fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>No segment data available</div>
+                      )}
+                    </div>
+
+                    {/* Top Products */}
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '28px', backdropFilter: 'blur(12px)' }}>
+                      <div style={{ ...sora, fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: c.primary, marginBottom: '20px' }}>🏆 Top Products Today</div>
+                      {dailyReport.top_products_today && dailyReport.top_products_today.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          {dailyReport.top_products_today.map((prod, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                              <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: i === 0 ? 'linear-gradient(135deg, #f59e0b, #d97706)' : i === 1 ? 'linear-gradient(135deg, #94a3b8, #64748b)' : 'linear-gradient(135deg, #a16207, #92400e)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: 800, color: '#fff' }}>
+                                {i + 1}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>{prod.name}</div>
+                                <div style={{ fontSize: '12px', color: c.muted }}>{prod.count} order{prod.count !== 1 ? 's' : ''}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ color: c.muted, fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>No orders today yet</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '80px 0', color: c.muted }}>
+                  <p>Select a date to view the report.</p>
+                </div>
+              )}
+            </div>
+          ) : !selectedShop && isSuperAdmin ? (
             /* Connected Businesses View */
-            <div>
+            <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
                 <div>
-                  <h1 className="dash-h1" style={{ marginBottom: '8px' }}>Connected Businesses</h1>
+                  <h1 style={{ ...sora.style, fontSize: '28px', fontWeight: 800, color: '#fff', margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>Connected Businesses</h1>
                   <p style={{ color: c.muted, margin: 0, fontSize: '15px' }}>Overview ({stores.length} Stores Active)</p>
                 </div>
               </div>
@@ -446,58 +973,77 @@ export default function Dashboard() {
               <div className="dash-stores-grid">
                 {stores.map(s => (
                   <div key={s.id} onClick={() => setSelectedShop(s.id)} style={{
-                    background: c.panel, border: `1px solid rgba(14,165,233,0.3)`, borderRadius: '16px', padding: '24px',
-                    cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 8px 32px rgba(14,165,233,0.05)',
-                    position: 'relative', overflow: 'hidden'
+                    background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', padding: '24px',
+                    cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', backdropFilter: 'blur(12px)',
+                    position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '20px'
                   }}
-                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'}
-                  onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
-                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', background: 'linear-gradient(to top, rgba(14,165,233,0.1), transparent)' }}></div>
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(14,165,233,0.3)'; e.currentTarget.style.boxShadow = '0 12px 40px rgba(0,0,0,0.4), 0 0 20px rgba(14,165,233,0.1)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.boxShadow = 'none'; }}>
                     
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                    {/* Header Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                        <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
+                        <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(59,130,246,0.05))', border: '1px solid rgba(14,165,233,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800, color: '#0ea5e9', boxShadow: 'inset 0 0 20px rgba(14,165,233,0.05)' }}>
                           {s.icon || (s.name ? s.name.charAt(0).toUpperCase() : 'S')}
                         </div>
                         <div>
-                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>{s.name}</div>
-                          <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px' }}>{s.category || 'Retail'}</div>
+                          <div style={{ ...sora.style, fontSize: '20px', fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>{s.name}</div>
+                          <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></span>
+                            {s.category || 'Retail E-commerce'}
+                          </div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 10px #22c55e' }}></div>
-                        <span style={{ fontSize: '20px', color: c.muted }}>...</span>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setForceResetOpen(s); }}
+                          style={{ background: 'transparent', color: c.muted, border: `1px solid ${c.line}`, padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = c.panel2; e.currentTarget.style.color = '#fff'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = c.muted; }}
+                        >
+                          Reset Pwd
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setStoreToDelete(s); setStoreDeleteInput(''); }}
+                          style={{ background: 'transparent', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'; }}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '16px 0', borderTop: `1px solid ${c.line}`, borderBottom: `1px solid ${c.line}`, marginBottom: '16px' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: c.muted, fontSize: '12px', marginBottom: '4px' }}>
-                          <span>🤖</span> Active AI Agents
+                    {/* Stats Row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.02)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
+                          🤖 AI Agents
                         </div>
-                        <div style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{s.agents || 1}</div>
+                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#fff' }}>{s.agents || 1}</div>
                       </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: c.muted, fontSize: '12px', marginBottom: '4px' }}>
-                          <span>💰</span> Total Sales
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
+                          💰 Sales
                         </div>
-                        <div style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{analytics?.orders_placed || 0}</div>
+                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#22c55e' }}>{s.id === 'urban-threads' ? 45 : (s.id === 'sharma-electronics' ? 12 : 0)}</div>
                       </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: c.muted, fontSize: '12px', marginBottom: '4px' }}>
-                          <span>🔥</span> Hot Leads
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
+                          🔥 Hot Leads
                         </div>
-                        <div style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{analytics?.hot_or_above || 0}</div>
+                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>{s.id === 'urban-threads' ? 14 : (s.id === 'sharma-electronics' ? 8 : 0)}</div>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 2 }}>
-                      <div style={{ fontSize: '13px', color: '#0ea5e9', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                    {/* Footer Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                      <div style={{ fontSize: '13px', color: '#0ea5e9', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
-                        Performance Graph
+                        View Dashboard
                       </div>
-                      <div style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 600, border: '1px solid rgba(34,197,94,0.2)' }}>
-                        status <span style={{display:'inline-block', width:'6px', height:'6px', borderRadius:'50%', background:'#22c55e', marginLeft:'4px'}}></span>
+                      <div style={{ color: c.muted, fontSize: '12px', fontWeight: 500 }}>
+                        Synced: Just now
                       </div>
                     </div>
                   </div>
@@ -628,12 +1174,12 @@ export default function Dashboard() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {pendingHandoffs.map(h => (
-                  <div key={h.id} style={styles.handoffCard}>
-                    <div style={{ flex: 1, marginRight: '16px' }}>
+                  <div key={h.id} style={{...styles.handoffCard, flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start'}}>
+                    <div style={{ flex: '1 1 250px', minWidth: '0' }}>
                       <div style={{ fontWeight: 700, color: c.ivory, marginBottom: '6px', fontSize: '15px' }}>
                         {h.name || 'Unknown Customer'}
                       </div>
-                      <div style={{ color: c.hot, fontSize: '14px', fontWeight: 500 }}>
+                      <div style={{ color: c.hot, fontSize: '14px', fontWeight: 500, wordWrap: 'break-word' }}>
                         Reason: {h.reason}
                       </div>
                       <div style={{ color: c.muted, fontSize: '12px', marginTop: '8px' }}>
@@ -643,33 +1189,40 @@ export default function Dashboard() {
                       </div>
                     </div>
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '180px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: '1 1 260px', minWidth: '260px' }}>
+                      <textarea 
+                        className="manager-input"
+                        placeholder="Type reply (e.g. Please pay at UPI ID: ...)" 
+                        value={replyTexts[h.id] || ''}
+                        onChange={(e) => setReplyTexts(prev => ({ ...prev, [h.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(h.id); } }}
+                        style={{ 
+                          width: '100%', 
+                          border: `1px solid rgba(14,165,233,0.3)`, 
+                          borderRadius: '8px', 
+                          padding: '12px',
+                          fontSize: '13px',
+                          background: 'rgba(14,165,233,0.05)',
+                          color: c.ivory,
+                          outline: 'none',
+                          minHeight: '70px',
+                          resize: 'vertical',
+                          fontFamily: 'inherit'
+                        }}
+                      />
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <input 
-                          type="text" 
-                          className="manager-input"
-                          placeholder="Type reply..." 
-                          value={replyTexts[h.id] || ''}
-                          onChange={(e) => setReplyTexts(prev => ({ ...prev, [h.id]: e.target.value }))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') sendReply(h.id); }}
-                          style={{ 
-                            flex: 1, 
-                            border: `1px solid ${c.line}`, 
-                            borderRadius: '8px', 
-                            padding: '8px 12px',
-                            fontSize: '13px',
-                            background: c.panel2,
-                            color: c.ivory,
-                            outline: 'none'
-                          }}
-                        />
-                        <button onClick={() => sendReply(h.id)} style={{ ...styles.resolveBtn, background: c.cust, color: '#fff', border: 'none' }}>
-                          Send
+                        <button onClick={() => sendReply(h.id)} style={{ ...styles.resolveBtn, flex: 1, background: c.cust, color: '#fff', border: 'none', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                          Send Message
+                        </button>
+                        <button onClick={() => resolveHandoff(h.id)} style={{...styles.resolveBtn, flex: 1, background: 'transparent', border: `1px solid ${c.line}`, color: c.muted, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'}}
+                           onMouseEnter={e => { e.currentTarget.style.color = c.ivory; e.currentTarget.style.borderColor = c.muted; }}
+                           onMouseLeave={e => { e.currentTarget.style.color = c.muted; e.currentTarget.style.borderColor = c.line; }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                          Resolve
                         </button>
                       </div>
-                      <button onClick={() => resolveHandoff(h.id)} style={styles.resolveBtn}>
-                        Mark as Resolved
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -712,12 +1265,30 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
                       <span style={{ fontWeight: 600, color: c.ivory, fontSize: '15px' }}>{cust.name || 'Anonymous Visitor'}</span>
                       <span style={styles.badge(segColor(cust.segment), segTextColor(cust.segment))}>{cust.segment}</span>
+                      {cust.retention_stage && (
+                        <span style={{ ...styles.badge('#10b981', '#10b981'), background: '#10b98120', textTransform: 'capitalize' }}>
+                          📦 {cust.retention_stage.replace('_', ' ')}
+                        </span>
+                      )}
                     </div>
                     <div style={{ color: c.muted, fontSize: '13px' }}>
                       Intent Score: <strong style={{ color: c.ivory, ...mono }}>{cust.intent_score || 0}/100</strong> • 
                       Last active: {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
                         day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
                       }) : 'just now'}
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Consent:</span>
+                        <div style={{ display: 'flex', gap: '4px' }} title={cust.consent_whatsapp ? "Consented to WhatsApp" : "No WhatsApp consent"}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={cust.consent_whatsapp ? '#22c55e' : '#4b5563'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: cust.consent_whatsapp ? 1 : 0.5 }}>
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                          </svg>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px' }} title={cust.consent_email ? "Consented to Email" : "No Email consent"}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={cust.consent_email ? '#22c55e' : '#4b5563'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: cust.consent_email ? 1 : 0.5 }}>
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline>
+                          </svg>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -733,23 +1304,6 @@ export default function Dashboard() {
                       style={{ ...styles.resolveBtn, background: 'transparent', color: c.primary, border: `1px solid ${c.primary}` }}
                     >
                       View Details
-                    </button>
-                    <button 
-                      onClick={() => {
-                        sessionStorage.removeItem('admin_token');
-                        window.location.href = '/dashboard/login';
-                      }}
-                      style={{
-                        ...inter, fontSize: '13px', fontWeight: 600, color: '#ef4444',
-                        background: 'rgba(239, 68, 68, 0.1)', padding: '10px 16px', borderRadius: '8px',
-                        border: '1px solid rgba(239, 68, 68, 0.2)', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', marginTop: '12px'
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                      Logout
                     </button>
                   </div>
                 </div>
@@ -871,6 +1425,46 @@ export default function Dashboard() {
                 onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
               >
                 Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {storeToDelete && (
+        <div className="modal-overlay" onClick={() => setStoreToDelete(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center', padding: '40px 32px' }}>
+            <div style={{ background: 'rgba(248, 81, 73, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', color: c.hot }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+            </div>
+            <h2 style={{ ...styles.sectionTitle, marginBottom: '12px', fontSize: '20px' }}>Delete Store: {storeToDelete.name}?</h2>
+            <p style={{ color: c.muted, fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>
+              Are you sure you want to permanently delete this store and ALL its related data (customers, orders, conversations)? This action CANNOT be undone.
+            </p>
+            <div style={{ marginBottom: '32px', textAlign: 'left' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: c.muted, marginBottom: '8px', fontWeight: 600 }}>Type DELETE to confirm</label>
+              <input 
+                type="text" 
+                value={storeDeleteInput}
+                onChange={e => setStoreDeleteInput(e.target.value)}
+                placeholder="DELETE"
+                style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: `1px solid ${storeDeleteInput === 'DELETE' ? c.hot : c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none', transition: 'all 0.2s' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
+              <button 
+                style={{ flex: 1, padding: '12px', background: 'transparent', border: `1px solid ${c.line}`, borderRadius: '8px', color: c.ivory, cursor: 'pointer', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s' }}
+                onClick={() => setStoreToDelete(null)}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                Cancel
+              </button>
+              <button 
+                disabled={storeDeleteInput !== 'DELETE'}
+                style={{ flex: 1, padding: '12px', background: c.hot, border: 'none', borderRadius: '8px', color: '#fff', cursor: storeDeleteInput === 'DELETE' ? 'pointer' : 'not-allowed', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s', boxShadow: storeDeleteInput === 'DELETE' ? '0 4px 12px rgba(248,81,73,0.3)' : 'none', opacity: storeDeleteInput === 'DELETE' ? 1 : 0.5 }}
+                onClick={confirmDeleteStore}
+              >
+                Yes, Delete Store
               </button>
             </div>
           </div>

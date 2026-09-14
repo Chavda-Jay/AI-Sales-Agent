@@ -55,6 +55,7 @@ def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
         if payload.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Not authorized")
+        return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -136,6 +137,96 @@ Return ONLY raw JSON: {{"reply": "your message"}}
         except Exception as e:
             print(f"Abandoned chat worker error: {e}")
 
+async def post_purchase_retention_worker():
+    while True:
+        await asyncio.sleep(20)  # Frequent checks for demo
+        if not db_pool or not GROQ_API_KEY:
+            continue
+            
+        try:
+            async with db_pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT rs.id, rs.current_stage, rs.stage_updated_at, c.ext_id, c.business_id, rs.customer_id, o.product_id, ci.name as product_name
+                    FROM retention_stages rs
+                    JOIN customers c ON c.id = rs.customer_id
+                    JOIN orders o ON o.id = rs.order_id
+                    LEFT JOIN catalog_items ci ON ci.id = o.product_id
+                    WHERE (rs.current_stage IN ('confirmed', 'delivered', 'satisfaction_check') AND rs.stage_updated_at < NOW() - INTERVAL '60 seconds')
+                       OR (rs.current_stage = 'review_requested' AND rs.stage_updated_at < NOW() - INTERVAL '90 seconds')
+                """)
+                for row in rows:
+                    rs_id = row['id']
+                    current_stage = row['current_stage']
+                    customer_id = row['customer_id']
+                    business_id = row['business_id']
+                    ext_id = row['ext_id']
+                    product_name = row['product_name'] or "your recent purchase"
+                    
+                    next_stage = None
+                    instruction = ""
+                    
+                    if current_stage == 'confirmed':
+                        next_stage = 'delivered'
+                        instruction = "Write a short, polite message telling them their order has been shipped and will arrive soon (add a 📦 emoji)."
+                    elif current_stage == 'delivered':
+                        next_stage = 'satisfaction_check'
+                        instruction = f"The customer received their order of {product_name}. Write a short, polite message asking if they are loving it and how everything is going."
+                    elif current_stage == 'satisfaction_check':
+                        next_stage = 'review_requested'
+                        instruction = "Write a short, polite message asking the customer to leave a quick review."
+                    elif current_stage == 'review_requested':
+                        next_stage = 'repeat_reminder'
+                        # Get random catalog item for cross-sell
+                        suggested_item = await conn.fetchval("SELECT name FROM catalog_items WHERE business_id = $1 AND id != $2 ORDER BY RANDOM() LIMIT 1", business_id, row['product_id'] or 0)
+                        suggested_item = suggested_item or "our newest arrivals"
+                        instruction = f"Write a short, polite message saying it's been a while, and suggest they check out a new item we think they'll love: {suggested_item}."
+                        
+                    if next_stage:
+                        try:
+                            # Prompt Groq
+                            sys_prompt = "You are the AI Sales Agent for this business. Generate a short polite post-purchase follow-up message in the same language as the customer's last messages. Output ONLY a JSON object: {\"reply\": \"your message\"}. " + instruction
+                            
+                            hist_rows = await conn.fetch("SELECT message, reply FROM conversations WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 3", customer_id)
+                            messages = [{"role": "system", "content": sys_prompt}]
+                            for hr in reversed(hist_rows):
+                                if hr['message']: messages.append({"role": "user", "content": hr['message']})
+                                if hr['reply']: messages.append({"role": "assistant", "content": hr['reply']})
+                                
+                            async with httpx.AsyncClient() as client:
+                                groq_response = await client.post(
+                                    "https://api.groq.com/openai/v1/chat/completions",
+                                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
+                                    json={"model": GROQ_MODEL, "messages": messages, "max_tokens": 150, "temperature": 0.7},
+                                    timeout=10.0
+                                )
+                                data = groq_response.json()
+                                if "error" in data:
+                                    print(f"API Error for retention worker: {data['error']}")
+                                    continue
+                                raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                                raw = re.sub(r'^```json', '', raw)
+                                raw = re.sub(r'^```', '', raw)
+                                raw = re.sub(r'```$', '', raw).strip()
+                                try:
+                                    parsed = json.loads(raw)
+                                    reply = parsed.get("reply")
+                                except:
+                                    reply = None
+                                
+                                if reply:
+                                    # Insert to DB
+                                    await conn.execute("INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)", customer_id, business_id, None, reply, 0, 'HOT')
+                                    # Update stage
+                                    await conn.execute("UPDATE retention_stages SET current_stage = $1, stage_updated_at = NOW() WHERE id = $2", next_stage, rs_id)
+                                    # Update in-memory for live polling
+                                    if ext_id not in conversations:
+                                        conversations[ext_id] = []
+                                    conversations[ext_id].append({"role": "assistant", "content": json.dumps({"reply": reply, "retention": True})})
+                        except Exception as e:
+                            print(f"Error generating retention message: {e}")
+        except Exception as e:
+            print(f"Retention worker error: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_pool
@@ -148,6 +239,8 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS followed_up_at TIMESTAMP;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS shop TEXT;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_whatsapp BOOLEAN DEFAULT FALSE;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_email BOOLEAN DEFAULT FALSE;")
                 await conn.execute("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("""
@@ -168,6 +261,15 @@ async def lifespan(app: FastAPI):
                         created_at TIMESTAMP DEFAULT NOW()
                     )
                 """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS retention_stages (
+                        id SERIAL PRIMARY KEY,
+                        order_id INT REFERENCES orders(id),
+                        customer_id INT REFERENCES customers(id),
+                        current_stage TEXT DEFAULT 'confirmed',
+                        stage_updated_at TIMESTAMP DEFAULT NOW()
+                    )
+                """)
             print("Database connected and history loaded.")
         except Exception as e:
             print(f"Warning: Could not connect to database or load history. Using in-memory fallback. Error: {e}")
@@ -175,59 +277,48 @@ async def lifespan(app: FastAPI):
         print("Warning: DATABASE_URL not set. Using in-memory fallback.")
     
     worker_task = asyncio.create_task(abandoned_chat_worker())
+    retention_worker_task = asyncio.create_task(post_purchase_retention_worker())
     yield
     worker_task.cancel()
+    retention_worker_task.cancel()
     if db_pool:
         await db_pool.close()
 
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 if not os.path.exists("uploads"):
     os.makedirs("uploads")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 class LoginRequest(BaseModel):
+    email: str
     password: str
-    shop: Optional[str] = None
-    email: Optional[str] = None
 
 @app.post("/api/admin/login")
 async def admin_login(req: LoginRequest):
-    if req.password == ADMIN_PASSWORD and req.shop:
+    SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "superadmin@ai-sales.com")
+    if req.email == SUPERADMIN_EMAIL and req.password == ADMIN_PASSWORD:
         payload = {"role": "admin", "exp": datetime.now(timezone.utc) + timedelta(days=7)}
-        
-        if req.shop != "master" and db_pool:
-            try:
-                async with db_pool.acquire() as conn:
-                    business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", req.shop)
-                    if business_id:
-                        payload["business_id"] = business_id
-                        payload["shop"] = req.shop
-            except Exception as e:
-                print(f"Error fetching business_id for login: {e}")
-
         token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
         return {"token": token}
         
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
-                user = None
-                if req.email:
-                    user = await conn.fetchrow("""
-                        SELECT u.id, u.business_id, u.password_hash, b.slug 
-                        FROM admin_users u
-                        JOIN businesses b ON u.business_id = b.id
-                        WHERE u.email = $1
-                    """, req.email)
-                elif req.shop and req.shop != "master":
-                    user = await conn.fetchrow("""
-                        SELECT u.id, u.business_id, u.password_hash, b.slug 
-                        FROM admin_users u
-                        JOIN businesses b ON u.business_id = b.id
-                        WHERE b.slug = $1
-                    """, req.shop)
-                    
+                user = await conn.fetchrow("""
+                    SELECT u.id, u.business_id, u.password_hash, b.slug 
+                    FROM admin_users u
+                    JOIN businesses b ON u.business_id = b.id
+                    WHERE u.email = $1
+                """, req.email)
+                
                 if user and verify_password(req.password, user['password_hash']):
                     payload = {
                         "role": "admin", 
@@ -433,62 +524,139 @@ async def chat(req: ChatRequest):
             "order_product": None,
             "order_amount": None
         }
+    opt_out_words = ["stop", "unsubscribe", "band karo", "mat bhejo", "no more messages", "do not message"]
+    if any(w in req.message.lower() for w in opt_out_words):
+        parsed = {
+            "reply": "Understood, we won't send you promotional messages going forward.",
+            "intent_score": 0, "segment": "COLD", "reasoning": "User opted out", "objection": None,
+            "recommended_product": None, "next_action": "Opted out", "customer_name": None,
+            "customer_phone": None, "needs_human": False, "handoff_reason": None,
+            "requires_details": False, "order_ready": False, "order_product": None, "order_amount": None,
+            "consent_whatsapp": False, "consent_email": False
+        }
+        history.append({"role": "user", "content": req.message})
+        history.append({"role": "assistant", "content": json.dumps(parsed)})
+        if db_pool:
+            try:
+                async with db_pool.acquire() as conn:
+                    cid = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
+                    if cid:
+                        await conn.execute("UPDATE customers SET consent_whatsapp = FALSE, consent_email = FALSE, segment = 'COLD', last_interaction = NOW() WHERE id = $1", cid)
+                        await conn.execute("INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)", cid, business_id, req.message, parsed["reply"], 0, "COLD")
+            except Exception as e:
+                pass
+        return parsed
 
     detected_lang = detect_language(req.message)
 
-    system_prompt = f"""You are an AI B2C sales agent for the Indian brand "{config.get('brandName')}".
-Product catalog:
+    system_prompt = f"""You are the official AI Shopping Assistant for "{config.get('brandName')}" — a premium Indian brand.
+
+🏷️ PRODUCT CATALOG:
 {catalog_text}
 
-Policies: {config.get('policies')}
+📋 STORE POLICIES:
+{config.get('policies')}
 
-Language rule (very important, follow exactly):
-- The customer's current message language has been detected as: {detected_lang}
-- Write your "reply" field in that exact language/script. Do not translate to a different language than instructed.
-- Keep it natural and native-sounding, not a literal word-for-word translation.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 CORE IDENTITY & TONE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- You are a warm, knowledgeable, and professional shopping assistant — NOT a generic chatbot.
+- Talk like a real, experienced salesperson in a premium store: friendly, confident, helpful.
+- Be conversational and human. Use the customer's name once you know it.
+- NEVER sound robotic, repetitive, or overly formal. Vary your language naturally.
+- Keep responses concise (2-4 sentences for simple queries, more only when listing products).
+- Show genuine enthusiasm about the products you sell. You love this brand!
 
-Rules:
-- **FORMATTING (CRITICAL):** You must format your response beautifully and professionally.
-  1. When listing products, use a NUMBERED LIST with emojis. Format each product EXACTLY like this example:
-     `1. 👕 **Cotton T-Shirt** — ₹599\\nSoft everyday wear, 5 colors available\\n\\n![Image](/images/cotton_tshirt.jpg)\\n\\n2. 👖 **Slim Fit Jeans** — ₹1299\\nStretch denim, all sizes\\n\\n![Image](/images/slim_jeans.jpg)\\n\\n`
-  2. Each product MUST be on its own numbered line with: emoji, **bold name**, dash (—), price on the first line. Description on the next line.
-  3. If an "(Image Link: /images/...)" is provided in the catalog for a product, YOU MUST display it using markdown `![Product Image](/images/...)` directly below the product description. This is mandatory for a rich user experience!
-  4. Add a friendly greeting line BEFORE the product list and a helpful closing line AFTER it.
-  5. Inside the JSON string, represent newlines as `\\n`. NEVER press Enter inside a JSON string.
-  6. Use double `\\n\\n` between products for clean spacing.
-  7. Keep prices as plain numbers (e.g., 599, NOT ₹5,99 or 1,299).
-- Never invent prices, stock, delivery dates or offers not listed above.
-- Be helpful, concise, human, persuasive without being pushy.
-- Ask only necessary questions to narrow a recommendation.
-- **NUMBER FORMATTING:** Do NOT use commas in prices or numbers in your 'reply' (e.g., write 1098, not 1,098 or 10,098).
-- Answer strictly and perfectly according to what the customer asks. Do not make illogical product suggestions (e.g., never suggest a leather belt with a silk saree).
-- **COUPON/DISCOUNT:** If the customer mentions the coupon code 'FIRST10', acknowledge it excitedly and apply a 10% discount to their purchase. When setting 'order_amount' in the JSON, calculate and provide the discounted price. Clearly mention the discount applied in your 'reply'.
-- When the customer shows clear purchase intent, ask them for their product preferences (like Size or Color) in the chat if applicable. Do not make assumptions (e.g. sneakers need numeric sizes, shirts need S/M/L).
-- **ORDER DETAILS FORM:** Once product preferences are finalized and the customer is ready to checkout, set `"requires_details"` to `true`. This will show a shipping form (Name, Phone, Address) in their chat window. Do not manually ask for their name/phone in your text reply if you are setting this to true; let the form do it.
-- If the customer mentions their name or phone number anywhere in the conversation, acknowledge it naturally and include it in your JSON response.
-- HUMAN HANDOFF: If the customer sounds angry/frustrated, asks for a human/manager, mentions legal/fraud/payment disputes, asks for an extreme discount/exception, or asks a question completely outside your catalog/policy knowledge, set "needs_human" to true and provide a short "handoff_reason". Acknowledge this naturally in your "reply" (e.g. "I'll connect you with our team right away for this."). Otherwise, set "needs_human" to false and "handoff_reason" to null.
-- ORDER CONFIRMATION: If the customer clearly confirms they want to place an order (e.g., "order confirm karo", "yes place my order"), set "order_ready" to true, and provide the "order_product" and "order_amount" (numeric price). Otherwise, set these to false/null.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌐 LANGUAGE (CRITICAL):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Detected language: {detected_lang}
+- ALWAYS reply in the SAME language/script as the customer's message.
+- If they write in Hindi, reply in Hindi (Devanagari). If Hinglish, reply in Hinglish. If English, reply in English.
+- Sound native and natural — not like a translated response.
 
-After reading the conversation, respond with ONLY a raw JSON object (no markdown fences) with exactly:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛍️ HOW TO RESPOND TO DIFFERENT SITUATIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Greeting / First Message:**
+- Welcome them warmly with the brand name. Mention 1-2 bestsellers or categories casually.
+- Example: "Welcome to {config.get('brandName')}! 🎉 We've got some amazing [category] starting at just ₹[price]. What are you looking for today?"
+
+**Product Inquiry (browsing):**
+- Show relevant products from the catalog ONLY. Format beautifully with emojis.
+- Each product: emoji + **Bold Name** — ₹Price, then a short description line.
+- If product has an image link in catalog, MUST show it: `![Product Image](/images/...)`
+- Add spacing between products using `\\n\\n`.
+- End with a helpful question like "Would you like to know more about any of these?" or "Want me to check sizes?"
+
+**Specific Product Question:**
+- Answer EXACTLY what was asked. Don't dump the entire catalog.
+- If they ask about a T-shirt, only talk about T-shirts. If they ask price, give the price directly.
+- Be precise: "The Cotton T-Shirt is ₹599 — available in 5 colors and sizes S to XXL! 👕"
+
+**Purchase Intent (wants to buy):**
+- Get excited! Confirm their choice. IF the product typically requires a variant selection (like clothing size or shoe size), ask for it NATURALLY. If not (like most electronics or standard items), do NOT ask for size/color.
+- Once product choices (if any) are finalized and the customer is ready to checkout, set `requires_details` to true to show the shipping form.
+- Do NOT ask for name/phone/address in text when setting requires_details to true — the form handles that.
+
+**Objections / Hesitation:**
+- Address concerns empathetically. Highlight value, quality, return policy.
+- "I totally understand! The quality of this fabric is premium — and we have hassle-free returns if it doesn't work out."
+
+**Off-topic / Irrelevant Questions:**
+- Politely redirect: "That's a great question! I'm specialized in helping you shop at {config.get('brandName')} though 😊 — anything I can help you find from our collection?"
+
+**Angry / Frustrated Customer:**
+- Be empathetic, acknowledge their frustration, and escalate.
+- Set needs_human=true. Reply: "I completely understand your concern, and I want to make sure this gets resolved properly. Let me connect you with our store manager right away."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 FORMATTING RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Use markdown: **bold** for product names, emojis for visual appeal.
+- Represent newlines inside JSON as `\\n`. NEVER press Enter inside a JSON string.
+- Use `\\n\\n` between products for clean spacing.
+- Prices: write plain numbers (599, not 1,099 or ₹5,99). No commas in numbers.
+- Never invent products, prices, stock, delivery dates, or offers not in the catalog.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔧 SPECIAL FEATURES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- **COUPON 'FIRST10'**: If mentioned, get excited! Apply 10% discount. Show original → discounted price. Set order_amount to discounted price.
+- **ORDER DETAILS FORM**: Set `requires_details` to true when customer is ready to checkout (preferences finalized). The form (Name, Phone, Address, Consent checkboxes) appears automatically.
+- **HUMAN HANDOFF**: Set `needs_human` to true + `handoff_reason` if: customer is angry, asks for human/manager, mentions legal/fraud/payment disputes, or asks something completely outside your knowledge.
+- **ORDER CONFIRMATION**: When customer confirms order (e.g. "order confirm karo", "yes place it"), set `order_ready` to true with correct `order_product` and `order_amount`.
+- **DPDP CONSENT**: When showing high purchase intent (setting requires_details or order_ready to true), naturally ask: "Would you like to receive future offers and updates via WhatsApp or email?" in the detected language. Set consent fields ONLY when customer explicitly responds.
+- **CROSS-SELL/UPSELL**: Whenever you recommend or confirm a product, consider suggesting ONE complementary item from the catalog (e.g. jeans → belt, TV → HDMI cable or wall mount). Never force a suggestion if nothing fits. Weave the suggestion naturally into your reply (e.g. "Great choice! A lot of customers also pick up our Leather Belt with this — want me to add that too?"). Set `cross_sell_product` to the name of the suggested complementary product, otherwise null. Never suggest just because it's expensive. Only suggest once per product discussion.
+- If customer mentions their name or phone anywhere, acknowledge it and include in JSON.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📤 OUTPUT FORMAT (STRICT):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exactly these fields:
 {{
-  "reply": "the customer-facing chat message",
+  "reply": "your professional customer-facing message",
   "intent_score": integer 0-100,
   "segment": "COLD" | "WARM" | "HOT" | "CUSTOMER",
-  "reasoning": "one short sentence",
+  "reasoning": "one short sentence about customer intent",
   "objection": "short phrase or null",
   "recommended_product": "product name or null",
-  "next_action": "short recommended action",
+  "cross_sell_product": "complementary product name or null",
+  "next_action": "short recommended next step",
   "customer_name": "extracted name or null",
-  "customer_phone": "extracted phone number or null",
+  "customer_phone": "extracted phone or null",
   "needs_human": boolean,
   "handoff_reason": "reason string or null",
   "requires_details": boolean,
   "order_ready": boolean,
   "order_product": "product name being ordered or null",
-  "order_amount": numeric price or null
+  "order_amount": numeric price or null,
+  "consent_whatsapp": boolean or null,
+  "consent_email": boolean or null
 }}"""
 
-    messages = [{"role": "system", "content": system_prompt}] + history[-6:] + [{"role": "user", "content": req.message}]
+    messages = [{"role": "system", "content": system_prompt}] + history[-12:] + [{"role": "user", "content": req.message}]
 
     async with httpx.AsyncClient() as client:
         try:
@@ -501,8 +669,8 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                 json={
                     "model": GROQ_MODEL,
                     "messages": messages,
-                    "max_tokens": 1000,
-                    "temperature": 0.5,
+                    "max_tokens": 1500,
+                    "temperature": 0.4,
                 },
                 timeout=30.0
             )
@@ -580,6 +748,7 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
             "reasoning": "Could not parse AI response",
             "objection": None,
             "recommended_product": None,
+            "cross_sell_product": None,
             "next_action": None,
             "customer_name": None,
             "customer_phone": None,
@@ -589,6 +758,8 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
             "order_ready": False,
             "order_product": None,
             "order_amount": None,
+            "consent_whatsapp": None,
+            "consent_email": None,
         }
 
     history.append({"role": "user", "content": req.message})
@@ -606,8 +777,8 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
 
                 if not customer_id:
                     customer_id = await conn.fetchval(
-                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score, shop, business_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id
+                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score, shop, business_id, consent_whatsapp, consent_email) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, FALSE), COALESCE($9, FALSE)) RETURNING id",
+                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email")
                     )
                 else:
                     await conn.execute(
@@ -620,6 +791,8 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                             phone = COALESCE($5, phone),
                             shop = COALESCE($6, shop),
                             business_id = COALESCE($7, business_id),
+                            consent_whatsapp = COALESCE($8, consent_whatsapp),
+                            consent_email = COALESCE($9, consent_email),
                             followed_up_at = NULL
                         WHERE id = $3
                         """,
@@ -629,7 +802,9 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                         c_name,
                         c_phone,
                         req.shop,
-                        business_id
+                        business_id,
+                        parsed.get("consent_whatsapp"),
+                        parsed.get("consent_email")
                     )
                 
                 await conn.execute(
@@ -651,10 +826,11 @@ After reading the conversation, respond with ONLY a raw JSON object (no markdown
                     if prod_name:
                         prod_id = await conn.fetchval("SELECT id FROM catalog_items WHERE business_id = $1 AND name ILIKE $2 LIMIT 1", business_id, f"%{prod_name}%")
                     
-                    await conn.execute(
-                        "INSERT INTO orders (customer_id, business_id, product_id, status, amount) VALUES ($1, $2, $3, $4, $5)",
+                    order_db_id = await conn.fetchval(
+                        "INSERT INTO orders (customer_id, business_id, product_id, status, amount) VALUES ($1, $2, $3, $4, $5) RETURNING id",
                         customer_id, business_id, prod_id, 'confirmed', parsed.get("order_amount")
                     )
+                    await conn.execute("INSERT INTO retention_stages (order_id, customer_id, current_stage) VALUES ($1, $2, 'confirmed')", order_db_id, customer_id)
                     parsed["order_id"] = order_id
         except Exception as e:
             print(f"Warning: Database error during chat save: {e}")
@@ -716,7 +892,8 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
             async with db_pool.acquire() as conn:
                 if shop:
                     rows = await conn.fetch("""
-                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email,
+                               (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage
                         FROM customers c
                         JOIN businesses b ON c.business_id = b.id
                         WHERE b.slug = $1
@@ -724,7 +901,8 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
                     """, shop)
                 else:
                     rows = await conn.fetch("""
-                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email,
+                               (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage
                         FROM customers c
                         LEFT JOIN businesses b ON c.business_id = b.id
                         ORDER BY c.last_interaction DESC NULLS LAST
@@ -734,6 +912,16 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
             print(f"Warning: Database error fetching customers: {e}")
             raise HTTPException(status_code=500, detail="Database error")
     return []
+
+@app.get("/api/customers/{customer_id}/consent")
+async def get_customer_consent(customer_id: int, _ = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="DB not connected")
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT consent_whatsapp, consent_email FROM customers WHERE id = $1", customer_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        return {"whatsapp": row["consent_whatsapp"], "email": row["consent_email"]}
 
 @app.get("/api/customers/{customer_id}/orders")
 async def get_customer_orders(customer_id: int):
@@ -752,6 +940,28 @@ async def get_customer_orders(customer_id: int):
             print(f"Warning: Database error fetching orders: {e}")
             raise HTTPException(status_code=500, detail="Database error")
     return []
+
+@app.get("/api/orders/{order_id}/retention-stage")
+async def get_retention_stage(order_id: int):
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                stage = await conn.fetchval("SELECT current_stage FROM retention_stages WHERE order_id = $1 ORDER BY id DESC LIMIT 1", order_id)
+                return {"stage": stage}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Database error")
+    return {"stage": None}
+
+@app.get("/api/customers/{customer_id}/retention-stage")
+async def get_customer_retention_stage(customer_id: int):
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                stage = await conn.fetchval("SELECT current_stage FROM retention_stages WHERE customer_id = $1 ORDER BY id DESC LIMIT 1", customer_id)
+                return {"stage": stage}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Database error")
+    return {"stage": None}
 
 @app.get("/api/conversations/{customer_id}")
 async def get_conversations(customer_id: int):
@@ -1085,6 +1295,144 @@ async def get_weekly_analytics(shop: Optional[str] = None, _ = Depends(verify_ad
             raise HTTPException(status_code=500, detail="Database error")
     return []
 
+@app.get("/api/daily-report")
+async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = None, admin: dict = Depends(verify_admin)):
+    """Daily Autonomous Report — Morning Snapshot style summary."""
+    from datetime import date as date_type
+    
+    # Parse target date (default: today)
+    if date:
+        try:
+            target_date = date_type.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    else:
+        target_date = date_type.today()
+    
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        async with db_pool.acquire() as conn:
+            # Determine business filter
+            business_id = None
+            if shop:
+                business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", shop)
+                if not business_id:
+                    raise HTTPException(status_code=404, detail="Shop not found")
+            elif admin.get("business_id"):
+                business_id = admin["business_id"]
+            
+            biz_filter_customers = "AND c.business_id = $2" if business_id else ""
+            biz_filter_convos = "AND conv.business_id = $2" if business_id else ""
+            biz_filter_orders = "AND o.business_id = $2" if business_id else ""
+            biz_filter_handoffs_join = "JOIN customers c ON h.customer_id = c.id" if business_id else ""
+            biz_filter_handoffs_where = "AND c.business_id = $1" if business_id else ""
+            
+            params_date = [target_date]
+            params_date_biz = [target_date, business_id] if business_id else [target_date]
+            params_biz = [business_id] if business_id else []
+            
+            # 1. New leads today (customers first seen today)
+            new_leads = await conn.fetchval(f"""
+                SELECT COUNT(*) FROM customers c
+                WHERE c.created_at::date = $1 {biz_filter_customers}
+            """, *params_date_biz)
+            
+            # 2. Hot prospects count (current)
+            if business_id:
+                hot_prospects = await conn.fetchval("""
+                    SELECT COUNT(*) FROM customers c
+                    WHERE c.segment = 'HOT' AND c.business_id = $1
+                """, business_id)
+            else:
+                hot_prospects = await conn.fetchval(
+                    "SELECT COUNT(*) FROM customers WHERE segment = 'HOT'"
+                )
+            
+            # 3. Pending handoffs count
+            if business_id:
+                pending_handoffs = await conn.fetchval("""
+                    SELECT COUNT(*) FROM handoffs h
+                    JOIN customers c ON h.customer_id = c.id
+                    WHERE h.status = 'pending' AND c.business_id = $1
+                """, business_id)
+            else:
+                pending_handoffs = await conn.fetchval(
+                    "SELECT COUNT(*) FROM handoffs WHERE status = 'pending'"
+                )
+            
+            # 4. Total conversations today
+            total_convos = await conn.fetchval(f"""
+                SELECT COUNT(*) FROM conversations conv
+                WHERE conv.created_at::date = $1 {biz_filter_convos}
+            """, *params_date_biz)
+            
+            # 5. Orders today (count + revenue)
+            order_row = await conn.fetchrow(f"""
+                SELECT COUNT(*) as cnt, COALESCE(SUM(o.amount), 0) as revenue
+                FROM orders o
+                WHERE o.status = 'confirmed' AND o.created_at::date = $1 {biz_filter_orders}
+            """, *params_date_biz)
+            orders_today = order_row['cnt'] if order_row else 0
+            revenue_today = float(order_row['revenue']) if order_row and order_row['revenue'] else 0.0
+            
+            # 6. Conversion rate
+            conversion_rate = 0.0
+            if total_convos and total_convos > 0:
+                conversion_rate = round((orders_today / total_convos) * 100, 1)
+            
+            # 7. Avg intent score today
+            avg_intent = await conn.fetchval(f"""
+                SELECT AVG(conv.intent_score) FROM conversations conv
+                WHERE conv.created_at::date = $1 {biz_filter_convos}
+            """, *params_date_biz)
+            avg_intent_score = round(float(avg_intent), 1) if avg_intent else 0.0
+            
+            # 8. Segment breakdown
+            if business_id:
+                seg_rows = await conn.fetch("""
+                    SELECT segment, COUNT(*) as cnt FROM customers
+                    WHERE business_id = $1
+                    GROUP BY segment ORDER BY cnt DESC
+                """, business_id)
+            else:
+                seg_rows = await conn.fetch(
+                    "SELECT segment, COUNT(*) as cnt FROM customers GROUP BY segment ORDER BY cnt DESC"
+                )
+            segment_breakdown = {row['segment']: row['cnt'] for row in seg_rows}
+            
+            # 9. Top products today (from orders + catalog_items)
+            top_products_rows = await conn.fetch(f"""
+                SELECT ci.name, COUNT(*) as cnt
+                FROM orders o
+                JOIN catalog_items ci ON o.product_id = ci.id
+                WHERE o.status = 'confirmed' AND o.created_at::date = $1 {biz_filter_orders}
+                GROUP BY ci.name
+                ORDER BY cnt DESC
+                LIMIT 3
+            """, *params_date_biz)
+            top_products = [{"name": row['name'], "count": row['cnt']} for row in top_products_rows]
+            
+            return {
+                "date": str(target_date),
+                "new_leads_count": new_leads or 0,
+                "hot_prospects_count": hot_prospects or 0,
+                "pending_handoffs_count": pending_handoffs or 0,
+                "total_conversations_today": total_convos or 0,
+                "orders_today": orders_today,
+                "revenue_today": revenue_today,
+                "conversion_rate_today": conversion_rate,
+                "avg_intent_score_today": avg_intent_score,
+                "segment_breakdown": segment_breakdown,
+                "top_products_today": top_products
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error generating daily report: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
+
 @app.get("/api/conversations/{customer_id}/latest")
 async def get_latest_conversation(customer_id: str):
     if db_pool:
@@ -1152,10 +1500,74 @@ async def create_business(req: BusinessRequest):
                     VALUES ($1, $2, $3, $4, $5)
                 """, business_id, item.name, item.price, item.note, item.image_url)
                 
-            return {"status": "success", "business_id": business_id}
+            return {"success": True, "business_id": business_id, "slug": req.slug}
     except Exception as e:
-        print(f"Error creating business: {e}")
-        raise HTTPException(status_code=500, detail="Database error")
+        print(f"Signup error: {e}")
+        raise HTTPException(status_code=500, detail="Database error during signup")
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+@app.post("/api/admin/change-password")
+async def change_password(req: ChangePasswordRequest, admin: dict = Depends(verify_admin)):
+    if admin.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+        
+    business_id = admin.get("business_id")
+    if not business_id:
+        raise HTTPException(status_code=400, detail="Cannot change master password from here. Please use .env")
+        
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+        
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    async with db_pool.acquire() as conn:
+        user = await conn.fetchrow("SELECT id, password_hash FROM admin_users WHERE business_id = $1", business_id)
+        if not user:
+            raise HTTPException(status_code=400, detail="User not found")
+            
+        if req.old_password != ADMIN_PASSWORD and not verify_password(req.old_password, user['password_hash']):
+            raise HTTPException(status_code=400, detail="Incorrect current password")
+            
+        new_hash = get_password_hash(req.new_password)
+        await conn.execute("UPDATE admin_users SET password_hash = $1 WHERE id = $2", new_hash, user['id'])
+        
+    return {"success": True, "message": "Password updated successfully"}
+
+class ForceResetRequest(BaseModel):
+    slug: str
+    new_password: str
+
+@app.post("/api/admin/force-reset-shop")
+async def force_reset_shop(req: ForceResetRequest, admin: dict = Depends(verify_admin)):
+    if admin.get("role") != "admin" or admin.get("business_id") is not None:
+        raise HTTPException(status_code=403, detail="Only Superadmin can force reset shop passwords")
+        
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+        
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    async with db_pool.acquire() as conn:
+        business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", req.slug)
+        if not business_id:
+            raise HTTPException(status_code=404, detail="Shop not found")
+            
+        new_hash = get_password_hash(req.new_password)
+        res = await conn.execute("UPDATE admin_users SET password_hash = $1 WHERE business_id = $2", new_hash, business_id)
+        if res == "UPDATE 0":
+            raise HTTPException(status_code=404, detail="Shop user not found")
+            
+    return {"success": True, "message": "Shop password reset successfully"}
+
+class CatalogRequest(BaseModel):
+    catalog: list[dict]
+
+
 
 @app.put("/api/businesses/{slug}/catalog")
 async def update_catalog(slug: str, items: list[CatalogItem], credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -1303,6 +1715,37 @@ async def get_all_businesses(_ = Depends(verify_admin)):
         """)
         return [dict(r) for r in rows]
 
+@app.delete("/api/businesses/{slug}")
+async def delete_business(slug: str, admin: dict = Depends(verify_admin)):
+    # Check if super admin (only super admin lacks 'shop'/'business_id' in payload)
+    if admin.get("shop") and admin.get("shop") != "master":
+        raise HTTPException(status_code=403, detail="Only Super Admin can delete businesses")
+    
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    async with db_pool.acquire() as conn:
+        # 1. Find business ID
+        biz_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", slug)
+        if not biz_id:
+            raise HTTPException(status_code=404, detail="Business not found")
+            
+        # 2. Get customer IDs
+        customer_ids = [r['id'] for r in await conn.fetch("SELECT id FROM customers WHERE business_id = $1", biz_id)]
+        
+        # 3. Delete related data in reverse order of foreign key dependencies
+        if customer_ids:
+            await conn.execute("DELETE FROM orders WHERE customer_id = ANY($1::int[])", customer_ids)
+            await conn.execute("DELETE FROM conversations WHERE customer_id = ANY($1::int[])", customer_ids)
+            await conn.execute("DELETE FROM handoffs WHERE customer_id = ANY($1::int[])", customer_ids)
+            
+        await conn.execute("DELETE FROM customers WHERE business_id = $1", biz_id)
+        await conn.execute("DELETE FROM catalog_items WHERE business_id = $1", biz_id)
+        await conn.execute("DELETE FROM admin_users WHERE business_id = $1", biz_id)
+        await conn.execute("DELETE FROM businesses WHERE id = $1", biz_id)
+        
+        return {"status": "success", "message": f"Business '{slug}' successfully deleted"}
+
 @app.get("/api/public/businesses")
 async def get_public_businesses():
     if not db_pool:
@@ -1332,3 +1775,80 @@ async def get_public_businesses():
             })
             
         return stores
+
+class ContentIdeaRequest(BaseModel):
+    business_slug: str
+    product_name: Optional[str] = None
+    content_type: Optional[str] = None
+
+@app.post("/api/content-ideas")
+async def generate_content_ideas(req: ContentIdeaRequest, admin: dict = Depends(verify_admin)):
+    if admin.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    if not db_pool or not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="Database or LLM API not configured")
+        
+    async with db_pool.acquire() as conn:
+        business = await conn.fetchrow("SELECT brand_name, language FROM businesses WHERE slug = $1", req.business_slug)
+        if not business:
+            raise HTTPException(status_code=404, detail="Business not found")
+            
+        brand_name = business['brand_name']
+        lang = business['language'] or 'Hinglish'
+        
+    product_target = req.product_name if req.product_name and req.product_name != 'All Products' else "their catalog in general"
+    content_target = req.content_type if req.content_type and req.content_type != 'Mix' else "a mix of Instagram Reel, Post, Story, Offer, or Festival content"
+
+    system_prompt = f"""
+You are a social media content strategist for an Indian B2C brand called {brand_name}.
+Generate 4 short, ready-to-use content ideas for {product_target} targeting Indian consumers.
+Format required: {content_target}.
+For each idea include:
+- format: the content format (e.g. Instagram Reel, Post, Story, Offer)
+- caption: a short catchy caption/hook (in {lang})
+- why_it_works: one line on why it would work (can be in English or {lang}). Tie to upcoming Indian festivals/seasons if relevant.
+
+Return ONLY a valid JSON array of objects with fields: format, caption, why_it_works. Do not include markdown blocks like ```json.
+"""
+
+    messages = [{"role": "user", "content": system_prompt}]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            groq_response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {GROQ_API_KEY}"
+                },
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": messages,
+                    "max_tokens": 1500,
+                    "temperature": 0.7,
+                },
+                timeout=30.0
+            )
+            data = groq_response.json()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Could not reach Groq API")
+
+    if "error" in data:
+        raise HTTPException(status_code=500, detail=data["error"].get("message", "Groq API error"))
+
+    raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+    
+    # Strip markdown formatting for JSON parsing
+    raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
+    raw = re.sub(r'\s*```\s*$', '', raw, flags=re.MULTILINE)
+    raw = raw.strip()
+
+    try:
+        ideas = json.loads(raw)
+        if not isinstance(ideas, list):
+            ideas = [ideas]
+        return {"status": "success", "ideas": ideas[:4]}
+    except json.JSONDecodeError:
+        print(f"Failed to parse Groq response: {raw}")
+        raise HTTPException(status_code=500, detail="Failed to parse LLM response")

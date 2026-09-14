@@ -56,26 +56,10 @@ export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [customerId] = useState(() => "demo-customer-" + Date.now());
   const [shopParam, setShopParam] = useState(null);
-  const [theme, setTheme] = useState('dark');
   const [isListening, setIsListening] = useState(false);
   const [cart, setCart] = useState([]);
   const [toastMsg, setToastMsg] = useState(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
-
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('app-theme') || 'dark';
-    setTheme(savedTheme);
-  }, []);
-
-  useEffect(() => {
-    if (theme === 'light') {
-      document.body.classList.add('light-theme');
-    } else {
-      document.body.classList.remove('light-theme');
-    }
-    localStorage.setItem('app-theme', theme);
-  }, [theme]);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -117,11 +101,7 @@ export default function Home() {
         const shop = params.get('shop');
         if (shop) {
           setShopParam(shop);
-          if (shop.includes('electronic')) {
-            setTheme('light');
-          } else {
-            setTheme('dark');
-          }
+          // dark theme only
         }
         
         const fetchUrl = shop ? `${API_BASE}/api/config?shop=${shop}` : `${API_BASE}/api/config`;
@@ -164,7 +144,7 @@ export default function Home() {
               try {
                 const parsed = JSON.parse(m.content);
                 if (parsed.reply) {
-                  newMessages.push({ text: parsed.reply, who: 'bot', receipt: parsed.order_ready, amount: parsed.order_amount, orderId: parsed.order_id, product: parsed.order_product, requiresDetails: parsed.requires_details });
+                  newMessages.push({ text: parsed.reply, who: 'bot', receipt: parsed.order_ready, amount: parsed.order_amount, orderId: parsed.order_id, product: parsed.order_product, requiresDetails: parsed.requires_details, crossSellProduct: parsed.cross_sell_product || null, retention: parsed.retention || false });
                 }
               } catch (e) {
                 newMessages.push({ text: m.content, who: 'bot' });
@@ -179,9 +159,9 @@ export default function Home() {
               const mappedMessages = newMessages.map(m => {
                 if (m.who === 'bot') {
                   if (m.receipt) {
-                    return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount, requiresDetails: m.requiresDetails };
+                    return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount, requiresDetails: m.requiresDetails, crossSellProduct: m.crossSellProduct, retention: m.retention };
                   }
-                  return { text: m.text, who: 'agent', requiresDetails: m.requiresDetails };
+                  return { text: m.text, who: 'agent', requiresDetails: m.requiresDetails, crossSellProduct: m.crossSellProduct, retention: m.retention };
                 }
                 return m;
               });
@@ -222,10 +202,10 @@ export default function Home() {
           // Prevent duplicates if polling endpoint fetched it first
           const recentAgent = prev.slice(-3).find(m => m.who === 'agent');
           if (recentAgent && recentAgent.text === data.reply) {
-            return prev.map(m => m === recentAgent ? { ...m, requiresDetails: data.requires_details } : m);
+            return prev.map(m => m === recentAgent ? { ...m, requiresDetails: data.requires_details, crossSellProduct: data.cross_sell_product || null } : m);
           }
           
-          const newMsgs = [...prev, { text: data.reply, who: 'agent', requiresDetails: data.requires_details }];
+          const newMsgs = [...prev, { text: data.reply, who: 'agent', requiresDetails: data.requires_details, crossSellProduct: data.cross_sell_product || null }];
           if (data.order_ready) {
             newMsgs.push({
               isOrder: true,
@@ -290,13 +270,7 @@ export default function Home() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
             {cart.length > 0 && <span className="cart-badge">{cart.length}</span>}
           </button>
-          <button 
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="theme-toggle-btn"
-            title="Toggle Theme"
-          >
-            {theme === 'dark' ? '☀️' : '🌙'}
-          </button>
+
         </div>
       </nav>
       
@@ -498,20 +472,65 @@ export default function Home() {
                 const isLast = i === messages.length - 1;
                 return (
                   <div key={i} className={`bubble ${m.who}`}>
+                    {m.retention && (
+                      <div style={{ fontSize: '11px', color: '#10b981', marginBottom: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        📦 Order Update
+                      </div>
+                    )}
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayText}</ReactMarkdown>
+                    {m.crossSellProduct && m.who === 'agent' && isLast && (
+                      <button
+                        className="cross-sell-chip"
+                        onClick={() => {
+                          setMessages(prev => {
+                            const updated = [...prev];
+                            updated[i] = { ...updated[i], crossSellProduct: null };
+                            return updated;
+                          });
+                          handleSendText(`Yes, add ${m.crossSellProduct} too`);
+                        }}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '6px',
+                          marginTop: '10px', padding: '8px 16px',
+                          background: 'rgba(234, 179, 8, 0.15)',
+                          border: '1px solid rgba(234, 179, 8, 0.4)',
+                          borderRadius: '20px', cursor: 'pointer',
+                          color: '#eab308', fontSize: '13px', fontWeight: 600,
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(234, 179, 8, 0.25)'; e.currentTarget.style.transform = 'scale(1.03)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(234, 179, 8, 0.15)'; e.currentTarget.style.transform = 'scale(1)'; }}
+                      >
+                        + Add {m.crossSellProduct}?
+                      </button>
+                    )}
                     {m.requiresDetails && isLast && (
                       <div className="order-details-form">
                         <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>Please provide order details</div>
-                        <input type="text" id={`form-size-${i}`} placeholder="Size/Dimension (if applicable)" className="form-input" />
-                        <input type="text" id={`form-color-${i}`} placeholder="Color (if applicable)" className="form-input" />
                         <input type="text" id={`form-name-${i}`} placeholder="Full Name" className="form-input" />
                         <input type="text" id={`form-phone-${i}`} placeholder="Phone Number" className="form-input" />
+                        <textarea id={`form-address-${i}`} placeholder="Delivery Address" className="form-input" style={{ resize: 'vertical', minHeight: '60px' }}></textarea>
+                        
+                        <div style={{ marginTop: '12px', marginBottom: '16px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--ivory)', marginBottom: '10px' }}>Stay Updated? (Optional)</div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--muted)', marginBottom: '8px', cursor: 'pointer' }}>
+                            <input type="checkbox" id={`form-consent-whatsapp-${i}`} defaultChecked={true} style={{ cursor: 'pointer', accentColor: '#10b981' }} />
+                            Receive order updates & offers via WhatsApp
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--muted)', cursor: 'pointer' }}>
+                            <input type="checkbox" id={`form-consent-email-${i}`} defaultChecked={true} style={{ cursor: 'pointer', accentColor: '#10b981' }} />
+                            Receive offers via Email
+                          </label>
+                        </div>
+
                         <button className="form-submit-btn" onClick={() => {
-                          const size = document.getElementById(`form-size-${i}`).value;
-                          const color = document.getElementById(`form-color-${i}`).value;
                           const name = document.getElementById(`form-name-${i}`).value;
                           const phone = document.getElementById(`form-phone-${i}`).value;
-                          if (!name || !phone) { alert("Name and Phone are required to proceed."); return; }
+                          const address = document.getElementById(`form-address-${i}`).value;
+                          if (!name || !phone || !address) { alert("Name, Phone, and Address are required to proceed."); return; }
+
+                          const consentWa = document.getElementById(`form-consent-whatsapp-${i}`).checked ? 'Yes' : 'No';
+                          const consentEm = document.getElementById(`form-consent-email-${i}`).checked ? 'Yes' : 'No';
 
                           // Hide the form by modifying this message in state
                           setMessages(prev => {
@@ -520,9 +539,10 @@ export default function Home() {
                             return updated;
                           });
 
-                          // Send the constructed text
-                          const text = `My order details - Size: ${size || 'N/A'}, Color: ${color || 'N/A'}, Name: ${name}, Phone: ${phone}`;
-                          handleSendText(text);
+                          let userMsg = `My name is ${name}, phone number is ${phone}. Delivery address: ${address}.`;
+                          if (consentWa === 'Yes') userMsg += ` I consent to WhatsApp updates.`;
+                          if (consentEm === 'Yes') userMsg += ` I consent to Email updates.`;
+                          handleSendText(userMsg);
                         }}>Submit Details</button>
                       </div>
                     )}

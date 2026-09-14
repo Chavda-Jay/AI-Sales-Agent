@@ -187,7 +187,6 @@ function CatalogManagerContent() {
         <div className="nav-brand" style={styles.navBrand}>
           <span style={{ color: c.primary }}>▲</span> AI SALES AGENT
         </div>
-        <button onClick={() => router.push('/dashboard')} style={styles.btnSecondary}>Back to Dashboard</button>
       </nav>
 
       <div className="wrap-container" style={styles.wrap}>
@@ -229,9 +228,11 @@ function CatalogManagerContent() {
                       <td style={{ ...styles.td, fontWeight: 600 }}>{item.name}</td>
                       <td style={{ ...styles.td, color: '#22c55e' }}>₹{item.price}</td>
                       <td style={{ ...styles.td, color: c.muted }}>{item.note || '-'}</td>
-                      <td className="action-buttons" style={{ ...styles.td, display: 'flex', gap: '8px', alignItems: 'center', height: '81px' }}>
-                        <button onClick={() => { setModalMode('edit'); setCurrentItem(item); }} style={styles.btnSecondary}>Edit</button>
-                        <button onClick={() => confirmDelete(item)} style={styles.btnDanger}>Delete</button>
+                      <td style={styles.td}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <button onClick={() => { setModalMode('edit'); setCurrentItem(item); }} style={styles.btnSecondary}>Edit</button>
+                          <button onClick={() => confirmDelete(item)} style={styles.btnDanger}>Delete</button>
+                        </div>
                       </td>
                     </tr>
                   ))}

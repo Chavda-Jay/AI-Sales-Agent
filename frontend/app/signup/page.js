@@ -17,21 +17,8 @@ export default function Signup() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [theme, setTheme] = useState('dark');
+  const [errors, setErrors] = useState({});
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('app-theme') || 'dark';
-    setTheme(savedTheme);
-  }, []);
-
-  useEffect(() => {
-    if (theme === 'light') {
-      document.body.classList.add('light-theme');
-    } else {
-      document.body.classList.remove('light-theme');
-    }
-    localStorage.setItem('app-theme', theme);
-  }, [theme]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -176,13 +163,6 @@ export default function Signup() {
 
   return (
     <div className={`signup-page ${inter.className}`} style={{ position: 'relative' }}>
-      <button 
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="theme-toggle-btn"
-        title="Toggle Theme"
-      >
-        {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-      </button>
       <Toaster position="top-right" />
       <div className="signup-container">
         
@@ -381,30 +361,7 @@ export default function Signup() {
       </div>
 
       <style jsx>{`
-        .theme-toggle-btn {
-          position: absolute;
-          top: 24px;
-          right: 24px;
-          background: var(--panel2);
-          border: 1px solid var(--line);
-          color: var(--ivory);
-          cursor: pointer;
-          font-size: 13px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 16px;
-          border-radius: 24px;
-          font-weight: bold;
-          font-family: var(--font-heading);
-          box-shadow: var(--shadow-sm);
-          transition: all 0.3s ease;
-          z-index: 100;
-        }
-        .theme-toggle-btn:hover {
-          background: var(--line);
-          transform: translateY(-2px);
-        }
+
 
         .signup-page {
           min-height: 100vh;
