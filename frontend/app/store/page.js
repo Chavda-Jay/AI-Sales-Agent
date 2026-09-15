@@ -54,8 +54,20 @@ export default function Home() {
   const [isTyping, setIsTyping] = useState(false);
   const [backendStatus, setBackendStatus] = useState('checking');
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [customerId] = useState(() => "demo-customer-" + Date.now());
+  const [customerId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      let stored = localStorage.getItem('ai_store_customer_id');
+      if (!stored) {
+        stored = "demo-customer-" + Date.now();
+        localStorage.setItem('ai_store_customer_id', stored);
+      }
+      return stored;
+    }
+    return "demo-customer-" + Date.now();
+  });
+  const [walletBalance, setWalletBalance] = useState(0);
   const [shopParam, setShopParam] = useState(null);
+  const [refParam, setRefParam] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [cart, setCart] = useState([]);
   const [toastMsg, setToastMsg] = useState(null);
@@ -99,9 +111,13 @@ export default function Home() {
       try {
         const params = new URLSearchParams(window.location.search);
         const shop = params.get('shop');
+        const ref = params.get('ref');
         if (shop) {
           setShopParam(shop);
           // dark theme only
+        }
+        if (ref) {
+          setRefParam(ref);
         }
         
         const fetchUrl = shop ? `${API_BASE}/api/config?shop=${shop}` : `${API_BASE}/api/config`;
@@ -135,6 +151,9 @@ export default function Home() {
         const res = await fetch(`${API_BASE}/api/chat/poll/${customerId}`);
         if (!res.ok) return;
         const data = await res.json();
+        if (data.walletBalance !== undefined) {
+          setWalletBalance(data.walletBalance);
+        }
         if (data.messages && data.messages.length > 0) {
           const newMessages = [];
           data.messages.forEach(m => {
@@ -144,7 +163,7 @@ export default function Home() {
               try {
                 const parsed = JSON.parse(m.content);
                 if (parsed.reply) {
-                  newMessages.push({ text: parsed.reply, who: 'bot', receipt: parsed.order_ready, amount: parsed.order_amount, orderId: parsed.order_id, product: parsed.order_product, requiresDetails: parsed.requires_details, crossSellProduct: parsed.cross_sell_product || null, retention: parsed.retention || false });
+                  newMessages.push({ text: parsed.reply, who: 'bot', receipt: parsed.order_ready, amount: parsed.order_amount, walletDiscount: parsed.wallet_discount_applied || 0, orderId: parsed.order_id, product: parsed.order_product, requiresDetails: parsed.requires_details, crossSellProduct: parsed.cross_sell_product || null, retention: parsed.retention || false, referralCode: parsed.referral_code });
                 }
               } catch (e) {
                 newMessages.push({ text: m.content, who: 'bot' });
@@ -159,9 +178,9 @@ export default function Home() {
               const mappedMessages = newMessages.map(m => {
                 if (m.who === 'bot') {
                   if (m.receipt) {
-                    return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount, requiresDetails: m.requiresDetails, crossSellProduct: m.crossSellProduct, retention: m.retention };
+                    return { text: m.text, who: 'agent', isOrder: true, orderId: m.orderId, product: m.product, amount: m.amount, walletDiscount: m.walletDiscount || 0, requiresDetails: m.requiresDetails, crossSellProduct: m.crossSellProduct, retention: m.retention, referralCode: m.referralCode };
                   }
-                  return { text: m.text, who: 'agent', requiresDetails: m.requiresDetails, crossSellProduct: m.crossSellProduct, retention: m.retention };
+                  return { text: m.text, who: 'agent', requiresDetails: m.requiresDetails, crossSellProduct: m.crossSellProduct, retention: m.retention, referralCode: m.referralCode };
                 }
                 return m;
               });
@@ -187,10 +206,14 @@ export default function Home() {
       const res = await fetch(BACKEND_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, message: text, shop: shopParam })
+        body: JSON.stringify({ customerId, message: text, shop: shopParam, ref: refParam })
       });
       const data = await res.json();
       setIsTyping(false);
+      
+      if (data.walletBalance !== undefined) {
+        setWalletBalance(data.walletBalance);
+      }
 
       if (!res.ok) {
         let errorMsg = data.detail || data.error || 'Server error occurred.';
@@ -219,6 +242,8 @@ export default function Home() {
               orderId: data.order_id || 'ORD-' + Math.floor(1000 + Math.random() * 9000),
               product: data.order_product,
               amount: data.order_amount,
+              walletDiscount: data.wallet_discount_applied || 0,
+              referralCode: data.referral_code,
               who: 'agent'
             });
           }
@@ -227,7 +252,18 @@ export default function Home() {
       }
     } catch (e) {
       setIsTyping(false);
-      setMessages(prev => [...prev, { text: '❌ Could not reach backend.', who: 'sys' }]);
+      setMessages(prev => [...prev, { text: '⚠️ Could not reach backend.', who: 'sys' }]);
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (confirm("Are you sure you want to clear this chat history? This will start a fresh conversation.")) {
+      try {
+        await fetch(`${API_BASE}/api/chat/history/${customerId}`, { method: 'DELETE' });
+        setMessages([]);
+      } catch (e) {
+        console.error("Failed to clear chat", e);
+      }
     }
   };
 
@@ -450,12 +486,28 @@ export default function Home() {
       <div className="chat-widget-container">
         {isChatOpen && (
           <div className="floating-chat-window">
-            <div className="chat-header">
+            <div className="chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '50%', boxShadow: '0 0 10px #10b981' }}></div>
                 <div style={{ color: 'var(--ivory)', fontWeight: 800, fontSize: '16px', letterSpacing: '0.02em' }}>Shopping Assistant</div>
               </div>
-              <button className="close-chat" onClick={() => setIsChatOpen(false)}>×</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {walletBalance > 0 && (
+                  <div style={{ padding: '4px 10px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '20px', color: '#10b981', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    💰 ₹{walletBalance}
+                  </div>
+                )}
+                <button 
+                  onClick={handleClearChat} 
+                  title="Clear Chat History"
+                  style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--hot)'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                </button>
+                <button className="close-chat" onClick={() => setIsChatOpen(false)}>×</button>
+              </div>
             </div>
 
             <div className="messages" id="chatbox" style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -470,8 +522,21 @@ export default function Home() {
                       <div className="receipt-body">
                         <div className="receipt-row"><span>Order ID</span><span className="receipt-val">{m.orderId}</span></div>
                         <div className="receipt-row"><span>Item</span><span className="receipt-val">{m.product || 'Item'}</span></div>
+                        {m.walletDiscount > 0 && (
+                          <div className="receipt-row" style={{ color: '#10b981', fontWeight: 600 }}><span>Wallet Discount</span><span className="receipt-val">-₹{m.walletDiscount}</span></div>
+                        )}
                       </div>
                       <div className="receipt-total"><span>Total</span><span>₹{m.amount || '0'}</span></div>
+                      
+                      {m.referralCode && (
+                        <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                          <div style={{ fontWeight: 600, color: '#10b981', marginBottom: '8px', fontSize: '13px' }}>🎁 Refer & Earn — Share your link:</div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <input type="text" readOnly value={`${window.location.origin}/store?shop=${shopParam}&ref=${m.referralCode}`} style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', color: 'var(--ivory)', fontSize: '12px' }} />
+                            <button onClick={(e) => { navigator.clipboard.writeText(`${window.location.origin}/store?shop=${shopParam}&ref=${m.referralCode}`); e.target.innerText = 'Copied!'; setTimeout(() => e.target.innerText = 'Copy', 2000); }} style={{ padding: '8px 12px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>Copy</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 }

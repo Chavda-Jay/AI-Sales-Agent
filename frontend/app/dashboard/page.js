@@ -25,6 +25,7 @@ const authFetch = async (url, options = {}) => {
 const CUSTOMERS_URL = `${API_BASE}/api/customers`;
 const CONVERSATIONS_URL = `${API_BASE}/api/conversations`;
 const HANDOFFS_URL = `${API_BASE}/api/handoffs`;
+const REFERRALS_URL = `${API_BASE}/api/referrals`;
 const ANALYTICS_URL = `${API_BASE}/api/analytics`;
 const WEEKLY_URL = `${API_BASE}/api/analytics/weekly`;
 
@@ -212,6 +213,7 @@ export default function Dashboard() {
   const [selectedShop, setSelectedShop] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [handoffs, setHandoffs] = useState([]);
+  const [referrals, setReferrals] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleteCustomerId, setDeleteCustomerId] = useState(null);
@@ -443,6 +445,11 @@ export default function Dashboard() {
           }
           return newHandoffs;
         });
+      }
+
+      const refRes = await authFetch(`${REFERRALS_URL}${qs}`);
+      if (refRes.ok) {
+        setReferrals(await refRes.json());
       }
 
       const aRes = await authFetch(`${ANALYTICS_URL}${qs}`);
@@ -1337,6 +1344,11 @@ export default function Dashboard() {
                       Last active: {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
                         day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
                       }) : 'just now'}
+                      {cust.referral_code && (
+                        <div style={{ marginTop: '4px' }}>
+                           Wallet: <strong style={{ color: c.accent }}>₹{cust.wallet_balance || 0}</strong> • Code: <span style={{ ...mono }}>{cust.referral_code}</span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
                         <span style={{ fontSize: '12px', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Consent:</span>
                         <div style={{ display: 'flex', gap: '4px' }} title={cust.consent_whatsapp ? "Consented to WhatsApp" : "No WhatsApp consent"}>
@@ -1371,6 +1383,41 @@ export default function Dashboard() {
               ))
             )}
           </div>
+        </div>
+        
+        {/* Referrals Section */}
+        <div style={{ ...styles.card, marginTop: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <h2 style={styles.sectionTitle}>🎁 Referral Engine</h2>
+            <span style={styles.badge(c.primary, '#fff')}>{referrals.length} Total</span>
+          </div>
+          {referrals.length === 0 ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: c.muted, fontSize: '15px' }}>
+              No referrals generated yet.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {referrals.map(r => (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: c.ivory }}>Referrer: {r.referrer_name}</div>
+                    <div style={{ fontSize: '13px', color: c.muted }}>Referred: {r.referred_name}</div>
+                    <div style={{ fontSize: '11px', color: c.muted, marginTop: '4px' }}>Code: {r.referral_code}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                    {r.reward_status === 'earned' ? (
+                      <span style={styles.badge(c.cust, '#fff')}>Earned ₹{r.reward_amount}</span>
+                    ) : (
+                      <span style={styles.badge(c.muted, '#fff')}>Pending</span>
+                    )}
+                    <div style={{ fontSize: '11px', color: c.muted }}>
+                      {new Date(r.created_at + (r.created_at.endsWith('Z') ? '' : 'Z')).toLocaleDateString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
             </div>

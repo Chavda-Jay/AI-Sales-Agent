@@ -100,15 +100,31 @@ Return ONLY raw JSON: {{"reply": "your message"}}
                     
                     async with httpx.AsyncClient() as client:
                         try:
-                            groq_response = await client.post(
-                                "https://api.groq.com/openai/v1/chat/completions",
-                                headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
-                                json={"model": GROQ_MODEL, "messages": messages, "max_tokens": 100, "temperature": 0.7},
-                                timeout=10.0
-                            )
-                            data = groq_response.json()
-                            if "error" in data:
-                                print(f"API Error for {ext_id}: {data['error']}")
+                            fallback_models = [
+                                GROQ_MODEL, 
+                                "llama3-70b-8192", 
+                                "llama3-8b-8192", 
+                                "mixtral-8x7b-32768", 
+                                "gemma2-9b-it"
+                            ]
+                            data = None
+                            for current_model in fallback_models:
+                                try:
+                                    groq_response = await client.post(
+                                        "https://api.groq.com/openai/v1/chat/completions",
+                                        headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
+                                        json={"model": current_model, "messages": messages, "max_tokens": 100, "temperature": 0.7},
+                                        timeout=10.0
+                                    )
+                                    data = groq_response.json()
+                                    if "error" in data and "rate limit" in str(data["error"]).lower():
+                                        continue
+                                    break
+                                except:
+                                    continue
+                            
+                            if not data or "error" in data:
+                                print(f"API Error for {ext_id}:", data.get("error") if data else "Connection error")
                                 continue
                             raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                             if not raw:
@@ -193,15 +209,31 @@ async def post_purchase_retention_worker():
                                 if hr['reply']: messages.append({"role": "assistant", "content": hr['reply']})
                                 
                             async with httpx.AsyncClient() as client:
-                                groq_response = await client.post(
-                                    "https://api.groq.com/openai/v1/chat/completions",
-                                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
-                                    json={"model": GROQ_MODEL, "messages": messages, "max_tokens": 150, "temperature": 0.7},
-                                    timeout=10.0
-                                )
-                                data = groq_response.json()
-                                if "error" in data:
-                                    print(f"API Error for retention worker: {data['error']}")
+                                fallback_models = [
+                                    GROQ_MODEL, 
+                                    "llama3-70b-8192", 
+                                    "llama3-8b-8192", 
+                                    "mixtral-8x7b-32768", 
+                                    "gemma2-9b-it"
+                                ]
+                                data = None
+                                for current_model in fallback_models:
+                                    try:
+                                        groq_response = await client.post(
+                                            "https://api.groq.com/openai/v1/chat/completions",
+                                            headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
+                                            json={"model": current_model, "messages": messages, "max_tokens": 150, "temperature": 0.7},
+                                            timeout=10.0
+                                        )
+                                        data = groq_response.json()
+                                        if "error" in data and "rate limit" in str(data["error"]).lower():
+                                            continue
+                                        break
+                                    except:
+                                        continue
+                                
+                                if not data or "error" in data:
+                                    print(f"API Error for retention worker:", data.get("error") if data else "Connection error")
                                     continue
                                 raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                                 raw = re.sub(r'^```json', '', raw)
@@ -277,10 +309,10 @@ async def lifespan(app: FastAPI):
         print("Warning: DATABASE_URL not set. Using in-memory fallback.")
     
     worker_task = asyncio.create_task(abandoned_chat_worker())
-    retention_worker_task = asyncio.create_task(post_purchase_retention_worker())
+    # retention_worker_task = asyncio.create_task(post_purchase_retention_worker())
     yield
     worker_task.cancel()
-    retention_worker_task.cancel()
+    # retention_worker_task.cancel()
     if db_pool:
         await db_pool.close()
 
@@ -469,6 +501,7 @@ class ChatRequest(BaseModel):
     customerId: str
     message: str
     shop: Optional[str] = None
+    ref: Optional[str] = None
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
@@ -547,6 +580,15 @@ async def chat(req: ChatRequest):
                 pass
         return parsed
 
+    wallet_balance = 0
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE ext_id = $1", req.customerId)
+                if bal: wallet_balance = float(bal)
+        except Exception:
+            pass
+
     detected_lang = detect_language(req.message)
 
     system_prompt = f"""You are the official AI Shopping Assistant for "{config.get('brandName')}" — a premium Indian brand.
@@ -572,8 +614,10 @@ async def chat(req: ChatRequest):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Detected language: {detected_lang}
 - ALWAYS reply in the SAME language/script as the customer's message.
-- If they write in Hindi, reply in Hindi (Devanagari). If Hinglish, reply in Hinglish. If English, reply in English.
-- Sound native and natural — not like a translated response.
+- If they write in Hindi (Devanagari script), reply in Hindi (Devanagari). 
+- If they write in Hinglish (Hindi written using English/Latin alphabet like "kese ho"), you MUST reply in Hinglish using ONLY the English alphabet.
+- CRITICAL: NEVER use Gurmukhi/Punjabi scripts or any other unrelated scripts.
+- Sound native, conversational, and natural.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🛍️ HOW TO RESPOND TO DIFFERENT SITUATIONS:
@@ -626,9 +670,10 @@ async def chat(req: ChatRequest):
 - **COUPON 'FIRST10'**: If mentioned, get excited! Apply 10% discount. Show original → discounted price. Set order_amount to discounted price.
 - **ORDER DETAILS FORM**: Set `requires_details` to true when customer is ready to checkout (preferences finalized). The form (Name, Phone, Address, Consent checkboxes) appears automatically.
 - **HUMAN HANDOFF**: Set `needs_human` to true + `handoff_reason` if: customer is angry, asks for human/manager, mentions legal/fraud/payment disputes, or asks something completely outside your knowledge.
-- **ORDER CONFIRMATION**: When customer confirms order (e.g. "order confirm karo", "yes place it"), set `order_ready` to true with correct `order_product` and `order_amount`.
+- **ORDER CONFIRMATION**: ONLY set `order_ready` to true AFTER you have received the customer's Name, Phone, and Address from the shipping form. DO NOT set `order_ready` to true if you do not have their details yet. If they say "yes place order" but you don't have details, set `requires_details` to true to show the form first.
 - **DPDP CONSENT**: When showing high purchase intent (setting requires_details or order_ready to true), naturally ask: "Would you like to receive future offers and updates via WhatsApp or email?" in the detected language. Set consent fields ONLY when customer explicitly responds.
-- **CROSS-SELL/UPSELL**: Whenever you recommend or confirm a product, consider suggesting ONE complementary item from the catalog (e.g. jeans → belt, TV → HDMI cable or wall mount). Never force a suggestion if nothing fits. Weave the suggestion naturally into your reply (e.g. "Great choice! A lot of customers also pick up our Leather Belt with this — want me to add that too?"). Set `cross_sell_product` to the name of the suggested complementary product, otherwise null. Never suggest just because it's expensive. Only suggest once per product discussion.
+- **CROSS-SELL/UPSELL**: Whenever you recommend or confirm a product, consider suggesting ONE complementary item from the catalog (e.g. jeans → belt, TV → HDMI cable). NEVER force a suggestion. **CRITICAL CULTURAL RULE:** Ensure cross-selling makes logical sense in Indian culture (e.g., NEVER suggest a leather belt with a Kurta or traditional wear). Weave the suggestion naturally into your reply (e.g. "A lot of customers also pick up X with this — want me to add that too?"). Set `cross_sell_product` to the name of the suggested product, otherwise null. Only suggest once per product.
+- **WALLET DISCOUNT**: The customer currently has a Digital Wallet balance of ₹{wallet_balance}. If wallet balance > 0 and the user confirms an order, AUTOMATICALLY apply the wallet balance to reduce the total amount (deduct up to the order amount). You MUST output `wallet_discount_applied`: <amount_deducted> in your JSON. Also inform the user in your `reply` that you have applied their wallet balance.
 - If customer mentions their name or phone anywhere, acknowledge it and include in JSON.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -652,6 +697,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
   "order_ready": boolean,
   "order_product": "product name being ordered or null",
   "order_amount": numeric price or null,
+  "wallet_discount_applied": numeric amount deducted from wallet or 0,
   "consent_whatsapp": boolean or null,
   "consent_email": boolean or null
 }}"""
@@ -660,7 +706,15 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
 
     data = None
     async with httpx.AsyncClient() as client:
-        for attempt in range(3):
+        fallback_models = [
+            GROQ_MODEL, 
+            "llama3-70b-8192", 
+            "llama3-8b-8192", 
+            "mixtral-8x7b-32768", 
+            "gemma2-9b-it"
+        ]
+        
+        for attempt, current_model in enumerate(fallback_models):
             try:
                 groq_response = await client.post(
                     "https://api.groq.com/openai/v1/chat/completions",
@@ -669,7 +723,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         "Authorization": f"Bearer {GROQ_API_KEY}"
                     },
                     json={
-                        "model": GROQ_MODEL,
+                        "model": current_model,
                         "messages": messages,
                         "max_tokens": 1500,
                         "temperature": 0.4,
@@ -678,21 +732,26 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                 )
                 data = groq_response.json()
                 if "error" in data and "rate limit" in str(data["error"]).lower():
-                    if attempt < 2:
-                        print(f"Rate limit hit, retrying in {2 ** attempt} seconds...")
-                        await asyncio.sleep(2 ** attempt)
-                        continue
+                    print(f"Rate limit hit for {current_model}, failing over to next model...")
+                    continue
+                if "error" in data:
+                    print(f"API error for {current_model}:", data["error"])
+                    continue
                 break
             except Exception as e:
-                if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                raise HTTPException(status_code=500, detail="Could not reach Groq API")
+                print(f"Connection error for {current_model}: {e}")
+                continue
 
     if not data or "error" in data:
         error_detail = data["error"].get("message", "Groq API error") if data and "error" in data else "Groq API error"
         print("Groq error:", error_detail)
-        raise HTTPException(status_code=500, detail=error_detail)
+        fallback = {
+            "reply": "I'm sorry, I am experiencing high traffic right now. Please wait a moment and try again. ⏳",
+            "intent_score": 0, "segment": "WARM", "requires_details": False, "order_ready": False,
+            "order_product": None, "order_amount": None
+        }
+        history.append({"role": "assistant", "content": json.dumps(fallback)})
+        return fallback
 
     raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     
@@ -788,10 +847,24 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     parsed["segment"] = "CUSTOMER"
 
                 if not customer_id:
+                    ref_code = None
+                    if req.ref:
+                        ref_exists = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", req.ref)
+                        if ref_exists:
+                            ref_code = req.ref
+                            
                     customer_id = await conn.fetchval(
-                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score, shop, business_id, consent_whatsapp, consent_email) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, FALSE), COALESCE($9, FALSE)) RETURNING id",
-                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email")
+                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, FALSE), COALESCE($9, FALSE), $10) RETURNING id",
+                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email"), ref_code
                     )
+                    
+                    if ref_code:
+                        referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", ref_code)
+                        if referrer_id:
+                            await conn.execute(
+                                "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, reward_status) VALUES ($1, $2, $3, 'pending')",
+                                referrer_id, customer_id, ref_code
+                            )
                 else:
                     await conn.execute(
                         """
@@ -838,12 +911,50 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     if prod_name:
                         prod_id = await conn.fetchval("SELECT id FROM catalog_items WHERE business_id = $1 AND name ILIKE $2 LIMIT 1", business_id, f"%{prod_name}%")
                     
+                    wallet_discount = float(parsed.get("wallet_discount_applied") or 0)
+                    final_amount = float(parsed.get("order_amount") or 0)
+                    
+                    if wallet_discount > 0:
+                        final_amount = max(0, final_amount - wallet_discount)
+                        await conn.execute("UPDATE customers SET wallet_balance = GREATEST(0, wallet_balance - $1) WHERE id = $2", wallet_discount, customer_id)
+                    
                     order_db_id = await conn.fetchval(
                         "INSERT INTO orders (customer_id, business_id, product_id, status, amount) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-                        customer_id, business_id, prod_id, 'confirmed', parsed.get("order_amount")
+                        customer_id, business_id, prod_id, 'confirmed', final_amount
                     )
                     await conn.execute("INSERT INTO retention_stages (order_id, customer_id, current_stage) VALUES ($1, $2, 'confirmed')", order_db_id, customer_id)
                     parsed["order_id"] = order_id
+                    parsed["order_amount"] = final_amount
+                    parsed["wallet_discount_applied"] = wallet_discount
+                    
+                    # Generate or fetch referral code
+                    cust_record = await conn.fetchrow("SELECT referral_code, referred_by_code, name FROM customers WHERE id = $1", customer_id)
+                    ref_code = cust_record['referral_code'] if cust_record else None
+                    if not ref_code:
+                        name_prefix = (cust_record['name'] or "USR")[:3].upper() if cust_record else "USR"
+                        ref_code = f"{name_prefix}{random.randint(1000, 9999)}"
+                        await conn.execute("UPDATE customers SET referral_code = $1 WHERE id = $2", ref_code, customer_id)
+                    
+                    parsed["referral_code"] = ref_code
+                    
+                    # Update pending referral if this customer was referred
+                    referred_by = cust_record['referred_by_code'] if cust_record else None
+                    if referred_by:
+                        ref_updated = await conn.execute(
+                            "UPDATE referrals SET reward_status = 'earned', reward_amount = 100, referred_order_id = $1 WHERE referred_customer_id = $2 AND reward_status = 'pending'",
+                            order_db_id, customer_id
+                        )
+                        if ref_updated == "UPDATE 1":
+                            # Reward both referrer and friend
+                            referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", referred_by)
+                            if referrer_id:
+                                await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", referrer_id)
+                            await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", customer_id)
+                            
+                # Always fetch latest wallet balance to send back to frontend
+                latest_wallet = await conn.fetchval("SELECT wallet_balance FROM customers WHERE ext_id = $1", req.customerId)
+                parsed["walletBalance"] = float(latest_wallet or 0)
+                
         except Exception as e:
             print(f"Warning: Database error during chat save: {e}")
 
@@ -904,7 +1015,7 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
             async with db_pool.acquire() as conn:
                 if shop:
                     rows = await conn.fetch("""
-                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email,
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code,
                                (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage
                         FROM customers c
                         JOIN businesses b ON c.business_id = b.id
@@ -913,7 +1024,7 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
                     """, shop)
                 else:
                     rows = await conn.fetch("""
-                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email,
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code,
                                (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage
                         FROM customers c
                         LEFT JOIN businesses b ON c.business_id = b.id
@@ -1017,7 +1128,24 @@ async def request_handoff(req: HandoffRequest):
 
 @app.get("/api/chat/poll/{customer_id}")
 async def poll_chat(customer_id: str):
-    return {"messages": conversations.get(customer_id, [])}
+    wallet_balance = 0
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE ext_id = $1", customer_id)
+                if bal: wallet_balance = float(bal)
+        except Exception:
+            pass
+    return {"messages": conversations.get(customer_id, []), "walletBalance": wallet_balance}
+
+@app.delete("/api/chat/history/{customer_id}")
+async def clear_chat_history(customer_id: str):
+    # Just clear the in-memory chat so the UI becomes empty,
+    # but DO NOT delete from the database so records are kept.
+    if customer_id in conversations:
+        conversations[customer_id] = []
+            
+    return {"status": "success"}
 
 class ManagerReply(BaseModel):
     message: str
@@ -1070,6 +1198,38 @@ async def get_handoffs(_ = Depends(verify_admin)):
                 return [dict(r) for r in rows]
         except Exception as e:
             print(f"Warning: Database error fetching handoffs: {e}")
+            raise HTTPException(status_code=500, detail="Database error")
+    return []
+
+@app.get("/api/referrals")
+async def get_referrals(shop: Optional[str] = None, admin: dict = Depends(verify_admin)):
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                business_id = None
+                if shop:
+                    business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", shop)
+                elif admin.get("business_id"):
+                    business_id = admin["business_id"]
+                
+                query = """
+                    SELECT r.id, r.referral_code, r.reward_status, r.reward_amount, r.created_at,
+                           c1.name as referrer_name, c2.name as referred_name
+                    FROM referrals r
+                    JOIN customers c1 ON r.referrer_customer_id = c1.id
+                    JOIN customers c2 ON r.referred_customer_id = c2.id
+                """
+                
+                if business_id:
+                    query += " WHERE c1.business_id = $1 ORDER BY r.created_at DESC"
+                    rows = await conn.fetch(query, business_id)
+                else:
+                    query += " ORDER BY r.created_at DESC"
+                    rows = await conn.fetch(query)
+                
+                return [dict(r) for r in rows]
+        except Exception as e:
+            print(f"Warning: Database error fetching referrals: {e}")
             raise HTTPException(status_code=500, detail="Database error")
     return []
 
@@ -1472,6 +1632,8 @@ async def delete_customer(customer_id: int):
         try:
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM conversations WHERE customer_id = $1", customer_id)
+                await conn.execute("DELETE FROM retention_stages WHERE customer_id = $1", customer_id)
+                await conn.execute("DELETE FROM referrals WHERE referrer_customer_id = $1 OR referred_customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM orders WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM handoffs WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM customers WHERE id = $1", customer_id)
@@ -1646,8 +1808,10 @@ async def add_catalog_item(slug: str, item: CatalogItem, credentials: HTTPAuthor
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Error adding catalog item: {e}")
-        raise HTTPException(status_code=500, detail="Database error")
+        import traceback
+        err_msg = traceback.format_exc()
+        print(f"Error adding catalog item: {e}\n{err_msg}")
+        raise HTTPException(status_code=500, detail=f"{str(e)}\n{err_msg}")
 
 @app.put("/api/businesses/{slug}/catalog/{item_id}")
 async def edit_catalog_item(slug: str, item_id: int, item: CatalogItem, credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -1827,27 +1991,41 @@ Return ONLY a valid JSON array of objects with fields: format, caption, why_it_w
     messages = [{"role": "user", "content": system_prompt}]
     
     async with httpx.AsyncClient() as client:
-        try:
-            groq_response = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {GROQ_API_KEY}"
-                },
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": messages,
-                    "max_tokens": 1500,
-                    "temperature": 0.7,
-                },
-                timeout=30.0
-            )
-            data = groq_response.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail="Could not reach Groq API")
+        fallback_models = [
+            GROQ_MODEL, 
+            "llama3-70b-8192", 
+            "llama3-8b-8192", 
+            "mixtral-8x7b-32768", 
+            "gemma2-9b-it"
+        ]
+        data = None
+        for current_model in fallback_models:
+            try:
+                groq_response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {GROQ_API_KEY}"
+                    },
+                    json={
+                        "model": current_model,
+                        "messages": messages,
+                        "max_tokens": 1500,
+                        "temperature": 0.7,
+                    },
+                    timeout=30.0
+                )
+                data = groq_response.json()
+                if "error" in data and "rate limit" in str(data["error"]).lower():
+                    continue
+                if "error" in data:
+                    continue
+                break
+            except Exception as e:
+                continue
 
-    if "error" in data:
-        raise HTTPException(status_code=500, detail=data["error"].get("message", "Groq API error"))
+    if not data or "error" in data:
+        raise HTTPException(status_code=500, detail=data["error"].get("message", "Groq API error") if data and "error" in data else "Could not reach Groq API")
 
     raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     

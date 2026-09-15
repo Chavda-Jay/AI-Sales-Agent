@@ -17,8 +17,6 @@ export default function Signup() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [errors, setErrors] = useState({});
-
 
   // Form State
   const [formData, setFormData] = useState({
@@ -89,7 +87,7 @@ export default function Signup() {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.owner_email)) newErrors.owner_email = 'Invalid email format';
     if (!formData.password) newErrors.password = 'Password is required';
     else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -98,7 +96,7 @@ export default function Signup() {
     const newErrors = {};
     if (!formData.language) newErrors.language = 'Language preference is required';
     if (!formData.policies) newErrors.policies = 'Policies are required';
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -109,7 +107,7 @@ export default function Signup() {
     if (!hasValidProduct) {
       newErrors.catalog = 'Please add at least one complete product (name and price)';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -124,12 +122,12 @@ export default function Signup() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateStep3()) return;
-    
+
     setLoading(true);
-    
+
     // Filter out incomplete products
     const validItems = formData.catalog_items.filter(item => item.name && item.price);
-    
+
     try {
       const res = await fetch(`${API_BASE}/api/signup`, {
         method: 'POST',
@@ -149,9 +147,9 @@ export default function Signup() {
         toast.error(data.detail || "Failed to sign up");
         // If error seems to be about email or name, go to step 1
         if (data.detail && (data.detail.toLowerCase().includes("email") || data.detail.toLowerCase().includes("name") || data.detail.toLowerCase().includes("taken"))) {
-           setStep(1);
-           if (data.detail.toLowerCase().includes("email")) setErrors({owner_email: data.detail});
-           if (data.detail.toLowerCase().includes("name") || data.detail.toLowerCase().includes("taken")) setErrors({business_name: data.detail});
+          setStep(1);
+          if (data.detail.toLowerCase().includes("email")) setErrors({ owner_email: data.detail });
+          if (data.detail.toLowerCase().includes("name") || data.detail.toLowerCase().includes("taken")) setErrors({ business_name: data.detail });
         }
         setLoading(false);
       }
@@ -165,7 +163,7 @@ export default function Signup() {
     <div className={`signup-page ${inter.className}`} style={{ position: 'relative' }}>
       <Toaster position="top-right" />
       <div className="signup-container">
-        
+
         <div className="signup-header">
           <div className="signup-brand" style={sora.style}>
             <span style={{ color: 'var(--primary)' }}>AI</span> SALES AGENT
@@ -189,7 +187,7 @@ export default function Signup() {
         </p>
 
         <form onSubmit={step === 3 ? handleSubmit : (e) => { e.preventDefault(); nextStep(); }} className="signup-form">
-          
+
           {step === 1 && (
             <div className="form-step slide-in">
               <div className="input-group">
@@ -270,7 +268,7 @@ export default function Signup() {
           {step === 3 && (
             <div className="form-step slide-in">
               <p className="section-desc">Add at least one product so your AI agent knows what to sell.</p>
-              
+
               <div className="products-list">
                 {formData.catalog_items.map((item, index) => (
                   <div key={index} className="product-card">
@@ -280,7 +278,7 @@ export default function Signup() {
                         <button type="button" onClick={() => removeProduct(index)} className="btn-remove">✕</button>
                       )}
                     </div>
-                    
+
                     <div className="product-grid">
                       <div className="input-group">
                         <label className={jetbrains.className}>Name</label>
@@ -332,9 +330,9 @@ export default function Signup() {
                   </div>
                 ))}
               </div>
-              
+
               {errors.catalog && <div className="error-text" style={{ marginBottom: '16px' }}>{errors.catalog}</div>}
-              
+
               <button type="button" onClick={addProduct} className="btn-secondary">
                 + Add Another Product
               </button>

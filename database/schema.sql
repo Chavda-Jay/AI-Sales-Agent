@@ -38,6 +38,9 @@ CREATE TABLE customers (
   intent_score INT DEFAULT 0,
   consent_whatsapp BOOLEAN DEFAULT FALSE,
   consent_email BOOLEAN DEFAULT FALSE,
+  referral_code TEXT UNIQUE,
+  referred_by_code TEXT,
+  wallet_balance NUMERIC DEFAULT 0,
   last_interaction TIMESTAMP DEFAULT NOW(),
   created_at TIMESTAMP DEFAULT NOW()
 );
@@ -54,7 +57,7 @@ CREATE TABLE orders (
   id SERIAL PRIMARY KEY,
   business_id INT REFERENCES businesses(id),
   customer_id INT REFERENCES customers(id),
-  product_id INT REFERENCES products(id),
+  product_id INT REFERENCES catalog_items(id),
   status TEXT DEFAULT 'pending',    -- pending / confirmed / delivered / returned
   amount NUMERIC,
   created_at TIMESTAMP DEFAULT NOW()
@@ -72,3 +75,14 @@ CREATE TABLE conversations (
 );
 
 -- We no longer use products table or sample data here. Using catalog_items and python script instead.
+
+CREATE TABLE referrals (
+  id SERIAL PRIMARY KEY,
+  referrer_customer_id INT REFERENCES customers(id) ON DELETE CASCADE,
+  referred_customer_id INT REFERENCES customers(id) ON DELETE CASCADE,
+  referral_code TEXT NOT NULL,
+  referred_order_id INT REFERENCES orders(id) ON DELETE SET NULL,
+  reward_status TEXT DEFAULT 'pending', -- pending / earned
+  reward_amount NUMERIC DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
