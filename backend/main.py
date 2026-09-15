@@ -43,7 +43,7 @@ if SUPABASE_URL and SUPABASE_KEY:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "qwen/qwen3.8-27b"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-default-key-for-demo")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
@@ -658,29 +658,41 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
 
     messages = [{"role": "system", "content": system_prompt}] + history[-12:] + [{"role": "user", "content": req.message}]
 
+    data = None
     async with httpx.AsyncClient() as client:
-        try:
-            groq_response = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {GROQ_API_KEY}"
-                },
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": messages,
-                    "max_tokens": 1500,
-                    "temperature": 0.4,
-                },
-                timeout=30.0
-            )
-            data = groq_response.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail="Could not reach Groq API")
+        for attempt in range(3):
+            try:
+                groq_response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {GROQ_API_KEY}"
+                    },
+                    json={
+                        "model": GROQ_MODEL,
+                        "messages": messages,
+                        "max_tokens": 1500,
+                        "temperature": 0.4,
+                    },
+                    timeout=30.0
+                )
+                data = groq_response.json()
+                if "error" in data and "rate limit" in str(data["error"]).lower():
+                    if attempt < 2:
+                        print(f"Rate limit hit, retrying in {2 ** attempt} seconds...")
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                break
+            except Exception as e:
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                raise HTTPException(status_code=500, detail="Could not reach Groq API")
 
-    if "error" in data:
-        print("Groq error:", data["error"])
-        raise HTTPException(status_code=500, detail=data["error"].get("message", "Groq API error"))
+    if not data or "error" in data:
+        error_detail = data["error"].get("message", "Groq API error") if data and "error" in data else "Groq API error"
+        print("Groq error:", error_detail)
+        raise HTTPException(status_code=500, detail=error_detail)
 
     raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     

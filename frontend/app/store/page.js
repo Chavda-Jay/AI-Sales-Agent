@@ -193,10 +193,17 @@ export default function Home() {
       setIsTyping(false);
 
       if (!res.ok) {
-        const errorMsg = data.detail || data.error || 'Server error occurred.';
+        let errorMsg = data.detail || data.error || 'Server error occurred.';
+        if (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('rate limit')) {
+          errorMsg = "I am experiencing high traffic right now. Please wait a moment and try again. ⏳";
+        }
         setMessages(prev => [...prev, { text: '❌ ' + errorMsg, who: 'sys' }]);
       } else if (data.error) {
-        setMessages(prev => [...prev, { text: '❌ ' + data.error, who: 'sys' }]);
+        let errorMsg = data.error;
+        if (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('rate limit')) {
+          errorMsg = "I am experiencing high traffic right now. Please wait a moment and try again. ⏳";
+        }
+        setMessages(prev => [...prev, { text: '❌ ' + errorMsg, who: 'sys' }]);
       } else {
         setMessages(prev => {
           // Prevent duplicates if polling endpoint fetched it first

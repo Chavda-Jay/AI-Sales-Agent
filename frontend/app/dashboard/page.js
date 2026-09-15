@@ -1080,14 +1080,75 @@ export default function Dashboard() {
         {/* Top Row: Stat Cards */}
         <div className="dash-stats-grid">
           {[
-            { label: 'Total Customers', val: total, color: c.ivory },
-            { label: 'HOT Leads', val: hotCount, color: c.hot },
-            { label: 'WARM Leads', val: warmCount, color: c.warm },
-            { label: 'COLD Leads', val: coldCount, color: c.cold },
+            { 
+              label: 'Total Customers', 
+              val: total, 
+              bg: 'linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%)',
+              shadow: 'rgba(139, 92, 246, 0.4)',
+              trend: '+12%',
+              sparkline: 'M0,15 Q5,5 10,10 T20,10 T30,5 T40,15 T50,10 T60,5 T70,12'
+            },
+            { 
+              label: 'HOT Leads', 
+              val: hotCount, 
+              bg: 'linear-gradient(135deg, #ef4444 0%, #f43f5e 100%)',
+              shadow: 'rgba(244, 63, 94, 0.4)',
+              trend: '+5%',
+              sparkline: 'M0,10 Q5,15 10,5 T20,10 T30,15 T40,5 T50,10 T60,15 T70,5'
+            },
+            { 
+              label: 'WARM Leads', 
+              val: warmCount, 
+              bg: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              shadow: 'rgba(37, 99, 235, 0.4)',
+              trend: 'Stable',
+              sparkline: 'M0,10 Q10,10 20,8 T40,12 T60,10 T70,10'
+            },
+            { 
+              label: 'COLD Leads', 
+              val: coldCount, 
+              bg: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+              shadow: 'rgba(234, 88, 12, 0.4)',
+              trend: '-2%',
+              sparkline: 'M0,5 Q10,15 20,10 T40,15 T60,5 T70,15'
+            },
           ].map((stat, i) => (
-            <div key={i} style={styles.statCard}>
-              <div style={styles.statLabel}>{stat.label}</div>
-              <div style={{ ...styles.statVal, color: stat.color }}>{stat.val}</div>
+            <div key={i} style={{
+              background: stat.bg,
+              borderRadius: '20px',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative',
+              boxShadow: `0 8px 24px ${stat.shadow}`,
+              transition: 'transform 0.3s, box-shadow 0.3s',
+              cursor: 'default',
+              minHeight: '140px'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = `0 12px 32px ${stat.shadow}`; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 8px 24px ${stat.shadow}`; }}
+            >
+              {/* Top Row: Label and Trend */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'auto' }}>
+                <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '14px', fontWeight: 600, letterSpacing: '0.02em' }}>
+                  {stat.label}
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', color: '#fff', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {stat.trend.includes('+') ? '??' : stat.trend.includes('-') ? '??' : '??'} {stat.trend}
+                </div>
+              </div>
+              
+              {/* Bottom Row: Value and Sparkline */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '24px' }}>
+                <div style={{ ...mono.style, fontSize: '32px', fontWeight: 800, color: '#fff', lineHeight: 1 }}>
+                  {stat.val}
+                </div>
+                <div style={{ opacity: 0.8 }}>
+                  <svg width="70" height="20" viewBox="0 0 70 20" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={stat.sparkline} />
+                  </svg>
+                </div>
+              </div>
             </div>
           ))}
         </div>
