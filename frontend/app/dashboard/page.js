@@ -895,7 +895,7 @@ export default function Dashboard() {
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
                     <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '28px', backdropFilter: 'blur(12px)' }}>
                       <div style={{ ...sora, fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: c.primary, marginBottom: '20px' }}>💰 Sales Summary</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+                      <div className="responsive-grid-3" style={{ gap: '24px' }}>
                         <div>
                           <div style={{ ...mono, fontSize: '32px', fontWeight: 800, color: '#22c55e' }}>{dailyReport.orders_today}</div>
                           <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px' }}>Orders Today</div>
@@ -1032,7 +1032,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Stats Row */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.02)' }}>
+                    <div className="responsive-grid-3" style={{ gap: '12px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.02)' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
                           🤖 AI Agents
@@ -1072,7 +1072,7 @@ export default function Dashboard() {
             <div>
 
         {/* Top Row: Stat Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
+        <div className="responsive-grid-3" style={{ gap: '20px', marginBottom: '24px' }}>
           {[
             { 
               label: 'Total Customers', 
