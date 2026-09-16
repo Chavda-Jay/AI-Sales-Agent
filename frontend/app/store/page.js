@@ -580,6 +580,7 @@ export default function Home() {
                       <div className="order-details-form">
                         <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>Please provide order details</div>
                         <input type="text" id={`form-name-${i}`} placeholder="Full Name" className="form-input" />
+                        <input type="text" id={`form-city-${i}`} placeholder="City" className="form-input" />
                         <input type="text" id={`form-phone-${i}`} placeholder="Phone Number" className="form-input" />
                         <textarea id={`form-address-${i}`} placeholder="Delivery Address" className="form-input" style={{ resize: 'vertical', minHeight: '60px' }}></textarea>
                         
@@ -597,9 +598,10 @@ export default function Home() {
 
                         <button className="form-submit-btn" onClick={() => {
                           const name = document.getElementById(`form-name-${i}`).value;
+                          const city = document.getElementById(`form-city-${i}`).value;
                           const phone = document.getElementById(`form-phone-${i}`).value;
                           const address = document.getElementById(`form-address-${i}`).value;
-                          if (!name || !phone || !address) { alert("Name, Phone, and Address are required to proceed."); return; }
+                          if (!name || !city || !phone || !address) { alert("Name, City, Phone, and Address are required to proceed."); return; }
 
                           const consentWa = document.getElementById(`form-consent-whatsapp-${i}`).checked ? 'Yes' : 'No';
                           const consentEm = document.getElementById(`form-consent-email-${i}`).checked ? 'Yes' : 'No';
@@ -611,7 +613,7 @@ export default function Home() {
                             return updated;
                           });
 
-                          let userMsg = `My name is ${name}, phone number is ${phone}. Delivery address: ${address}.`;
+                          let userMsg = `My name is ${name} and I am from ${city}. Phone number is ${phone}. Delivery address: ${address}.`;
                           if (consentWa === 'Yes') userMsg += ` I consent to WhatsApp updates.`;
                           if (consentEm === 'Yes') userMsg += ` I consent to Email updates.`;
                           handleSendText(userMsg);

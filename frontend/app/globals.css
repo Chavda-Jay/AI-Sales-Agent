@@ -1,24 +1,33 @@
 :root {
   --shadow-lg: 0 24px 64px rgba(0,0,0,0.4);
   --shadow-sm: 0 4px 12px rgba(0,0,0,0.1);
-  --btn-shadow: 0 4px 12px rgba(14, 165, 233, 0.2);
+  --btn-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
   --progress-line: rgba(248, 250, 252, 0.1);
-  --bg: #000000;
-  --panel: #0A0A0A;
-  --panel2: #141414;
-  --line: #1F1F1F;
-  --muted: #8b949e;
-  --ivory: #ffffff;
-  --primary: #58a6ff;
-  --hot: #f85149;
-  --warm: #ffc107;
-  --cold: #8b949e;
-  --cust: #3fb950;
   
-  --nav-bg: rgba(0, 0, 0, 0.8);
-  --chat-bg: rgba(17, 24, 39, 0.95);
-  --product-img-bg: linear-gradient(135deg, #1f2937, #111827);
-  --icon-opacity: 0.5;
+  --bg: #0b1120;
+  --panel: #131b2f;
+  --panel2: #1e293b;
+  --line: #334155;
+  --muted: #94a3b8;
+  --ivory: #f8fafc;
+  --primary: #3b82f6;
+  
+  --hot: #ef4444;
+  --warm: #f59e0b;
+  --cold: #64748b;
+  --cust: #10b981;
+  
+  --accent-green: #10b981;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-orange: #f59e0b;
+  --accent-cyan: #06b6d4;
+  --accent-pink: #ec4899;
+  
+  --nav-bg: rgba(11, 17, 32, 0.8);
+  --chat-bg: rgba(15, 23, 42, 0.95);
+  --product-img-bg: linear-gradient(135deg, #1e293b, #0f172a);
+  --icon-opacity: 0.8;
   
   --font-body: var(--font-inter, 'Inter', system-ui, sans-serif);
   --font-heading: var(--font-sora, 'Sora', system-ui, sans-serif);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import toast from 'react-hot-toast';
 
 const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -215,6 +215,7 @@ export default function Dashboard() {
   const [handoffs, setHandoffs] = useState([]);
   const [referrals, setReferrals] = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [segments, setSegments] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleteCustomerId, setDeleteCustomerId] = useState(null);
   const [selectedOrders, setSelectedOrders] = useState(null);
@@ -457,6 +458,11 @@ export default function Dashboard() {
         setAnalytics(await aRes.json());
       }
 
+      const segRes = await authFetch(`${API_BASE}/api/analytics/segments${qs}`);
+      if (segRes.ok) {
+        setSegments(await segRes.json());
+      }
+
       const wRes = await authFetch(`${WEEKLY_URL}${qs}`);
       if (wRes.ok) {
         setWeeklyData(await wRes.json());
@@ -635,9 +641,12 @@ export default function Dashboard() {
       )}
 
       {/* Sidebar */}
-      <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`} style={{display: 'flex', flexDirection: 'column'}}>
-        <div style={{ ...styles.navBrand, padding: '0 24px', marginBottom: '40px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '20px', fontWeight: '800' }}>
-          <span style={{ color: '#0ea5e9' }}>▲</span> AI SALES AGENT
+      <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`} style={{display: 'flex', flexDirection: 'column', background: 'var(--bg)', borderRight: '1px solid var(--line)', padding: '24px 0'}}>
+        <div style={{ padding: '0 24px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ background: 'var(--primary)', borderRadius: '8px', padding: '6px' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+          </div>
+          <span style={{ fontSize: '18px', fontWeight: '800', color: 'var(--ivory)', letterSpacing: '0.02em' }}>AI Sales Agent <span style={{ fontSize: '10px', background: 'rgba(59,130,246,0.2)', color: 'var(--primary)', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '4px' }}>B2C</span></span>
         </div>
         
         <div style={{ padding: '0 12px' }}>
@@ -696,41 +705,42 @@ export default function Dashboard() {
           </div>
         </div>
       
-          <div style={{ marginTop: 'auto', marginBottom: '20px', padding: '0 20px' }}>
-            <button 
-              onClick={() => {
-                sessionStorage.removeItem('admin_token');
-                window.location.href = '/dashboard/login';
-              }}
-              style={{
-                background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444',
-                borderRadius: '8px', padding: '12px 16px', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
-                fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; e.currentTarget.style.transform = 'translateX(-2px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.transform = 'translateX(0)'; }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-              Logout
-            </button>
-          </div>
-        </aside>
+        <div style={{ marginTop: 'auto', marginBottom: '20px', padding: '0 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+          <button 
+            onClick={() => {
+              sessionStorage.removeItem('admin_token');
+              window.location.href = '/dashboard/login';
+            }}
+            style={{
+              background: 'transparent', border: '1px solid var(--line)', color: 'var(--muted)',
+              borderRadius: '8px', padding: '12px 16px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%',
+              fontFamily: 'Inter, sans-serif', fontSize: '13px', fontWeight: 600, transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = 'var(--muted)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--muted)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            Logout
+          </button>
+        </div>
+      </aside>
 
 
       {/* Main Content Area */}
       <div className="dash-main">
-        <nav className="dash-navbar" style={{ background: 'transparent', borderBottom: 'none' }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+        <header style={{ padding: '24px 32px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, position: 'relative' }}>
             <button 
               className="dash-hamburger"
-              style={{ background: 'transparent', border: 'none', color: c.ivory, cursor: 'pointer', marginRight: '16px', display: 'none' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--ivory)', cursor: 'pointer', marginRight: '8px', display: 'none' }}
               onClick={() => setSidebarOpen(true)}
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
             </button>
           </div>
-        </nav>
+        </header>
 
          <div className="dash-wrap">
           
@@ -1060,234 +1070,220 @@ export default function Dashboard() {
           ) : (
             /* Store Detail View */
             <div>
-              {isSuperAdmin && (
-                <button 
-                  onClick={() => setSelectedShop(null)}
-                  style={{ 
-                    background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.3)', color: '#0ea5e9', 
-                    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', 
-                    marginBottom: '32px', fontWeight: 600, padding: '8px 16px', borderRadius: '8px',
-                    transition: 'all 0.2s', fontSize: '14px'
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(14,165,233,0.2)'; e.currentTarget.style.transform = 'translateX(-2px)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(14,165,233,0.1)'; e.currentTarget.style.transform = 'translateX(0)'; }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-                  Back to Stores
-                </button>
-              )}
-              
-              {/* Header Title */}
-              <div style={styles.eyebrow}>AI CRM • {selectedShop}</div>
-              <div style={styles.titleRow}>
-                <h1 className="dash-h1">Customer Overview</h1>
-              </div>
-              <p style={styles.sub}>Monitor your live AI sales leads and manage customer handoffs for this store.</p>
 
         {/* Top Row: Stat Cards */}
-        <div className="dash-stats-grid">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
           {[
             { 
               label: 'Total Customers', 
               val: total, 
-              bg: 'linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%)',
-              shadow: 'rgba(139, 92, 246, 0.4)',
-              trend: '+12%',
-              sparkline: 'M0,15 Q5,5 10,10 T20,10 T30,5 T40,15 T50,10 T60,5 T70,12'
+              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
+              trend: '+12.5%',
+              trendUp: true
+            },
+            { 
+              label: 'Orders Placed', 
+              val: analytics?.orders_placed || 0,
+              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>,
+              trend: '+8.2%',
+              trendUp: true
+            },
+            { 
+              label: 'AI Conversations', 
+              val: analytics?.total_conversations || 0,
+              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>,
+              trend: '+24.1%',
+              trendUp: true
             },
             { 
               label: 'HOT Leads', 
               val: hotCount, 
-              bg: 'linear-gradient(135deg, #ef4444 0%, #f43f5e 100%)',
-              shadow: 'rgba(244, 63, 94, 0.4)',
-              trend: '+5%',
-              sparkline: 'M0,10 Q5,15 10,5 T20,10 T30,15 T40,5 T50,10 T60,15 T70,5'
+              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2c0 0-5 6.5-5 11a5 5 0 0 0 10 0c0-4.5-5-11-5-11z"></path></svg>,
+              trend: '+5.4%',
+              trendUp: true
             },
             { 
               label: 'WARM Leads', 
               val: warmCount, 
-              bg: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-              shadow: 'rgba(37, 99, 235, 0.4)',
+              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>,
               trend: 'Stable',
-              sparkline: 'M0,10 Q10,10 20,8 T40,12 T60,10 T70,10'
+              trendUp: true
             },
             { 
               label: 'COLD Leads', 
               val: coldCount, 
-              bg: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-              shadow: 'rgba(234, 88, 12, 0.4)',
-              trend: '-2%',
-              sparkline: 'M0,5 Q10,15 20,10 T40,15 T60,5 T70,15'
+              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>,
+              trend: '-2.0%',
+              trendUp: false
             },
           ].map((stat, i) => (
             <div key={i} style={{
-              background: stat.bg,
-              borderRadius: '20px',
+              background: 'var(--panel)',
+              border: '1px solid var(--line)',
+              borderRadius: '16px',
               padding: '24px',
               display: 'flex',
               flexDirection: 'column',
               position: 'relative',
-              boxShadow: `0 8px 24px ${stat.shadow}`,
-              transition: 'transform 0.3s, box-shadow 0.3s',
+              boxShadow: 'var(--shadow-sm)',
+              transition: 'transform 0.2s',
               cursor: 'default',
-              minHeight: '140px'
-            }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = `0 12px 32px ${stat.shadow}`; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 8px 24px ${stat.shadow}`; }}
-            >
-              {/* Top Row: Label and Trend */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'auto' }}>
-                <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: '14px', fontWeight: 600, letterSpacing: '0.02em' }}>
-                  {stat.label}
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                <div style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
+                  {stat.icon}
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', color: '#fff', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  {stat.trend.includes('+') ? '??' : stat.trend.includes('-') ? '??' : '??'} {stat.trend}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: stat.trendUp ? 'var(--cust)' : 'var(--hot)' }}>
+                  {stat.trendUp ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline><polyline points="16 17 22 17 22 11"></polyline></svg>
+                  )}
+                  {stat.trend}
                 </div>
               </div>
-              
-              {/* Bottom Row: Value and Sparkline */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '24px' }}>
-                <div style={{ ...mono.style, fontSize: '32px', fontWeight: 800, color: '#fff', lineHeight: 1 }}>
-                  {stat.val}
-                </div>
-                <div style={{ opacity: 0.8 }}>
-                  <svg width="70" height="20" viewBox="0 0 70 20" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d={stat.sparkline} />
-                  </svg>
-                </div>
+              <div style={{ color: 'var(--muted)', fontSize: '13px', fontWeight: '500', marginBottom: '4px' }}>
+                {stat.label}
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: 'var(--ivory)' }}>
+                {stat.val}
               </div>
             </div>
           ))}
         </div>
-{/* Middle Row: Graph & Needs Attention */}
+        {/* Row 2: Sales Performance & Lead Funnel */}
         <div className="dash-main-grid">
-          
-          {/* Left: Performance & Graph */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {analytics && (
-              <div style={styles.card}>
-                <h2 style={{ ...styles.sectionTitle, marginBottom: '24px' }}>Performance Overview</h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {[
-                    { label: 'Conversations', count: analytics.total_conversations },
-                    { label: 'Warm+ Leads', count: analytics.warm_or_above },
-                    { label: 'Hot Leads', count: analytics.hot_or_above },
-                    { label: 'Orders Placed', count: analytics.orders_placed },
-                  ].map((stage, i, arr) => {
-                    const max = Math.max(1, arr[0].count);
-                    const width = Math.max(2, (stage.count / max) * 100);
-                    const percent = Math.round((stage.count / max) * 100);
-                    return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <div style={{ flex: '0 0 100px', fontSize: '13px', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'right' }}>
-                          {stage.label}
-                        </div>
-                        <div style={styles.progressBg}>
-                          <div style={styles.progressFill(width)} />
-                        </div>
-                        <div style={{ flex: '0 0 70px', ...mono, fontSize: '16px', fontWeight: 700, color: c.ivory }}>
-                          {stage.count} <div style={{ fontSize: '11px', color: c.muted, fontWeight: 500 }}>({percent}%)</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+          {/* Left: Sales Performance */}
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', minHeight: '360px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Sales Performance</h2>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)' }}></span> This Week</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--line)' }}></span> Last Week</div>
               </div>
-            )}
-
-            <div style={{ ...styles.card, padding: '28px 28px 12px 12px', height: '360px', display: 'flex', flexDirection: 'column' }}>
-              <h2 style={{ ...styles.sectionTitle, marginBottom: '24px', paddingLeft: '16px' }}>7-Day Intent Trend</h2>
-              <div style={{ flex: 1 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weeklyData.length > 0 ? weeklyData : [
-                    { name: 'Mon', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Tue', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Wed', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Thu', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Fri', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Sat', leads: 0, hot: 0, orders: 0 },
-                    { name: 'Sun', leads: 0, hot: 0, orders: 0 },
-                  ]}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2b3140" vertical={false} />
-                    <XAxis dataKey="name" stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#8b949e" fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: c.panel, border: `1px solid ${c.line}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }} 
-                      itemStyle={{ fontWeight: 600, fontFamily: 'var(--font-inter, sans-serif)' }}
-                    />
-                    <Line type="monotone" dataKey="leads" name="Total Leads" stroke="#58a6ff" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
-                    <Line type="monotone" dataKey="hot" name="Hot Leads" stroke="#f85149" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
-                    <Line type="monotone" dataKey="orders" name="Orders" stroke="#3fb950" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+            </div>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={weeklyData.length > 0 ? weeklyData : [
+                  { name: 'Mon', leads: 0, hot: 0, orders: 0 },
+                  { name: 'Tue', leads: 0, hot: 0, orders: 0 },
+                  { name: 'Wed', leads: 0, hot: 0, orders: 0 },
+                  { name: 'Thu', leads: 0, hot: 0, orders: 0 },
+                  { name: 'Fri', leads: 0, hot: 0, orders: 0 },
+                  { name: 'Sat', leads: 0, hot: 0, orders: 0 },
+                  { name: 'Sun', leads: 0, hot: 0, orders: 0 },
+                ]} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
+                  <XAxis dataKey="name" stroke="var(--muted)" fontSize={12} tickLine={false} axisLine={false} dy={10} />
+                  <YAxis stroke="var(--muted)" fontSize={12} tickLine={false} axisLine={false} dx={-10} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: '12px', boxShadow: 'var(--shadow-sm)' }} 
+                    itemStyle={{ fontWeight: 600, fontFamily: 'var(--font-inter)' }}
+                  />
+                  <Area type="monotone" dataKey="orders" name="Orders" stroke="var(--primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
+                  <Line type="monotone" dataKey="hot" name="Hot Leads" stroke="var(--muted)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Right: Needs Attention */}
-          <div style={styles.card}>
+          {/* Right: Lead Funnel */}
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Lead Funnel</h2>
+            <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '32px' }}>Conversion breakdown from all AI conversations.</p>
+            
+            {analytics && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, justifyContent: 'center' }}>
+                {[
+                  { label: 'Conversations', count: analytics.total_conversations, color: 'var(--primary)' },
+                  { label: 'Warm+ Leads', count: analytics.warm_or_above, color: 'var(--accent-purple)' },
+                  { label: 'Hot Leads', count: analytics.hot_or_above, color: 'var(--hot)' },
+                  { label: 'Orders Placed', count: analytics.orders_placed, color: 'var(--cust)' },
+                ].map((stage, i, arr) => {
+                  const max = Math.max(1, arr[0].count);
+                  const width = Math.max(2, (stage.count / max) * 100);
+                  const percent = Math.round((stage.count / max) * 100);
+                  return (
+                    <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--muted)' }}>{stage.label}</div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>{stage.count} <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: '500' }}>({percent}%)</span></div>
+                      </div>
+                      <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${width}%`, height: '100%', background: stage.color, borderRadius: '4px', transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Row 3: Needs Attention & Market Segments */}
+        <div className="dash-main-grid">
+          {/* Left: Needs Attention */}
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-              <h2 style={styles.sectionTitle}>Needs Attention</h2>
+              <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Needs Attention</h2>
               {pendingHandoffs.length > 0 && (
-                <span style={styles.badge(c.hot, '#fff')}>
+                <span style={{ background: 'var(--hot)', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '12px' }}>
                   {pendingHandoffs.length} Pending
                 </span>
               )}
             </div>
 
             {handoffs.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: c.muted, fontSize: '15px' }}>
-                No handoffs requested yet.
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: '14px', padding: '40px 0' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                All caught up! No handoffs requested.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }}>
                 {pendingHandoffs.map(h => (
-                  <div key={h.id} style={{...styles.handoffCard, flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start'}}>
-                    <div style={{ flex: '1 1 250px', minWidth: '0' }}>
-                      <div style={{ fontWeight: 700, color: c.ivory, marginBottom: '6px', fontSize: '15px' }}>
-                        {h.name || 'Unknown Customer'}
+                  <div key={h.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                      <div>
+                        <div style={{ fontWeight: '700', color: 'var(--ivory)', fontSize: '14px', marginBottom: '4px' }}>
+                          {h.name || 'Unknown Customer'}
+                        </div>
+                        <div style={{ color: 'var(--hot)', fontSize: '13px', fontWeight: '500' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px', verticalAlign: 'middle' }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                          Reason: {h.reason}
+                        </div>
                       </div>
-                      <div style={{ color: c.hot, fontSize: '14px', fontWeight: 500, wordWrap: 'break-word' }}>
-                        Reason: {h.reason}
-                      </div>
-                      <div style={{ color: c.muted, fontSize: '12px', marginTop: '8px' }}>
+                      <div style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: '500' }}>
                         {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                          day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
+                          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
                         })}
                       </div>
                     </div>
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: '1 1 260px', minWidth: '260px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <textarea 
-                        className="manager-input"
                         placeholder="Type reply (e.g. Please pay at UPI ID: ...)" 
                         value={replyTexts[h.id] || ''}
                         onChange={(e) => setReplyTexts(prev => ({ ...prev, [h.id]: e.target.value }))}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(h.id); } }}
                         style={{ 
-                          width: '100%', 
-                          border: `1px solid rgba(14,165,233,0.3)`, 
-                          borderRadius: '8px', 
-                          padding: '12px',
-                          fontSize: '13px',
-                          background: 'rgba(14,165,233,0.05)',
-                          color: c.ivory,
-                          outline: 'none',
-                          minHeight: '70px',
-                          resize: 'vertical',
-                          fontFamily: 'inherit'
+                          width: '100%', border: '1px solid var(--line)', borderRadius: '8px', padding: '10px 12px',
+                          fontSize: '13px', background: 'rgba(0,0,0,0.2)', color: 'var(--ivory)', outline: 'none',
+                          minHeight: '60px', resize: 'vertical', fontFamily: 'var(--font-inter)'
                         }}
                       />
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => sendReply(h.id)} style={{ ...styles.resolveBtn, flex: 1, background: c.cust, color: '#fff', border: 'none', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        <button onClick={() => sendReply(h.id)} style={{ flex: 1, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                           Send Message
                         </button>
-                        <button onClick={() => resolveHandoff(h.id)} style={{...styles.resolveBtn, flex: 1, background: 'transparent', border: `1px solid ${c.line}`, color: c.muted, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'}}
-                           onMouseEnter={e => { e.currentTarget.style.color = c.ivory; e.currentTarget.style.borderColor = c.muted; }}
-                           onMouseLeave={e => { e.currentTarget.style.color = c.muted; e.currentTarget.style.borderColor = c.line; }}
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <button onClick={() => resolveHandoff(h.id)} style={{ flex: 1, background: 'transparent', border: '1px solid var(--line)', borderRadius: '8px', color: 'var(--muted)', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                           Resolve
                         </button>
                       </div>
@@ -1297,91 +1293,159 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Bottom Row: Live Timeline Feed */}
-        <div style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '24px 28px', borderBottom: `1px solid ${c.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={styles.sectionTitle}>Live Activity Feed</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: c.cust, fontWeight: 600 }}>
-               <div style={{ width: '8px', height: '8px', background: c.cust, borderRadius: '50%', boxShadow: `0 0 10px ${c.cust}` }} />
-               Syncing live...
+          {/* Right: Market Segments */}
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Market Segments</h2>
+            <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '24px' }}>Customer distribution by city tiers and acquisition source.</p>
+            
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '32px' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{ width: '140px', height: '140px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={segments?.tiers?.length > 0 ? segments.tiers : [{ tier: 'Tier-1', count: 1 }]}
+                        cx="50%" cy="50%" innerRadius={45} outerRadius={60}
+                        paddingAngle={5} dataKey="count" stroke="none"
+                      >
+                        {(segments?.tiers?.length > 0 ? segments.tiers : [{ tier: 'Tier-1', count: 1 }]).map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={['var(--primary)', 'var(--accent-purple)', 'var(--accent-cyan)', 'var(--muted)'][index % 4]} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: '8px' }} itemStyle={{ color: '#fff', fontSize: '12px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ flex: 1, paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em' }}>BY TIER</div>
+                  {(segments?.tiers || []).map((t, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#fff' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: ['var(--primary)', 'var(--accent-purple)', 'var(--accent-cyan)', 'var(--muted)'][i % 4] }}></span>
+                        {t.tier}
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff' }}>{t.count}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderTop: '1px solid var(--line)', paddingTop: '24px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>TOP SOURCE</div>
+                  <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--accent-green)', textTransform: 'capitalize' }}>
+                    {segments?.sources?.[0]?.source || 'Website'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>{segments?.sources?.[0]?.count || 0} customers</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>TOP LTV CUSTOMER</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {segments?.top_customers?.[0]?.name || 'No data'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>₹{segments?.top_customers?.[0]?.lifetime_value || 0}</div>
+                </div>
+              </div>
             </div>
           </div>
-          <div style={{ padding: '24px' }}>
-            {customers.length === 0 ? (
-              <div style={{ textAlign: 'center', color: c.muted, padding: '40px' }}>No live activity yet.</div>
-            ) : (
-              customers.slice(0, 15).map(cust => (
-                <div 
-                  key={cust.id} 
-                  style={styles.feedCard}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = c.panel2;
-                    e.currentTarget.style.transform = 'translateX(4px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = c.panel;
-                    e.currentTarget.style.transform = 'translateX(0)';
-                  }}
-                  onClick={() => viewOrders(cust.id)}
-                >
-                  <div style={{ ...styles.feedIcon, background: `${segColor(cust.segment)}20`, color: segColor(cust.segment) }}>
-                    {cust.segment === 'HOT' ? '🔥' : cust.segment === 'CUSTOMER' ? '🛍️' : '💬'}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: 600, color: c.ivory, fontSize: '15px' }}>{cust.name || 'Anonymous Visitor'}</span>
-                      <span style={styles.badge(segColor(cust.segment), segTextColor(cust.segment))}>{cust.segment}</span>
-                      {cust.retention_stage && (
-                        <span style={{ ...styles.badge('#10b981', '#10b981'), background: '#10b98120', textTransform: 'capitalize' }}>
-                          📦 {cust.retention_stage.replace('_', ' ')}
+        </div>
+
+        {/* Row 4: Recent Customers */}
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', overflow: 'hidden', marginBottom: '40px' }}>
+          <div style={{ padding: '24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Recent Customers</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--cust)', fontWeight: '600' }}>
+               <div style={{ width: '8px', height: '8px', background: 'var(--cust)', borderRadius: '50%', boxShadow: '0 0 10px var(--cust)' }} />
+               Live Sync
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>NAME</th>
+                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>STATUS</th>
+                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>LTV</th>
+                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>TIER</th>
+                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>SOURCE</th>
+                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>TIME</th>
+                  <th style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right' }}>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customers.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px', fontSize: '14px' }}>No live activity yet.</td>
+                  </tr>
+                ) : (
+                  customers.slice(0, 15).map(cust => (
+                    <tr 
+                      key={cust.id} 
+                      style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.2s', cursor: 'pointer' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      onClick={() => viewOrders(cust.id)}
+                    >
+                      <td style={{ padding: '16px 24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#fff' }}>
+                            {cust.name ? cust.name.charAt(0).toUpperCase() : '?'}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: '600', color: '#fff', fontSize: '14px' }}>{cust.name || 'Anonymous'}</div>
+                            <div style={{ color: 'var(--muted)', fontSize: '12px' }}>{cust.city || 'Unknown City'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 24px' }}>
+                        <span style={{ 
+                          display: 'inline-block', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700',
+                          background: cust.segment === 'HOT' ? 'rgba(244, 63, 94, 0.1)' : cust.segment === 'CUSTOMER' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(139, 92, 246, 0.1)',
+                          color: cust.segment === 'HOT' ? 'var(--hot)' : cust.segment === 'CUSTOMER' ? 'var(--accent-green)' : 'var(--accent-purple)'
+                        }}>
+                          {cust.segment}
                         </span>
-                      )}
-                    </div>
-                    <div style={{ color: c.muted, fontSize: '13px' }}>
-                      Intent Score: <strong style={{ color: c.ivory, ...mono }}>{cust.intent_score || 0}/100</strong> • 
-                      Last active: {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                        day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
-                      }) : 'just now'}
-                      {cust.referral_code && (
-                        <div style={{ marginTop: '4px' }}>
-                           Wallet: <strong style={{ color: c.accent }}>₹{cust.wallet_balance || 0}</strong> • Code: <span style={{ ...mono }}>{cust.referral_code}</span>
+                      </td>
+                      <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
+                        ₹{cust.lifetime_value || 0}
+                      </td>
+                      <td style={{ padding: '16px 24px', color: 'var(--ivory)', fontSize: '13px' }}>
+                        {cust.tier || '-'}
+                      </td>
+                      <td style={{ padding: '16px 24px', color: 'var(--ivory)', fontSize: '13px', textTransform: 'capitalize' }}>
+                        {cust.source || 'website'}
+                      </td>
+                      <td style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '12px' }}>
+                        {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
+                          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                        }) : 'just now'}
+                      </td>
+                      <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteCustomer(e, cust.id);
+                            }}
+                            style={{ background: 'transparent', color: 'var(--hot)', border: '1px solid var(--hot)', borderRadius: '6px', padding: '6px 8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Delete"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                          </button>
+                          <button 
+                            onClick={(e) => viewConversation(e, cust.id, cust.name)}
+                            style={{ background: 'transparent', color: 'var(--primary)', border: '1px solid var(--primary)', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                          >
+                            Details
+                          </button>
                         </div>
-                      )}
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: c.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Consent:</span>
-                        <div style={{ display: 'flex', gap: '4px' }} title={cust.consent_whatsapp ? "Consented to WhatsApp" : "No WhatsApp consent"}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={cust.consent_whatsapp ? '#22c55e' : '#4b5563'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: cust.consent_whatsapp ? 1 : 0.5 }}>
-                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
-                          </svg>
-                        </div>
-                        <div style={{ display: 'flex', gap: '4px' }} title={cust.consent_email ? "Consented to Email" : "No Email consent"}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={cust.consent_email ? '#22c55e' : '#4b5563'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: cust.consent_email ? 1 : 0.5 }}>
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline>
-                          </svg>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button 
-                      onClick={(e) => handleDeleteCustomer(e, cust.id)}
-                      style={{ ...styles.resolveBtn, background: 'transparent', color: c.hot, border: `1px solid ${c.hot}`, padding: '8px 12px' }}
-                      title="Delete"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                    </button>
-                    <button 
-                      onClick={(e) => viewConversation(e, cust.id, cust.name)}
-                      style={{ ...styles.resolveBtn, background: 'transparent', color: c.primary, border: `1px solid ${c.primary}` }}
-                    >
-                      View Details
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
         

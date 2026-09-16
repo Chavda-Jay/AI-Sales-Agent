@@ -33,7 +33,9 @@ CREATE TABLE customers (
   name TEXT,
   phone TEXT,
   city TEXT,
-  source TEXT,                      -- e.g. 'website', 'whatsapp', 'instagram'
+  state TEXT,
+  tier TEXT,
+  source TEXT DEFAULT 'website',    -- e.g. 'website', 'referral', 'whatsapp'
   segment TEXT DEFAULT 'COLD',      -- COLD / WARM / HOT / CUSTOMER / DORMANT
   intent_score INT DEFAULT 0,
   consent_whatsapp BOOLEAN DEFAULT FALSE,
@@ -41,6 +43,8 @@ CREATE TABLE customers (
   referral_code TEXT UNIQUE,
   referred_by_code TEXT,
   wallet_balance NUMERIC DEFAULT 0,
+  lifetime_value NUMERIC DEFAULT 0,
+  preferred_channel TEXT DEFAULT 'chat',
   last_interaction TIMESTAMP DEFAULT NOW(),
   created_at TIMESTAMP DEFAULT NOW()
 );

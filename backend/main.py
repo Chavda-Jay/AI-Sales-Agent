@@ -48,6 +48,41 @@ GROQ_MODEL = "openai/gpt-oss-120b"
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-default-key-for-demo")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
+TIER_MAPPING = {
+    "Tier-1": [
+        "mumbai", "delhi", "new delhi", "bangalore", "bengaluru", "chennai", 
+        "kolkata", "hyderabad", "pune", "ahmedabad"
+    ],
+    "Tier-2": [
+        "agra", "ajmer", "aligarh", "amravati", "amritsar", "asansol", "aurangabad", 
+        "bareilly", "belagavi", "bhavnagar", "bhiwandi", "bhopal", "bhubaneswar", 
+        "bikaner", "bilaspur", "bokaro", "chandigarh", "coimbatore", "cuttack", 
+        "dehradun", "dhanbad", "bhilai", "durgapur", "erode", "faridabad", 
+        "firozabad", "ghaziabad", "gorakhpur", "gulbarga", "guntur", "gwalior", 
+        "gurugram", "gurgaon", "guwahati", "hubli", "dharwad", "indore", "jabalpur", 
+        "jaipur", "jalandhar", "jammu", "jamnagar", "jamshedpur", "jhansi", 
+        "jodhpur", "kakinada", "kannur", "kanpur", "karnal", "kochi", "kolhapur", 
+        "kollam", "kozhikode", "kurnool", "ludhiana", "lucknow", "madurai", 
+        "malappuram", "mathura", "mangaluru", "mangalore", "meerut", "moradabad", 
+        "mysore", "mysuru", "nagpur", "nanded", "nashik", "nellore", "noida", 
+        "greater noida", "patna", "puducherry", "purulia", "prayagraj", "allahabad", 
+        "raipur", "rajkot", "rajamahendravaram", "rajahmundry", "ranchi", "rourkela", 
+        "salem", "sangli", "shimla", "siliguri", "solapur", "srinagar", "surat", 
+        "thiruvananthapuram", "trivandrum", "thrissur", "tiruchirappalli", "trichy", 
+        "tirunelveli", "ujjain", "vadodara", "varanasi", "banaras", "vasai", "virar", 
+        "vijayawada", "visakhapatnam", "vizag", "warangal"
+    ]
+}
+
+def get_city_tier(city_name: str) -> str:
+    if not city_name:
+        return "Tier-3/Other"
+    city_lower = city_name.strip().lower()
+    for tier, cities in TIER_MAPPING.items():
+        if city_lower in cities:
+            return tier
+    return "Tier-3/Other"
+
 security = HTTPBearer()
 
 def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -273,6 +308,10 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_whatsapp BOOLEAN DEFAULT FALSE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_email BOOLEAN DEFAULT FALSE;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS state TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS tier TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS lifetime_value NUMERIC DEFAULT 0;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS preferred_channel TEXT DEFAULT 'chat';")
                 await conn.execute("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("""
@@ -668,13 +707,13 @@ async def chat(req: ChatRequest):
 🔧 SPECIAL FEATURES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - **COUPON 'FIRST10'**: If mentioned, get excited! Apply 10% discount. Show original → discounted price. Set order_amount to discounted price.
-- **ORDER DETAILS FORM**: Set `requires_details` to true when customer is ready to checkout (preferences finalized). The form (Name, Phone, Address, Consent checkboxes) appears automatically.
+- **ORDER DETAILS FORM**: Set `requires_details` to true when customer is ready to checkout (preferences finalized). In your text reply, naturally ask for their name and city together (e.g. "Order ke liye apna naam aur city bata dijiye" or "Could you please share your name and city for the order?"). Do NOT ask as two separate awkward questions.
 - **HUMAN HANDOFF**: Set `needs_human` to true + `handoff_reason` if: customer is angry, asks for human/manager, mentions legal/fraud/payment disputes, or asks something completely outside your knowledge.
 - **ORDER CONFIRMATION**: ONLY set `order_ready` to true AFTER you have received the customer's Name, Phone, and Address from the shipping form. DO NOT set `order_ready` to true if you do not have their details yet. If they say "yes place order" but you don't have details, set `requires_details` to true to show the form first.
 - **DPDP CONSENT**: When showing high purchase intent (setting requires_details or order_ready to true), naturally ask: "Would you like to receive future offers and updates via WhatsApp or email?" in the detected language. Set consent fields ONLY when customer explicitly responds.
 - **CROSS-SELL/UPSELL**: Whenever you recommend or confirm a product, consider suggesting ONE complementary item from the catalog (e.g. jeans → belt, TV → HDMI cable). NEVER force a suggestion. **CRITICAL CULTURAL RULE:** Ensure cross-selling makes logical sense in Indian culture (e.g., NEVER suggest a leather belt with a Kurta or traditional wear). Weave the suggestion naturally into your reply (e.g. "A lot of customers also pick up X with this — want me to add that too?"). Set `cross_sell_product` to the name of the suggested product, otherwise null. Only suggest once per product.
 - **WALLET DISCOUNT**: The customer currently has a Digital Wallet balance of ₹{wallet_balance}. If wallet balance > 0 and the user confirms an order, AUTOMATICALLY apply the wallet balance to reduce the total amount (deduct up to the order amount). You MUST output `wallet_discount_applied`: <amount_deducted> in your JSON. Also inform the user in your `reply` that you have applied their wallet balance.
-- If customer mentions their name or phone anywhere, acknowledge it and include in JSON.
+- If customer mentions their name, city, or phone anywhere, acknowledge it and include in JSON.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📤 OUTPUT FORMAT (STRICT):
@@ -690,6 +729,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
   "cross_sell_product": "complementary product name or null",
   "next_action": "short recommended next step",
   "customer_name": "extracted name or null",
+  "customer_city": "extracted city or null",
   "customer_phone": "extracted phone or null",
   "needs_human": boolean,
   "handoff_reason": "reason string or null",
@@ -841,7 +881,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
             async with db_pool.acquire() as conn:
                 customer_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
                 c_name = parsed.get("customer_name")
+                c_city = parsed.get("customer_city")
                 c_phone = parsed.get("customer_phone")
+                c_tier = get_city_tier(c_city) if c_city else None
                 
                 if parsed.get("order_ready"):
                     parsed["segment"] = "CUSTOMER"
@@ -853,9 +895,11 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         if ref_exists:
                             ref_code = req.ref
                             
+                    c_source = 'referral' if ref_code else 'website'
+                            
                     customer_id = await conn.fetchval(
-                        "INSERT INTO customers (ext_id, name, phone, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, FALSE), COALESCE($9, FALSE), $10) RETURNING id",
-                        req.customerId, c_name, c_phone, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email"), ref_code
+                        "INSERT INTO customers (ext_id, name, phone, city, tier, source, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, FALSE), COALESCE($12, FALSE), $13) RETURNING id",
+                        req.customerId, c_name, c_phone, c_city, c_tier, c_source, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email"), ref_code
                     )
                     
                     if ref_code:
@@ -878,6 +922,8 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                             business_id = COALESCE($7, business_id),
                             consent_whatsapp = COALESCE($8, consent_whatsapp),
                             consent_email = COALESCE($9, consent_email),
+                            city = COALESCE($10, city),
+                            tier = COALESCE($11, tier),
                             followed_up_at = NULL
                         WHERE id = $3
                         """,
@@ -889,7 +935,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         req.shop,
                         business_id,
                         parsed.get("consent_whatsapp"),
-                        parsed.get("consent_email")
+                        parsed.get("consent_email"),
+                        c_city,
+                        c_tier
                     )
                 
                 await conn.execute(
@@ -930,8 +978,10 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     # Generate or fetch referral code
                     cust_record = await conn.fetchrow("SELECT referral_code, referred_by_code, name FROM customers WHERE id = $1", customer_id)
                     ref_code = cust_record['referral_code'] if cust_record else None
-                    if not ref_code:
-                        name_prefix = (cust_record['name'] or "USR")[:3].upper() if cust_record else "USR"
+                    name_prefix = (cust_record['name'] or "USR")[:3].upper() if cust_record else "USR"
+                    
+                    # Regenerate if not exists or if the name changed and the prefix no longer matches
+                    if not ref_code or (ref_code != "USR" and not ref_code.startswith(name_prefix)):
                         ref_code = f"{name_prefix}{random.randint(1000, 9999)}"
                         await conn.execute("UPDATE customers SET referral_code = $1 WHERE id = $2", ref_code, customer_id)
                     
@@ -950,6 +1000,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                             if referrer_id:
                                 await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", referrer_id)
                             await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", customer_id)
+                            
+                    # Update lifetime_value
+                    await conn.execute("UPDATE customers SET lifetime_value = (SELECT COALESCE(SUM(amount), 0) FROM orders WHERE customer_id = $1 AND status = 'confirmed') WHERE id = $1", customer_id)
                             
                 # Always fetch latest wallet balance to send back to frontend
                 latest_wallet = await conn.fetchval("SELECT wallet_balance FROM customers WHERE ext_id = $1", req.customerId)
@@ -1008,6 +1061,32 @@ async def upload_image(file: UploadFile = File(...)):
         print(f"Error during file upload: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload image.")
 
+@app.get("/api/analytics/segments")
+async def get_analytics_segments(shop: Optional[str] = None, _ = Depends(verify_admin)):
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                business_condition = ""
+                if shop:
+                    b_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", shop)
+                    if b_id:
+                        business_condition = f"WHERE business_id = {b_id}"
+                        
+                tier_counts = await conn.fetch(f"SELECT COALESCE(tier, 'Tier-3/Other') as tier, COUNT(*) as count FROM customers {business_condition} GROUP BY tier")
+                source_counts = await conn.fetch(f"SELECT COALESCE(source, 'website') as source, COUNT(*) as count FROM customers {business_condition} GROUP BY source")
+                top_customers = await conn.fetch(f"SELECT name, city, lifetime_value FROM customers {business_condition} ORDER BY lifetime_value DESC NULLS LAST LIMIT 5")
+                
+                return {
+                    "tiers": [dict(t) for t in tier_counts],
+                    "sources": [dict(s) for s in source_counts],
+                    "top_customers": [dict(tc) for tc in top_customers]
+                }
+        except Exception as e:
+            print(f"Warning: Database error fetching segments: {e}")
+            raise HTTPException(status_code=500, detail="Database error")
+    return {"tiers": [], "sources": [], "top_customers": []}
+
+
 @app.get("/api/customers")
 async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
     if db_pool:
@@ -1015,7 +1094,7 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
             async with db_pool.acquire() as conn:
                 if shop:
                     rows = await conn.fetch("""
-                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code,
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code, c.city, c.tier, c.lifetime_value, c.source,
                                (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage
                         FROM customers c
                         JOIN businesses b ON c.business_id = b.id
@@ -1024,7 +1103,7 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
                     """, shop)
                 else:
                     rows = await conn.fetch("""
-                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code,
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code, c.city, c.tier, c.lifetime_value, c.source,
                                (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage
                         FROM customers c
                         LEFT JOIN businesses b ON c.business_id = b.id
