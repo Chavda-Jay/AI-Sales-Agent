@@ -274,6 +274,22 @@ export default function Home() {
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const silenceTimerRef = useRef(null);
+
+  const playBeep = (freq = 400, type = 'sine', dur = 0.1) => {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + dur);
+    } catch(e) {}
+  };
 
   const startListening = async () => {
     if (isListening) {
@@ -281,10 +297,38 @@ export default function Home() {
       return;
     }
     try {
+      playBeep(600, 'sine', 0.15); // Start beep
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+
+      // Set up AudioContext for silence detection
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
+      microphone.connect(analyser);
+      analyser.fftSize = 512;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      let silenceStart = Date.now();
+
+      const checkSilence = () => {
+        if (mediaRecorder.state !== 'recording') return;
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        let average = sum / dataArray.length;
+        
+        if (average > 15) { 
+           silenceStart = Date.now(); // Voice detected, reset silence timer
+        } else {
+           if (Date.now() - silenceStart > 2000) { // 2 seconds of silence = stop
+               mediaRecorder.stop();
+               return;
+           }
+        }
+        silenceTimerRef.current = requestAnimationFrame(checkSilence);
+      };
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -293,6 +337,10 @@ export default function Home() {
       };
 
       mediaRecorder.onstop = async () => {
+        playBeep(400, 'sine', 0.15); // Stop beep
+        cancelAnimationFrame(silenceTimerRef.current);
+        if (audioContext.state !== 'closed') audioContext.close();
+        
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         setIsListening(false);
         setIsTyping(true); 
@@ -319,12 +367,12 @@ export default function Home() {
           alert("Error processing voice. Please try again.");
         }
         
-        // Stop all tracks to release mic
         stream.getTracks().forEach(track => track.stop());
       };
 
       mediaRecorder.start();
       setIsListening(true);
+      checkSilence();
     } catch (err) {
       alert("Microphone permission denied or not supported.");
       console.error(err);
@@ -668,7 +716,7 @@ export default function Home() {
                 <input
                   id="input"
                   ref={inputRef}
-                  placeholder="Ask a question..."
+                  placeholder={isListening ? "🔴 Listening... speak now" : "Ask a question..."}
                   value={inputValue}
                   onChange={e => setInputValue(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !isTyping) handleSend() }}
