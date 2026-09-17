@@ -551,7 +551,10 @@ async def voice_to_text(file: UploadFile = File(...)):
         content = await file.read()
         async with httpx.AsyncClient() as client:
             files = {'file': (file.filename, content, file.content_type)}
-            data = {'model': 'whisper-large-v3'}
+            data = {
+                'model': 'whisper-large-v3',
+                'prompt': 'The user is speaking in Indian languages. Hindi: नमस्ते, Gujarati: કેમ છો, મારે ફોન લેવો છે, Hinglish: kese ho. Please transcribe exactly in the language spoken.'
+            }
             response = await client.post(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
                 headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
