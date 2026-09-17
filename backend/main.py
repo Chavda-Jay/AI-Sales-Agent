@@ -542,6 +542,30 @@ class ChatRequest(BaseModel):
     shop: Optional[str] = None
     ref: Optional[str] = None
 
+@app.post("/api/voice-to-text")
+async def voice_to_text(file: UploadFile = File(...)):
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="Groq API key not configured")
+        
+    try:
+        content = await file.read()
+        async with httpx.AsyncClient() as client:
+            files = {'file': (file.filename, content, file.content_type)}
+            data = {'model': 'whisper-large-v3'}
+            response = await client.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+                files=files,
+                data=data,
+                timeout=30.0
+            )
+            response.raise_for_status()
+            result = response.json()
+            return {"text": result.get("text", "")}
+    except Exception as e:
+        print(f"Error in voice-to-text: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process audio")
+
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     if not req.customerId or not req.message:

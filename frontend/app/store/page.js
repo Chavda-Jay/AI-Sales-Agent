@@ -272,30 +272,63 @@ export default function Home() {
     setInputValue('');
   };
 
-  const startListening = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert("Your browser does not support Voice Chat. Please use Chrome, Safari, or Edge.");
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  const startListening = async () => {
+    if (isListening) {
+      mediaRecorderRef.current?.stop();
       return;
     }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-IN';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
 
-    recognition.onstart = () => setIsListening(true);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      const combined = inputValue ? inputValue + ' ' + transcript : transcript;
-      setInputValue(''); // Clear input box
-      setIsListening(false);
-      handleSendText(combined); // Auto-send directly
-    };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-    
-    recognition.start();
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setIsListening(false);
+        setIsTyping(true); 
+        
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'voice.webm');
+        
+        try {
+          const res = await fetch(`${API_BASE}/api/voice-to-text`, {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await res.json();
+          if (data.text) {
+             const combined = inputValue ? inputValue + ' ' + data.text : data.text;
+             setInputValue('');
+             handleSendText(combined);
+          } else {
+             setIsTyping(false);
+          }
+        } catch (error) {
+          console.error("Voice processing error", error);
+          setIsTyping(false);
+          alert("Error processing voice. Please try again.");
+        }
+        
+        // Stop all tracks to release mic
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsListening(true);
+    } catch (err) {
+      alert("Microphone permission denied or not supported.");
+      console.error(err);
+    }
   };
 
   return (
