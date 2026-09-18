@@ -243,14 +243,17 @@ export default function Dashboard() {
   const [contentProduct, setContentProduct] = useState('All Products');
   const [contentType, setContentType] = useState('Mix');
   const [shopCatalog, setShopCatalog] = useState([]);
+  const [shopBrandName, setShopBrandName] = useState('Store');
 
   useEffect(() => {
     if (selectedShop) {
       fetch(`${API_BASE}/api/config?shop=${selectedShop}`)
         .then(res => res.json())
         .then(data => {
-          if (data && data.catalog) {
-            setShopCatalog(data.catalog);
+          if (data) {
+            if (data.brandName) setShopBrandName(data.brandName);
+            if (data.catalog) setShopCatalog(data.catalog);
+            else setShopCatalog([]);
           } else {
             setShopCatalog([]);
           }
@@ -643,10 +646,13 @@ export default function Dashboard() {
       {/* Sidebar */}
       <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`} style={{display: 'flex', flexDirection: 'column', background: 'var(--bg)', borderRight: '1px solid var(--line)', padding: '24px 0'}}>
         <div style={{ padding: '0 24px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ background: 'var(--primary)', borderRadius: '8px', padding: '6px' }}>
+          <div style={{ background: 'var(--primary)', borderRadius: '8px', padding: '6px', flexShrink: 0 }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
           </div>
-          <span style={{ fontSize: '18px', fontWeight: '800', color: 'var(--ivory)', letterSpacing: '0.02em' }}>AI Sales Agent <span style={{ fontSize: '10px', background: 'rgba(59,130,246,0.2)', color: 'var(--primary)', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '4px' }}>B2C</span></span>
+          <span style={{ fontSize: '18px', fontWeight: '800', color: 'var(--ivory)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {selectedShop ? shopBrandName : 'AI Sales Agent'} 
+            {!selectedShop && <span style={{ fontSize: '10px', background: 'rgba(59,130,246,0.2)', color: 'var(--primary)', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '4px' }}>B2C</span>}
+          </span>
         </div>
         
         <div style={{ padding: '0 12px' }}>
@@ -739,6 +745,18 @@ export default function Dashboard() {
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
             </button>
+            {selectedShop && (
+              <div>
+                <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: 'var(--ivory)', letterSpacing: '-0.02em' }}>{shopBrandName} Dashboard</h1>
+                <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--muted)' }}>Overview and analytics for your AI Sales Agent</p>
+              </div>
+            )}
+            {!selectedShop && (
+              <div>
+                <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: 'var(--ivory)', letterSpacing: '-0.02em' }}>Admin Control Panel</h1>
+                <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--muted)' }}>Select a store to view analytics and manage catalog</p>
+              </div>
+            )}
           </div>
         </header>
 
