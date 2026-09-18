@@ -547,14 +547,29 @@ async def voice_to_text(file: UploadFile = File(...)):
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="Groq API key not configured")
         
+    # Whisper hallucination phrases — these are generated from silence/noise
+    HALLUCINATION_PHRASES = [
+        "transcribe", "subscribe", "thank you for watching", "thanks for watching",
+        "please subscribe", "like and subscribe", "video", "the video",
+        "subtitles", "caption", "music", "applause", "laughter",
+        "silence", "no speech", "inaudible", "thanks for listening",
+        "please like", "see you next time", "bye bye", "goodbye",
+        "thank you", "you", "the end", "end", "so", "okay",
+        "अगर आपको", "सब्सक्राइब", "वीडियो", "लाइक",
+    ]
+    
     try:
         content = await file.read()
+        # Reject very small audio files (likely just noise/click)
+        if len(content) < 5000:
+            return {"text": ""}
+            
         async with httpx.AsyncClient() as client:
             files = {'file': (file.filename, content, file.content_type)}
             data = {
                 'model': 'whisper-large-v3-turbo',
                 'language': 'hi',
-                'prompt': 'This audio contains Indian languages. Transcribe accurately. Hindi: नमस्ते कैसे हो, Gujarati: કેમ છો મારે ખરીદવું છે, English: Hello, Hinglish: kya price hai bhai. Transcribe exactly what is spoken without translating.'
+                'prompt': 'This is a customer speaking to a shopping assistant in India. They may speak in Hindi, Gujarati, Hinglish, or English. Transcribe exactly what they say. Do NOT add any commentary.'
             }
             response = await client.post(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
@@ -566,9 +581,18 @@ async def voice_to_text(file: UploadFile = File(...)):
             response.raise_for_status()
             result = response.json()
             transcribed_text = result.get("text", "").strip()
-            # Filter out empty or noise-only transcriptions
-            if not transcribed_text or len(transcribed_text) < 2:
+            
+            # Filter out empty or too-short transcriptions
+            if not transcribed_text or len(transcribed_text) < 3:
                 return {"text": ""}
+            
+            # Filter out Whisper hallucinations
+            text_lower = transcribed_text.lower().strip()
+            for phrase in HALLUCINATION_PHRASES:
+                if text_lower == phrase.lower() or text_lower.startswith(phrase.lower()):
+                    print(f"Filtered Whisper hallucination: '{transcribed_text}'")
+                    return {"text": ""}
+            
             return {"text": transcribed_text}
     except Exception as e:
         print(f"Error in voice-to-text: {e}")

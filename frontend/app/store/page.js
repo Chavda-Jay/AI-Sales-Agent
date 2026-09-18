@@ -320,7 +320,7 @@ export default function Home() {
         for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
         let average = sum / dataArray.length;
         
-        if (average > 15) { 
+        if (average > 25) { 
            silenceStart = Date.now(); // Voice detected, reset silence timer
         } else {
            if (Date.now() - silenceStart > 2000) { // 2 seconds of silence = stop
@@ -343,6 +343,14 @@ export default function Home() {
         if (audioContext.state !== 'closed') audioContext.close();
         
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        
+        // Don't send if audio is too small (just noise/click)
+        if (audioBlob.size < 5000) {
+          setIsListening(false);
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        
         setIsListening(false);
         setIsTyping(true); 
         
@@ -355,7 +363,7 @@ export default function Home() {
             body: formData,
           });
           const data = await res.json();
-          if (data.text) {
+          if (data.text && data.text.trim().length > 0) {
              const combined = inputValue ? inputValue + ' ' + data.text : data.text;
              setInputValue('');
              handleSendText(combined);
@@ -365,7 +373,6 @@ export default function Home() {
         } catch (error) {
           console.error("Voice processing error", error);
           setIsTyping(false);
-          alert("Error processing voice. Please try again.");
         }
         
         stream.getTracks().forEach(track => track.stop());

@@ -1530,20 +1530,20 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '8px', marginBottom: '16px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '8px', marginBottom: '16px' }}>
               {selectedConvo && selectedConvo.length > 0 ? (
                 selectedConvo.map((msg, idx) => (
                   <div key={idx}>
                     {msg.message && (
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
-                        <div style={{ background: `${c.primary}22`, border: `1px solid ${c.primary}33`, borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '80%', color: c.ivory, fontSize: '14px', lineHeight: '1.5' }}>
+                        <div style={{ background: `${c.primary}22`, border: `1px solid ${c.primary}33`, borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '80%', color: c.ivory, fontSize: '14px', lineHeight: '1.5', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           {msg.message}
                         </div>
                       </div>
                     )}
                     {msg.reply && (
                       <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '8px' }}>
-                        <div style={{ background: c.panel2, border: `1px solid ${c.line}`, borderRadius: '16px 16px 16px 4px', padding: '12px 16px', maxWidth: '80%', color: c.ivory, fontSize: '14px', lineHeight: '1.5' }}>
+                        <div style={{ background: c.panel2, border: `1px solid ${c.line}`, borderRadius: '16px 16px 16px 4px', padding: '12px 16px', maxWidth: '80%', color: c.ivory, fontSize: '14px', lineHeight: '1.5', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           <div style={{ fontSize: '11px', color: c.primary, fontWeight: 700, marginBottom: '6px', ...mono }}>AI AGENT</div>
                           {msg.reply}
                         </div>
