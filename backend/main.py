@@ -552,8 +552,9 @@ async def voice_to_text(file: UploadFile = File(...)):
         async with httpx.AsyncClient() as client:
             files = {'file': (file.filename, content, file.content_type)}
             data = {
-                'model': 'whisper-large-v3',
-                'prompt': 'The user is speaking in Indian languages. Hindi: नमस्ते, Gujarati: કેમ છો, મારે ફોન લેવો છે, Hinglish: kese ho. Please transcribe exactly in the language spoken.'
+                'model': 'whisper-large-v3-turbo',
+                'language': 'hi',
+                'prompt': 'This audio contains Indian languages. Transcribe accurately. Hindi: नमस्ते कैसे हो, Gujarati: કેમ છો મારે ખરીદવું છે, English: Hello, Hinglish: kya price hai bhai. Transcribe exactly what is spoken without translating.'
             }
             response = await client.post(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
@@ -564,7 +565,11 @@ async def voice_to_text(file: UploadFile = File(...)):
             )
             response.raise_for_status()
             result = response.json()
-            return {"text": result.get("text", "")}
+            transcribed_text = result.get("text", "").strip()
+            # Filter out empty or noise-only transcriptions
+            if not transcribed_text or len(transcribed_text) < 2:
+                return {"text": ""}
+            return {"text": transcribed_text}
     except Exception as e:
         print(f"Error in voice-to-text: {e}")
         raise HTTPException(status_code=500, detail="Failed to process audio")
@@ -814,10 +819,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
         print("Groq error:", error_detail)
         fallback = {
             "reply": "I'm sorry, I am experiencing high traffic right now. Please wait a moment and try again. ⏳",
-            "intent_score": 0, "segment": "WARM", "requires_details": False, "order_ready": False,
+            "intent_score": 50, "segment": "WARM", "requires_details": False, "order_ready": False,
             "order_product": None, "order_amount": None
         }
-        history.append({"role": "assistant", "content": json.dumps(fallback)})
         return fallback
 
     raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
@@ -871,7 +875,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
             pass
     
     if parsed is None:
-        extracted_reply = "I'd be happy to help! Could you please ask me again?"
+        extracted_reply = "Main aapki madad karne ke liye yahan hoon! Kya aap apna question dubara pooch sakte hain?"
         try:
             reply_match = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)"', raw, re.DOTALL)
             if reply_match:

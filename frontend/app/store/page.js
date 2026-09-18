@@ -72,6 +72,7 @@ export default function Home() {
   const [cart, setCart] = useState([]);
   const [toastMsg, setToastMsg] = useState(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const isSendingRef = useRef(false);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -147,6 +148,8 @@ export default function Home() {
   useEffect(() => {
     if (!customerId) return;
     const pollHistory = async () => {
+      // Skip polling while actively sending a message to prevent duplicates
+      if (isSendingRef.current) return;
       try {
         const res = await fetch(`${API_BASE}/api/chat/poll/${customerId}`);
         if (!res.ok) return;
@@ -192,13 +195,14 @@ export default function Home() {
       } catch (e) { }
     };
 
-    const intervalId = setInterval(pollHistory, 3000);
+    const intervalId = setInterval(pollHistory, 5000);
     return () => clearInterval(intervalId);
   }, [customerId]);
 
   const handleSendText = async (textToSend) => {
     const text = textToSend.trim();
     if (!text) return;
+    isSendingRef.current = true;
     setMessages(prev => [...prev, { text, who: 'user' }]);
     setIsTyping(true);
 
@@ -229,12 +233,6 @@ export default function Home() {
         setMessages(prev => [...prev, { text: '❌ ' + errorMsg, who: 'sys' }]);
       } else {
         setMessages(prev => {
-          // Prevent duplicates if polling endpoint fetched it first
-          const recentAgent = prev.slice(-3).find(m => m.who === 'agent');
-          if (recentAgent && recentAgent.text === data.reply) {
-            return prev.map(m => m === recentAgent ? { ...m, requiresDetails: data.requires_details, crossSellProduct: data.cross_sell_product || null } : m);
-          }
-          
           const newMsgs = [...prev, { text: data.reply, who: 'agent', requiresDetails: data.requires_details, crossSellProduct: data.cross_sell_product || null }];
           if (data.order_ready) {
             newMsgs.push({
@@ -253,6 +251,9 @@ export default function Home() {
     } catch (e) {
       setIsTyping(false);
       setMessages(prev => [...prev, { text: '⚠️ Could not reach backend.', who: 'sys' }]);
+    } finally {
+      // Wait 3 seconds before allowing polling again to prevent duplicate from polling
+      setTimeout(() => { isSendingRef.current = false; }, 3000);
     }
   };
 
@@ -310,7 +311,7 @@ export default function Home() {
       microphone.connect(analyser);
       analyser.fftSize = 512;
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      let silenceStart = Date.now();
+      let silenceStart = Date.now() + 2500; // Give 2.5s grace period before silence detection kicks in
 
       const checkSilence = () => {
         if (mediaRecorder.state !== 'recording') return;

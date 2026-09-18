@@ -36,10 +36,9 @@
 
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100%; height: -webkit-fill-available; scroll-behavior: smooth; }
+html { height: 100%; scroll-behavior: smooth; }
 body {
   min-height: 100%; 
-  min-height: -webkit-fill-available;
   background: var(--bg); 
   color: var(--ivory);
   font-family: var(--font-body); 
@@ -566,7 +565,10 @@ h2 {
 .floating-chat-window {
   position: fixed;
   top: 0; right: 0;
-  width: 420px; height: 100%; height: 100dvh; bottom: 0;
+  width: 420px; 
+  height: 100vh;
+  height: 100dvh;
+  bottom: 0;
   margin: 0;
   background: var(--chat-bg);
   backdrop-filter: blur(24px);
@@ -752,12 +754,13 @@ h2 {
   
   .floating-chat-window {
     width: 100%;
-    height: 100%;
-    height: -webkit-fill-available;
+    height: 100vh;
+    height: 100dvh;
     bottom: 0;
     border-radius: 0;
     right: 0;
     top: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   
   .chat-widget-container {
@@ -771,7 +774,7 @@ h2 {
   }
   
   .bubble { max-width: 90%; font-size: 13px; padding: 10px 14px; }
-  .input-area { padding: 12px 16px; }
+  .input-area { padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   .inputrow input, .form-input { font-size: 16px !important; padding: 12px; }
 
   .navbar { padding: 12px 16px; }
