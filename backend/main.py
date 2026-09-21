@@ -36,6 +36,7 @@ env_path = os.path.join(BASE_DIR, ".env")
 load_dotenv(dotenv_path=env_path, override=True)
 
 db_pool = None
+password_reset_otps = {} # Dict to store email -> OTP for demo purposes
 supabase_client = None
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -314,6 +315,7 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS preferred_channel TEXT DEFAULT 'chat';")
                 await conn.execute("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
+                await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS banner_url TEXT;")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS handoffs (
                         id SERIAL PRIMARY KEY,
@@ -411,6 +413,7 @@ class SignupRequest(BaseModel):
     password: str
     language: str
     policies: str
+    banner_url: Optional[str] = None
     catalog_items: list[dict]
 
 @app.post("/api/signup")
@@ -446,10 +449,10 @@ async def signup(req: SignupRequest):
             
             async with conn.transaction():
                 business_id = await conn.fetchval("""
-                    INSERT INTO businesses (slug, brand_name, language, policies)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO businesses (slug, brand_name, language, policies, banner_url)
+                    VALUES ($1, $2, $3, $4, $5)
                     RETURNING id
-                """, slug, req.business_name, req.language, req.policies)
+                """, slug, req.business_name, req.language, req.policies, req.banner_url)
                 
                 await conn.execute("""
                     INSERT INTO admin_users (business_id, email, password_hash)
@@ -509,7 +512,7 @@ conversations = {}
 
 async def load_config_from_db(slug: str, conn):
     business = await conn.fetchrow("""
-        SELECT id, brand_name, language, policies 
+        SELECT id, brand_name, language, policies, banner_url 
         FROM businesses WHERE slug = $1
     """, slug)
     if not business:
@@ -526,6 +529,7 @@ async def load_config_from_db(slug: str, conn):
         "brandName": business['brand_name'],
         "language": business['language'],
         "policies": business['policies'],
+        "bannerUrl": business.get('banner_url'),
         "catalog": [dict(i) for i in items]
     }
 
@@ -1813,6 +1817,53 @@ async def create_business(req: BusinessRequest):
         print(f"Signup error: {e}")
         raise HTTPException(status_code=500, detail="Database error during signup")
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str
+
+@app.post("/api/admin/forgot-password-otp")
+async def forgot_password_otp(req: ForgotPasswordRequest):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    async with db_pool.acquire() as conn:
+        admin = await conn.fetchrow("SELECT id FROM admin_users WHERE email = $1", req.email)
+        if not admin:
+            raise HTTPException(status_code=404, detail="Email not found")
+            
+        import random
+        otp = str(random.randint(1000, 9999))
+        password_reset_otps[req.email] = otp
+        
+        # For demo purposes, we return the OTP in the response
+        return {"status": "success", "message": "OTP generated", "demo_otp": otp}
+
+@app.post("/api/admin/reset-password-with-otp")
+async def reset_password_with_otp(req: ResetPasswordRequest):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    stored_otp = password_reset_otps.get(req.email)
+    if not stored_otp or stored_otp != req.otp:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+        
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+        
+    hashed_pw = pwd_context.hash(req.new_password)
+    
+    async with db_pool.acquire() as conn:
+        await conn.execute("UPDATE admin_users SET password_hash = $1 WHERE email = $2", hashed_pw, req.email)
+        
+    # Clear the OTP after successful reset
+    del password_reset_otps[req.email]
+    
+    return {"status": "success", "message": "Password updated successfully"}
+
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str
@@ -2064,7 +2115,7 @@ async def get_public_businesses():
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT 
-                b.slug, b.brand_name, b.language,
+                b.slug, b.brand_name, b.language, b.banner_url,
                 (SELECT count(*) FROM catalog_items WHERE business_id = b.id) as product_count,
                 (SELECT min(price) FROM catalog_items WHERE business_id = b.id) as min_price,
                 (SELECT max(price) FROM catalog_items WHERE business_id = b.id) as max_price
@@ -2078,6 +2129,7 @@ async def get_public_businesses():
                 "slug": r["slug"],
                 "name": r["brand_name"],
                 "language": r["language"],
+                "banner_url": r.get("banner_url"),
                 "product_count": r["product_count"] or 0,
                 "min_price": float(r['min_price'] or 0),
                 "max_price": float(r['max_price'] or 0),

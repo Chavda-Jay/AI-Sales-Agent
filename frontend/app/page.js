@@ -37,14 +37,36 @@ export default function MarketplaceHome() {
         {/* Store Cards — Dynamic */}
         <section className="mk-grid mk-grid-2" id="stores">
           {stores.map((store, index) => {
-            const isElectronics = store.slug.includes('electronic');
-            const glowClass = isElectronics ? 'mk-glow-blue' : 'mk-glow-purple';
-            const iconClass = isElectronics ? 'mk-icon-blue' : '';
-            const btnClass = isElectronics ? 'mk-btn-blue' : '';
-            const defaultIcon = isElectronics ? '📺' : '👕';
-            const defaultBadge = isElectronics ? 'Electronics' : 'Retail';
-            const defaultTag = isElectronics ? 'Tech & Gadgets' : 'Apparel & Fashion';
-            const bgImage = isElectronics ? '/images/electronics_banner.jpg' : '/images/clothing_banner.jpg';
+            const nameLower = store.name.toLowerCase();
+            let category = 'generic';
+            if (nameLower.includes('electronic') || nameLower.includes('tech') || nameLower.includes('mobile')) category = 'electronics';
+            else if (nameLower.includes('grocery') || nameLower.includes('mart') || nameLower.includes('food') || nameLower.includes('fresh')) category = 'grocery';
+            else if (nameLower.includes('cloth') || nameLower.includes('thread') || nameLower.includes('fashion') || nameLower.includes('wear')) category = 'apparel';
+
+            let glowClass, iconClass, btnClass, defaultIcon, defaultBadge, defaultTag, bgStyle;
+            
+            if (category === 'electronics') {
+              glowClass = 'mk-glow-blue'; iconClass = 'mk-icon-blue'; btnClass = 'mk-btn-blue';
+              defaultIcon = '📺'; defaultBadge = 'Electronics'; defaultTag = 'Tech & Gadgets';
+              bgStyle = { backgroundImage: `url('/images/electronics_banner.jpg')` };
+            } else if (category === 'grocery') {
+              glowClass = 'mk-glow-green'; iconClass = 'mk-icon-green'; btnClass = 'mk-btn-green';
+              defaultIcon = '🛒'; defaultBadge = 'Grocery'; defaultTag = 'Daily Essentials';
+              bgStyle = { background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' };
+            } else if (category === 'apparel') {
+              glowClass = 'mk-glow-purple'; iconClass = ''; btnClass = '';
+              defaultIcon = '👕'; defaultBadge = 'Apparel'; defaultTag = 'Fashion & Clothing';
+              bgStyle = { backgroundImage: `url('/images/clothing_banner.jpg')` };
+            } else {
+              glowClass = 'mk-glow-orange'; iconClass = 'mk-icon-orange'; btnClass = 'mk-btn-orange';
+              defaultIcon = '🏪'; defaultBadge = 'Retail'; defaultTag = 'General Store';
+              bgStyle = { background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' };
+            }
+            
+            // Override with owner-uploaded banner if available
+            if (store.banner_url) {
+              bgStyle = { backgroundImage: `url('${store.banner_url}')`, backgroundSize: 'cover', backgroundPosition: 'center' };
+            }
             
             return (
               <Link key={store.slug} href={`/store?shop=${store.slug}`} className={`mk-card ${glowClass}`} style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -52,11 +74,11 @@ export default function MarketplaceHome() {
                   <h2>{store.name}</h2>
                   <span className="mk-badge">{defaultBadge}</span>
                 </div>
-                <div className="mk-card-img" style={{ backgroundImage: `url('${bgImage}')` }}>
+                <div className="mk-card-img" style={bgStyle}>
                 </div>
                 <div className="mk-card-body">
                   <div className="mk-brand-info">
-                    <div className={`mk-brand-icon ${iconClass}`}>{defaultIcon}</div>
+                    <div className={`mk-brand-icon ${iconClass}`} style={{ fontSize: '20px' }}>{defaultIcon}</div>
                     <span className="mk-brand-name">{store.name}</span>
                     <div className="mk-rating">★ 4.8</div>
                   </div>

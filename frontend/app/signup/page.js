@@ -25,8 +25,11 @@ export default function Signup() {
     password: '',
     language: 'English + Hindi mix (Hinglish)',
     policies: 'No returns or refunds unless the product is damaged upon delivery. 3-5 days delivery.',
+    banner_url: '',
     catalog_items: [{ name: '', price: '', note: '', image_url: '' }]
   });
+
+  const [bannerUploading, setBannerUploading] = useState(false);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -63,6 +66,30 @@ export default function Signup() {
       }
     } catch (err) {
       toast.error("Network error during upload", { id: toastId });
+    }
+  };
+
+  const handleBannerUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBannerUploading(true);
+    const bannerFormData = new FormData();
+    bannerFormData.append('file', file);
+    const toastId = toast.loading('Uploading banner...');
+    try {
+      const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: bannerFormData });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        const finalUrl = data.url.startsWith('http') ? data.url : API_BASE + data.url;
+        setFormData(prev => ({ ...prev, banner_url: finalUrl }));
+        toast.success('Banner uploaded!', { id: toastId });
+      } else {
+        toast.error(data.detail || 'Upload failed', { id: toastId });
+      }
+    } catch (err) {
+      toast.error('Network error during upload', { id: toastId });
+    } finally {
+      setBannerUploading(false);
     }
   };
 
@@ -204,6 +231,31 @@ export default function Signup() {
               </div>
 
               <div className="input-group">
+                <label className={jetbrains.className}>Store Banner Image <span style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: 'normal' }}>(Appears on your store page hero)</span></label>
+                {formData.banner_url ? (
+                  <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(248,250,252,0.1)' }}>
+                    <img src={formData.banner_url} alt="Banner" style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ position: 'absolute', top: '8px', right: '8px', display: 'flex', gap: '6px' }}>
+                      <label style={{ background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}>
+                        Change
+                        <input type="file" accept="image/*" onChange={handleBannerUpload} style={{ display: 'none' }} />
+                      </label>
+                      <button type="button" onClick={() => setFormData(prev => ({ ...prev, banner_url: '' }))} style={{ background: 'rgba(239,68,68,0.8)', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}>Remove</button>
+                    </div>
+                  </div>
+                ) : (
+                  <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', border: '2px dashed rgba(248,250,252,0.15)', borderRadius: '12px', padding: '24px', cursor: 'pointer', transition: 'all 0.2s', background: 'rgba(248,250,252,0.02)' }}>
+                    <div style={{ fontSize: '28px' }}>{bannerUploading ? '⏳' : '🖼️'}</div>
+                    <div style={{ fontSize: '13px', color: 'var(--muted)', textAlign: 'center' }}>
+                      {bannerUploading ? 'Uploading...' : 'Click to upload your store banner'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'rgba(248,250,252,0.3)' }}>Recommended: 1200×400px, JPG/PNG</div>
+                    <input type="file" accept="image/*" onChange={handleBannerUpload} style={{ display: 'none' }} disabled={bannerUploading} />
+                  </label>
+                )}
+              </div>
+
+              <div className="input-group">
                 <label className={jetbrains.className}>Owner Email</label>
                 <input
                   type="email"
@@ -234,19 +286,26 @@ export default function Signup() {
           {step === 2 && (
             <div className="form-step slide-in">
               <div className="input-group">
-                <label className={jetbrains.className}>AI Language Preference</label>
-                <select
-                  name="language"
-                  value={formData.language}
-                  onChange={handleChange}
-                  className={`signup-select ${errors.language ? 'error-border' : ''}`}
-                >
-                  <option value="English">English</option>
-                  <option value="Hindi">Hindi</option>
-                  <option value="English + Hindi mix (Hinglish)">Hinglish</option>
-                  <option value="Gujarati">Gujarati</option>
-                </select>
-                {errors.language && <span className="error-text">{errors.language}</span>}
+                <label className={jetbrains.className} style={{ marginBottom: '8px', display: 'block' }}>AI Language Capabilities</label>
+                <div style={{
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px'
+                }}>
+                  <div style={{ fontSize: '24px' }}>🌍</div>
+                  <div>
+                    <div style={{ color: '#22c55e', fontWeight: 'bold', fontSize: '14px', marginBottom: '4px' }}>
+                      Multilingual Auto-Detect Enabled ⚡
+                    </div>
+                    <div style={{ color: 'var(--muted)', fontSize: '12px', lineHeight: '1.5' }}>
+                      Your AI Sales Agent will automatically detect and converse in <strong>English, Hindi, Hinglish, and Gujarati</strong> based on the customer's preference in real-time. No configuration needed!
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="input-group">
@@ -604,6 +663,7 @@ export default function Signup() {
           display: flex;
           flex-direction: column;
           gap: 12px;
+          flex-shrink: 0;
         }
 
         .product-header {

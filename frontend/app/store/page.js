@@ -38,13 +38,10 @@ function iconFor(name) {
   if (imgSrc) {
     return <img src={imgSrc} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
   }
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '48px', height: '48px', opacity: 0.5, margin: 'auto' }}>
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-      <circle cx="8.5" cy="8.5" r="1.5"></circle>
-      <polyline points="21 15 16 10 5 21"></polyline>
-    </svg>
-  );
+  
+  // Dynamic fallback using UI Avatars for a beautiful, colorful letter placeholder
+  const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=256&font-size=0.4`;
+  return <img src={fallbackUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
 }
 
 export default function Home() {
@@ -414,23 +411,49 @@ export default function Home() {
       )}
 
       {/* Hero Banner */}
-      <div 
-        className="store-hero"
-        style={{
-          backgroundImage: `url(${shopParam?.includes('electronic') ? '/images/electronics_banner.jpg' : '/images/clothing_banner.jpg'})`
-        }}
-      >
-        <div className="hero-overlay" />
-        <div className="hero-content">
-          <span className="hero-tag">{shopParam?.includes('electronic') ? '✦ New Arrivals' : '✦ New Season'}</span>
-          <h1>{shopParam?.includes('electronic') ? 'Latest Tech\nGadgets' : 'Spring\nCollection'}</h1>
-          <p>{config ? `Discover premium products at ${config.brandName}` : 'Premium quality products'}</p>
-          <button className="hero-btn" onClick={() => {
-            const grid = document.querySelector('.store-grid');
-            if (grid) grid.scrollIntoView({ behavior: 'smooth' });
-          }}>EXPLORE COLLECTION</button>
-        </div>
-      </div>
+      {(() => {
+        const brandNameLower = (config?.brandName || shopParam || '').toLowerCase();
+        let category = 'generic';
+        if (brandNameLower.includes('electronic') || brandNameLower.includes('tech') || brandNameLower.includes('mobile')) category = 'electronics';
+        else if (brandNameLower.includes('grocery') || brandNameLower.includes('mart') || brandNameLower.includes('food') || brandNameLower.includes('fresh')) category = 'grocery';
+        else if (brandNameLower.includes('cloth') || brandNameLower.includes('thread') || brandNameLower.includes('fashion') || brandNameLower.includes('wear')) category = 'apparel';
+
+        let heroBg, heroTag, heroTitle;
+        
+        // Priority 1: Owner uploaded banner
+        if (config?.bannerUrl) {
+          heroBg = { backgroundImage: `url('${config.bannerUrl}')` };
+        }
+        
+        if (category === 'electronics') {
+          if (!config?.bannerUrl) heroBg = { backgroundImage: `url('/images/electronics_banner.jpg')` };
+          heroTag = '✨ New Arrivals'; heroTitle = 'Latest Tech\nGadgets';
+        } else if (category === 'grocery') {
+          if (!config?.bannerUrl) heroBg = { background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' };
+          heroTag = '🛒 Fresh Stock'; heroTitle = 'Daily\nEssentials';
+        } else if (category === 'apparel') {
+          if (!config?.bannerUrl) heroBg = { backgroundImage: `url('/images/clothing_banner.jpg')` };
+          heroTag = '✦ New Season'; heroTitle = 'Spring\nCollection';
+        } else {
+          if (!config?.bannerUrl) heroBg = { background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' };
+          heroTag = '🏪 Top Picks'; heroTitle = 'Exclusive\nOffers';
+        }
+
+        return (
+          <div className="store-hero" style={heroBg}>
+            <div className="hero-overlay" />
+            <div className="hero-content">
+              <span className="hero-tag">{heroTag}</span>
+              <h1 style={{ whiteSpace: 'pre-line' }}>{heroTitle}</h1>
+              <p>{config ? `Discover premium products at ${config.brandName}` : 'Premium quality products'}</p>
+              <button className="hero-btn" onClick={() => {
+                const grid = document.querySelector('.store-grid');
+                if (grid) grid.scrollIntoView({ behavior: 'smooth' });
+              }}>EXPLORE COLLECTION</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Products */}
       <div className="store-grid">

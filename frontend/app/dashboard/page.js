@@ -419,7 +419,15 @@ export default function Dashboard() {
   };
 
   const fetchCustomers = async (isPolling = false, shopId = selectedShop) => {
-    if (!isPolling) setLoading(true);
+    if (!isPolling) {
+      setLoading(true);
+      // Reset state to avoid flickering previous store's data when switching stores
+      setCustomers([]);
+      setAnalytics(null);
+      setSegments(null);
+      setWeeklyData([]);
+      setReferrals([]);
+    }
     try {
       const qs = shopId ? `?shop=${shopId}` : '';
       
@@ -481,6 +489,11 @@ export default function Dashboard() {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
+  
+  const [isForgotMode, setIsForgotMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetOtpSent, setResetOtpSent] = useState(false);
+  const [resetOtp, setResetOtp] = useState('');
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
@@ -500,6 +513,60 @@ export default function Dashboard() {
         setNewPassword('');
       } else {
         toast.error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail) || "Failed to update password");
+      }
+    } catch (e) {
+      toast.error("Network error");
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const handleSendOtp = async (e) => {
+    e.preventDefault();
+    if (!resetEmail) return toast.error("Please enter your registered email");
+    setPasswordLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/admin/forgot-password-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Demo Note: Your OTP is ${data.demo_otp}`, { duration: 8000 });
+        setResetOtpSent(true);
+      } else {
+        toast.error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail) || "Failed to send OTP");
+      }
+    } catch (e) {
+      toast.error("Network error");
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 8) return toast.error("New password must be at least 8 chars");
+    if (!resetOtp) return toast.error("Please enter the OTP");
+    setPasswordLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/admin/reset-password-with-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail, otp: resetOtp, new_password: newPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || "Password updated successfully!");
+        setSettingsOpen(false);
+        setIsForgotMode(false);
+        setResetOtpSent(false);
+        setResetEmail('');
+        setResetOtp('');
+        setNewPassword('');
+      } else {
+        toast.error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail) || "Failed to reset password");
       }
     } catch (e) {
       toast.error("Network error");
@@ -603,37 +670,92 @@ export default function Dashboard() {
               <button onClick={() => setSettingsOpen(false)} style={{ background: 'transparent', border: 'none', color: c.muted, cursor: 'pointer', fontSize: '20px' }}>×</button>
             </div>
             
-            <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>Current Password</label>
-                <input 
-                  type="password" 
-                  value={oldPassword}
-                  onChange={e => setOldPassword(e.target.value)}
-                  style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
-                  required
-                />
+            {!isForgotMode ? (
+              <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '13px', color: c.muted, fontWeight: 500, margin: 0 }}>Current Password</label>
+                    <button type="button" onClick={() => setIsForgotMode(true)} style={{ background: 'none', border: 'none', color: 'var(--cust)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>Forgot?</button>
+                  </div>
+                  <input 
+                    type="password" 
+                    value={oldPassword}
+                    onChange={e => setOldPassword(e.target.value)}
+                    style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
+                  <input 
+                    type="password" 
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                    required
+                    minLength={8}
+                  />
+                </div>
+                
+                <button 
+                  type="submit" 
+                  disabled={passwordLoading}
+                  style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}
+                >
+                  {passwordLoading ? 'Updating...' : 'Update Password'}
+                </button>
+              </form>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {!resetOtpSent ? (
+                  <form onSubmit={handleSendOtp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                     <div>
+                      <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>Registered Email</label>
+                      <input 
+                        type="email" 
+                        value={resetEmail}
+                        onChange={e => setResetEmail(e.target.value)}
+                        style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                        required
+                      />
+                    </div>
+                    <button type="submit" disabled={passwordLoading} style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}>
+                      {passwordLoading ? 'Sending OTP...' : 'Send OTP'}
+                    </button>
+                    <button type="button" onClick={() => setIsForgotMode(false)} style={{ background: 'none', border: 'none', color: c.muted, fontSize: '13px', cursor: 'pointer', marginTop: '4px' }}>Back to Change Password</button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>Enter OTP</label>
+                      <input 
+                        type="text" 
+                        value={resetOtp}
+                        onChange={e => setResetOtp(e.target.value)}
+                        style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none', letterSpacing: '2px' }}
+                        required
+                        placeholder="e.g. 1234"
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
+                      <input 
+                        type="password" 
+                        value={newPassword}
+                        onChange={e => setNewPassword(e.target.value)}
+                        style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                        required
+                        minLength={8}
+                      />
+                    </div>
+                    <button type="submit" disabled={passwordLoading} style={{ background: 'var(--hot)', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}>
+                      {passwordLoading ? 'Resetting...' : 'Reset Password'}
+                    </button>
+                    <button type="button" onClick={() => setResetOtpSent(false)} style={{ background: 'none', border: 'none', color: c.muted, fontSize: '13px', cursor: 'pointer', marginTop: '4px' }}>Use a different email</button>
+                  </form>
+                )}
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
-                <input 
-                  type="password" 
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
-                  required
-                  minLength={8}
-                />
-              </div>
-              
-              <button 
-                type="submit" 
-                disabled={passwordLoading}
-                style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}
-              >
-                {passwordLoading ? 'Updating...' : 'Update Password'}
-              </button>
-            </form>
+            )}
           </div>
         </div>
       )}
@@ -1094,42 +1216,42 @@ export default function Dashboard() {
           {[
             { 
               label: 'Total Customers', 
-              val: total, 
+              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : total, 
               icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
               trend: '+12.5%',
               trendUp: true
             },
             { 
               label: 'Orders Placed', 
-              val: analytics?.orders_placed || 0,
+              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.orders_placed || 0),
               icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>,
               trend: '+8.2%',
               trendUp: true
             },
             { 
               label: 'AI Conversations', 
-              val: analytics?.total_conversations || 0,
+              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.total_conversations || 0),
               icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>,
               trend: '+24.1%',
               trendUp: true
             },
             { 
               label: 'HOT Leads', 
-              val: hotCount, 
+              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : hotCount, 
               icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2c0 0-5 6.5-5 11a5 5 0 0 0 10 0c0-4.5-5-11-5-11z"></path></svg>,
               trend: '+5.4%',
               trendUp: true
             },
             { 
               label: 'WARM Leads', 
-              val: warmCount, 
+              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : warmCount, 
               icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>,
               trend: 'Stable',
               trendUp: true
             },
             { 
               label: 'COLD Leads', 
-              val: coldCount, 
+              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : coldCount, 
               icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>,
               trend: '-2.0%',
               trendUp: false
