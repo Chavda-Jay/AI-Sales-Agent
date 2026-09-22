@@ -21,10 +21,10 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body className={`${inter.variable} ${sora.variable} ${jetbrainsMono.variable}`}>
         <Toaster 
-          position="top-right" 
+          position="top-center" 
           toastOptions={{ 
             style: { background: '#1c2129', color: '#e6edf3', border: '1px solid #2b3140' } 
           }} 

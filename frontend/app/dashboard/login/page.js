@@ -62,7 +62,7 @@ export default function AdminLogin() {
 
   return (
     <div className={`login-page ${inter.className}`} style={{ position: 'relative' }}>
-      <Toaster position="top-right" />
+      <Toaster position="top-center" />
       <div className="login-container">
         <div className="login-header">
           <div className="login-brand" style={sora.style}>

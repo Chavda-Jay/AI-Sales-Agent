@@ -169,12 +169,19 @@ export default function Dashboard() {
       if (hash === '#daily-report') {
         setDailyReportOpen(true);
         setContentIdeasOpen(false);
+        setOrdersViewOpen(false);
       } else if (hash === '#content-ideas') {
         setDailyReportOpen(false);
         setContentIdeasOpen(true);
+        setOrdersViewOpen(false);
+      } else if (hash === '#orders') {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(false);
+        setOrdersViewOpen(true);
       } else {
         setDailyReportOpen(false);
         setContentIdeasOpen(false);
+        setOrdersViewOpen(false);
       }
     };
     handleHashChange();
@@ -214,6 +221,7 @@ export default function Dashboard() {
   const [customers, setCustomers] = useState([]);
   const [handoffs, setHandoffs] = useState([]);
   const [referrals, setReferrals] = useState([]);
+  const [ordersList, setOrdersList] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [segments, setSegments] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -238,6 +246,7 @@ export default function Dashboard() {
 
   // Content Ideas state
   const [contentIdeasOpen, setContentIdeasOpen] = useState(false);
+  const [ordersViewOpen, setOrdersViewOpen] = useState(false);
   const [contentIdeasLoading, setContentIdeasLoading] = useState(false);
   const [generatedIdeas, setGeneratedIdeas] = useState([]);
   const [contentProduct, setContentProduct] = useState('All Products');
@@ -427,6 +436,7 @@ export default function Dashboard() {
       setSegments(null);
       setWeeklyData([]);
       setReferrals([]);
+      setOrdersList([]);
     }
     try {
       const qs = shopId ? `?shop=${shopId}` : '';
@@ -477,6 +487,12 @@ export default function Dashboard() {
       const wRes = await authFetch(`${WEEKLY_URL}${qs}`);
       if (wRes.ok) {
         setWeeklyData(await wRes.json());
+      }
+      
+      const ordRes = await authFetch(`${API_BASE}/api/admin/orders${qs}`);
+      if (ordRes.ok) {
+        const ordData = await ordRes.json();
+        setOrdersList(ordData.orders || []);
       }
     } catch (e) {
       console.error("Could not fetch customers", e);
@@ -779,10 +795,10 @@ export default function Dashboard() {
         
         <div style={{ padding: '0 12px' }}>
           {isSuperAdmin && (
-            <div style={{ padding: '12px', color: !selectedShop && !dailyReportOpen && !contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop && !dailyReportOpen && !contentIdeasOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop && !dailyReportOpen && !contentIdeasOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
-                 onClick={() => { setSelectedShop(null); setDailyReportOpen(false); setContentIdeasOpen(false); }}
-                 onMouseEnter={e => { if(selectedShop || dailyReportOpen || contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
-                 onMouseLeave={e => { if(selectedShop || dailyReportOpen || contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
+            <div style={{ padding: '12px', color: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
+                 onClick={() => { setSelectedShop(null); setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); }}
+                 onMouseEnter={e => { if(selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
+                 onMouseLeave={e => { if(selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = c.muted; }}
                  >
               <span>🏪</span> My Stores
             </div>
@@ -796,9 +812,17 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div style={{ padding: '12px', color: selectedShop && !dailyReportOpen && !contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop && !dailyReportOpen && !contentIdeasOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop && !dailyReportOpen && !contentIdeasOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
+          <div style={{ padding: '12px', color: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
                onClick={() => { window.location.hash = ''; }}>
             <span>🏠</span> Store Dashboard
+          </div>
+
+          <div style={{ padding: '12px', color: ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
+               onClick={() => { if (selectedShop) { window.location.hash = 'orders'; } }}
+               onMouseEnter={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
+               onMouseLeave={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = c.muted; }}
+               >
+            <span>📦</span> Orders
           </div>
 
           <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s' }}
@@ -1205,6 +1229,69 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          ) : ordersViewOpen ? (
+            /* Orders View */
+            <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
+                <div>
+                  <div style={{ fontFamily: 'var(--font-sora, sans-serif)', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.18em', color: 'var(--primary)', marginBottom: '8px' }}>
+                    {stores.find(s => s.id === selectedShop)?.name || 'Store'} • Order Management System
+                  </div>
+                  <h1 style={{ fontFamily: 'var(--font-sora, sans-serif)', fontSize: '28px', fontWeight: 800, color: '#fff', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>📦 Orders</h1>
+                  <p style={{ color: 'var(--muted)', margin: 0, fontSize: '14px' }}>Manage all recent purchases</p>
+                </div>
+              </div>
+              <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--line)' }}>
+                        <th style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Customer</th>
+                        <th style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Item Bought</th>
+                        <th style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Amount</th>
+                        <th style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Status</th>
+                        <th style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ordersList.length === 0 ? (
+                        <tr>
+                          <td colSpan="5" style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px', fontSize: '14px' }}>No orders found yet.</td>
+                        </tr>
+                      ) : (
+                        ordersList.map(order => (
+                          <tr key={order.id} style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <td style={{ padding: '16px 24px' }}>
+                              <div style={{ color: 'var(--ivory)', fontWeight: 600, fontSize: '14px' }}>{order.customer_name || 'Unknown'}</div>
+                              <div style={{ color: 'var(--muted)', fontSize: '12px' }}>{order.customer_phone || 'No phone'}</div>
+                            </td>
+                            <td style={{ padding: '16px 24px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                {order.product_image && (
+                                  <div style={{ width: '32px', height: '32px', borderRadius: '6px', background: `url(${order.product_image}) center/cover no-repeat` }} />
+                                )}
+                                <div style={{ color: 'var(--ivory)', fontSize: '14px', fontWeight: 500 }}>{order.product_name}</div>
+                              </div>
+                            </td>
+                            <td style={{ padding: '16px 24px' }}>
+                              <div style={{ color: 'var(--cust)', fontWeight: 700, fontSize: '14px' }}>₹{order.amount}</div>
+                            </td>
+                            <td style={{ padding: '16px 24px' }}>
+                              <span style={styles.badge(order.status === 'confirmed' ? 'var(--cust)' : 'var(--muted)', '#fff')}>
+                                {order.status === 'confirmed' ? 'Paid' : order.status}
+                              </span>
+                            </td>
+                            <td style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '13px' }}>
+                              {new Date(order.created_at + (order.created_at.endsWith('Z') ? '' : 'Z')).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           ) : (

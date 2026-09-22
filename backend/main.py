@@ -1435,6 +1435,66 @@ Return ONLY a raw JSON object with the "reply" field: {"reply": "your message"}"
             print(f"Warning: Database error resolving handoff: {e}")
             raise HTTPException(status_code=500, detail="Database error")
     return {"status": "success"}
+@app.get("/api/admin/orders")
+async def get_admin_orders(shop: Optional[str] = None, _ = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    try:
+        async with db_pool.acquire() as conn:
+            if shop:
+                orders_rows = await conn.fetch("""
+                    SELECT 
+                        o.id as order_id, 
+                        o.amount, 
+                        o.status, 
+                        o.created_at,
+                        c.name as customer_name,
+                        c.phone as customer_phone,
+                        ci.name as product_name,
+                        ci.image_url as product_image
+                    FROM orders o
+                    JOIN customers c ON o.customer_id = c.id
+                    JOIN businesses b ON o.business_id = b.id
+                    LEFT JOIN catalog_items ci ON o.product_id = ci.id
+                    WHERE b.slug = $1
+                    ORDER BY o.created_at DESC
+                """, shop)
+            else:
+                orders_rows = await conn.fetch("""
+                    SELECT 
+                        o.id as order_id, 
+                        o.amount, 
+                        o.status, 
+                        o.created_at,
+                        c.name as customer_name,
+                        c.phone as customer_phone,
+                        ci.name as product_name,
+                        ci.image_url as product_image
+                    FROM orders o
+                    JOIN customers c ON o.customer_id = c.id
+                    LEFT JOIN catalog_items ci ON o.product_id = ci.id
+                    ORDER BY o.created_at DESC
+                """)
+            
+            orders = []
+            for r in orders_rows:
+                orders.append({
+                    "id": r["order_id"],
+                    "amount": float(r["amount"] or 0),
+                    "status": r["status"],
+                    "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                    "customer_name": r["customer_name"],
+                    "customer_phone": r["customer_phone"],
+                    "product_name": r["product_name"] or "Custom Order",
+                    "product_image": r["product_image"]
+                })
+            
+            return {"status": "success", "orders": orders}
+    except Exception as e:
+        print(f"Error fetching admin orders: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch orders")
+
 
 @app.get("/api/analytics")
 async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):

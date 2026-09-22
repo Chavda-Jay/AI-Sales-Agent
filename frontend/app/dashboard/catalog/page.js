@@ -182,7 +182,7 @@ function CatalogManagerContent() {
 
   return (
     <div style={styles.page}>
-      <Toaster position="top-right" />
+      <Toaster position="top-center" />
       <nav className="nav-container" style={styles.navbar}>
         <div className="nav-brand" style={styles.navBrand}>
           <span style={{ color: c.primary }}>▲</span> AI SALES AGENT

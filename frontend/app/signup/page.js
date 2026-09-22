@@ -188,7 +188,7 @@ export default function Signup() {
 
   return (
     <div className={`signup-page ${inter.className}`} style={{ position: 'relative' }}>
-      <Toaster position="top-right" />
+      <Toaster position="top-center" />
       <div className="signup-container">
 
         <div className="signup-header">
