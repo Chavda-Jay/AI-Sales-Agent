@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import toast, { Toaster } from 'react-hot-toast';
 import remarkGfm from 'remark-gfm';
 
 const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -51,7 +52,7 @@ export default function Home() {
   const [isTyping, setIsTyping] = useState(false);
   const [backendStatus, setBackendStatus] = useState('checking');
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [customerId] = useState(() => {
+  const [customerId, setCustomerId] = useState(() => {
     if (typeof window !== 'undefined') {
       let stored = localStorage.getItem('ai_store_customer_id');
       if (!stored) {
@@ -255,14 +256,11 @@ export default function Home() {
   };
 
   const handleClearChat = async () => {
-    if (confirm("Are you sure you want to clear this chat history? This will start a fresh conversation.")) {
-      try {
-        await fetch(`${API_BASE}/api/chat/history/${customerId}`, { method: 'DELETE' });
-        setMessages([]);
-      } catch (e) {
-        console.error("Failed to clear chat", e);
-      }
-    }
+    const newId = "demo-customer-" + Date.now();
+    localStorage.setItem('ai_store_customer_id', newId);
+    setCustomerId(newId);
+    setMessages([]);
+    toast.success('Started a fresh chat session!');
   };
 
   const handleSend = () => {
@@ -386,6 +384,7 @@ export default function Home() {
 
   return (
     <>
+      <Toaster position="top-center" />
       <nav className="navbar" style={{ justifyContent: 'space-between' }}>
         <div style={{ width: '120px' }}></div>
         <div className="nav-brand">

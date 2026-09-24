@@ -818,7 +818,7 @@ export default function Dashboard() {
           </div>
 
           <div style={{ padding: '12px', color: ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-               onClick={() => { if (selectedShop) { window.location.hash = 'orders'; } }}
+               onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(true); window.location.hash = 'orders'; } }}
                onMouseEnter={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
                onMouseLeave={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = c.muted; }}
                >
@@ -841,7 +841,7 @@ export default function Dashboard() {
             <span>⚙️</span> Settings
           </div>
           <div style={{ padding: '12px', color: dailyReportOpen && !contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: dailyReportOpen && !contentIdeasOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: dailyReportOpen && !contentIdeasOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-               onClick={() => { if (selectedShop) { window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); } }}
+               onClick={() => { if (selectedShop) { setDailyReportOpen(true); setContentIdeasOpen(false); setOrdersViewOpen(false); window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); } }}
                onMouseEnter={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = '#fff'; }}
                onMouseLeave={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = c.muted; }}
                >
@@ -849,7 +849,7 @@ export default function Dashboard() {
           </div>
           
           <div style={{ padding: '12px', color: contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: contentIdeasOpen ? 'rgba(234,179,8,0.1)' : 'transparent', border: contentIdeasOpen ? '1px solid rgba(234,179,8,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-               onClick={() => { if(selectedShop) { window.location.hash = 'content-ideas'; } }}
+               onClick={() => { if(selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(true); setOrdersViewOpen(false); window.location.hash = 'content-ideas'; } }}
                onMouseEnter={e => { if(selectedShop && !contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
                onMouseLeave={e => { if(selectedShop && !contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
                >
@@ -1044,6 +1044,8 @@ export default function Dashboard() {
                       { label: 'Hot Prospects', value: dailyReport.hot_prospects_count, icon: '🔥', color: '#f85149' },
                       { label: 'Pending Handoffs', value: dailyReport.pending_handoffs_count, icon: '🤝', color: '#f59e0b' },
                       { label: 'Conversations', value: dailyReport.total_conversations_today, icon: '💬', color: '#a78bfa' },
+                      { label: 'Dormant', value: dailyReport.dormant_customers_count, icon: '💤', color: '#94a3b8' },
+                      { label: 'Pending Follow-ups', value: dailyReport.pending_followups_count, icon: '⏱️', color: '#eab308' },
                     ].map((stat, i) => (
                       <div key={i} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)', transition: 'all 0.3s' }}
                            onMouseEnter={e => { e.currentTarget.style.borderColor = stat.color + '40'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
@@ -1299,7 +1301,7 @@ export default function Dashboard() {
             <div>
 
         {/* Top Row: Stat Cards */}
-        <div className="responsive-grid-3" style={{ gap: '20px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '24px' }}>
           {[
             { 
               label: 'Total Customers', 
@@ -1342,6 +1344,20 @@ export default function Dashboard() {
               icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>,
               trend: '-2.0%',
               trendUp: false
+            },
+            { 
+              label: 'Dormant Customers', 
+              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.dormant_customers || 0), 
+              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>,
+              trend: 'Action Reqd',
+              trendUp: false
+            },
+            { 
+              label: 'Repeat Purchase Rate', 
+              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : `${analytics?.repeat_purchase_rate || 0}%`, 
+              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>,
+              trend: '+4.1%',
+              trendUp: true
             },
           ].map((stat, i) => (
             <div key={i} style={{
@@ -1484,6 +1500,18 @@ export default function Dashboard() {
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px', verticalAlign: 'middle' }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
                           Reason: {h.reason}
                         </div>
+                        {h.context_summary && (
+                          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px', padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                            <div style={{ marginBottom: '4px' }}><strong>Context:</strong> {h.context_summary}</div>
+                            {h.product_interest && <div><strong>Product:</strong> {h.product_interest}</div>}
+                            {h.objection && <div style={{ color: '#fca5a5' }}><strong>Objection:</strong> {h.objection}</div>}
+                            <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', fontSize: '10px' }}>Score: {h.intent_score}</span>
+                              {h.estimated_value && <span style={{ padding: '2px 6px', background: 'rgba(34,197,94,0.1)', color: '#4ade80', borderRadius: '4px', fontSize: '10px' }}>Value: ₹{h.estimated_value}</span>}
+                              {h.urgency && <span style={{ padding: '2px 6px', background: h.urgency === 'High' ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.05)', color: h.urgency === 'High' ? '#ef4444' : 'inherit', borderRadius: '4px', fontSize: '10px' }}>Urgency: {h.urgency}</span>}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: '500' }}>
                         {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
@@ -1567,7 +1595,7 @@ export default function Dashboard() {
                   <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>{segments?.sources?.[0]?.count || 0} customers</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>TOP LTV CUSTOMER</div>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>TOP SPENDER</div>
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {segments?.top_customers?.[0]?.name || 'No data'}
                   </div>
@@ -1593,8 +1621,7 @@ export default function Dashboard() {
                 <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', letterSpacing: '0.05em' }}>
                   <th style={{ padding: '16px 24px', fontWeight: '600' }}>NAME</th>
                   <th style={{ padding: '16px 24px', fontWeight: '600' }}>STATUS</th>
-                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>LTV</th>
-                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>TIER</th>
+                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>PRICE</th>
                   <th style={{ padding: '16px 24px', fontWeight: '600' }}>SOURCE</th>
                   <th style={{ padding: '16px 24px', fontWeight: '600' }}>TIME</th>
                   <th style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right' }}>ACTIONS</th>
@@ -1626,19 +1653,23 @@ export default function Dashboard() {
                         </div>
                       </td>
                       <td style={{ padding: '16px 24px' }}>
-                        <span style={{ 
-                          display: 'inline-block', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700',
-                          background: cust.segment === 'HOT' ? 'rgba(244, 63, 94, 0.1)' : cust.segment === 'CUSTOMER' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(139, 92, 246, 0.1)',
-                          color: cust.segment === 'HOT' ? 'var(--hot)' : cust.segment === 'CUSTOMER' ? 'var(--accent-green)' : 'var(--accent-purple)'
-                        }}>
-                          {cust.segment}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                          <span style={{ 
+                            display: 'inline-block', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700',
+                            background: cust.segment === 'HOT' ? 'rgba(244, 63, 94, 0.1)' : cust.segment === 'CUSTOMER' ? 'rgba(16, 185, 129, 0.1)' : cust.segment === 'REPEAT CUSTOMER' ? 'rgba(34, 197, 94, 0.2)' : cust.segment === 'DORMANT' ? 'rgba(148, 163, 184, 0.1)' : 'rgba(139, 92, 246, 0.1)',
+                            color: cust.segment === 'HOT' ? 'var(--hot)' : cust.segment === 'CUSTOMER' ? 'var(--accent-green)' : cust.segment === 'REPEAT CUSTOMER' ? '#4ade80' : cust.segment === 'DORMANT' ? '#94a3b8' : 'var(--accent-purple)'
+                          }}>
+                            {cust.segment}
+                          </span>
+                          {cust.opted_out && (
+                            <span style={{ display: 'inline-block', padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: '600', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                              OPTED OUT
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
-                        ₹{cust.lifetime_value || 0}
-                      </td>
-                      <td style={{ padding: '16px 24px', color: 'var(--ivory)', fontSize: '13px' }}>
-                        {cust.tier || '-'}
+                        ₹{cust.latest_order_amount || cust.lifetime_value || 0}
                       </td>
                       <td style={{ padding: '16px 24px', color: 'var(--ivory)', fontSize: '13px', textTransform: 'capitalize' }}>
                         {cust.source || 'website'}

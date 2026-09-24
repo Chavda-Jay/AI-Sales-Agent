@@ -7,6 +7,7 @@ CREATE TABLE businesses (
   brand_name TEXT NOT NULL,
   language TEXT DEFAULT 'English + Hindi mix (Hinglish)',
   policies TEXT,
+  dormant_after_days INT DEFAULT 30,  -- days of no orders before a CUSTOMER is marked DORMANT (per-business, §18)
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -36,10 +37,12 @@ CREATE TABLE customers (
   state TEXT,
   tier TEXT,
   source TEXT DEFAULT 'website',    -- e.g. 'website', 'referral', 'whatsapp'
-  segment TEXT DEFAULT 'COLD',      -- COLD / WARM / HOT / CUSTOMER / DORMANT
+  segment TEXT DEFAULT 'COLD',      -- COLD / WARM / HOT / CUSTOMER / REPEAT CUSTOMER / DORMANT
   intent_score INT DEFAULT 0,
   consent_whatsapp BOOLEAN DEFAULT FALSE,
   consent_email BOOLEAN DEFAULT FALSE,
+  opted_out BOOLEAN DEFAULT FALSE,        -- §25/§26: true = stop ALL automated/promotional outreach
+  follow_up_stage INT DEFAULT 0,          -- §17: which cadence touch this lead is currently at
   referral_code TEXT UNIQUE,
   referred_by_code TEXT,
   wallet_balance NUMERIC DEFAULT 0,
@@ -88,5 +91,20 @@ CREATE TABLE referrals (
   referred_order_id INT REFERENCES orders(id) ON DELETE SET NULL,
   reward_status TEXT DEFAULT 'pending', -- pending / earned
   reward_amount NUMERIC DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE handoffs (
+  id SERIAL PRIMARY KEY,
+  customer_id INT REFERENCES customers(id),
+  business_id INT REFERENCES businesses(id),
+  reason TEXT,
+  context_summary TEXT,      -- §32: what the customer wants / why escalated
+  product_interest TEXT,     -- §32: product they were discussing
+  objection TEXT,            -- §32: their hesitation, if any
+  intent_score INT,          -- §32: score at time of handoff
+  estimated_value NUMERIC,   -- §32: estimated deal value
+  urgency TEXT,              -- §32: High / Medium / Low, derived from segment
+  status TEXT DEFAULT 'pending',
   created_at TIMESTAMP DEFAULT NOW()
 );

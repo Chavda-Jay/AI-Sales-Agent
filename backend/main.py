@@ -1,4 +1,5 @@
 import os
+import asyncio
 import json
 import re
 import logging
@@ -45,6 +46,12 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "openai/gpt-oss-120b"
+FALLBACK_MODELS = [
+    GROQ_MODEL, 
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b", 
+    "allam-2-7b"
+]
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-default-key-for-demo")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
@@ -98,96 +105,114 @@ def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-async def abandoned_chat_worker():
+FOLLOW_UP_MAX_STAGE = {'HOT': 4, 'WARM': 3, 'COLD': 3}  # §17: HOT has 4 touches, WARM/COLD have 3
+
+async def follow_up_cadence_worker():
+    # §17 follow-up engine: nurtures HOT/WARM/COLD leads on a segment-specific cadence,
+    # independent of cart abandonment. Replaces the old single-touch abandoned_chat_worker.
     while True:
-        await asyncio.sleep(30)
+        await asyncio.sleep(900)  # 15 minutes — fine-grained enough to catch HOT's ~3-min first touch
         if not db_pool or not GROQ_API_KEY:
             continue
-            
         try:
             async with db_pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT c.id, c.ext_id, c.name, c.segment, b.slug as shop_slug, c.business_id
+                    SELECT c.id, c.ext_id, c.segment, c.follow_up_stage, b.slug as shop_slug, c.business_id
                     FROM customers c
                     JOIN businesses b ON c.business_id = b.id
-                    WHERE c.segment IN ('WARM', 'HOT')
-                      AND c.last_interaction < NOW() - INTERVAL '90 seconds'
+                    WHERE c.segment IN ('HOT', 'WARM', 'COLD')
+                      AND c.opted_out = FALSE
                       AND (c.followed_up_at IS NULL OR c.followed_up_at < c.last_interaction)
+                      AND c.follow_up_stage < (CASE c.segment WHEN 'HOT' THEN 4 ELSE 3 END)
+                      AND c.last_interaction <= NOW() - (
+                          CASE
+                            WHEN c.segment = 'HOT'  AND c.follow_up_stage = 0 THEN INTERVAL '3 minutes'
+                            WHEN c.segment = 'HOT'  AND c.follow_up_stage = 1 THEN INTERVAL '4 hours'
+                            WHEN c.segment = 'HOT'  AND c.follow_up_stage = 2 THEN INTERVAL '24 hours'
+                            WHEN c.segment = 'HOT'  AND c.follow_up_stage = 3 THEN INTERVAL '48 hours'
+                            WHEN c.segment = 'WARM' AND c.follow_up_stage = 0 THEN INTERVAL '1 day'
+                            WHEN c.segment = 'WARM' AND c.follow_up_stage = 1 THEN INTERVAL '3 days'
+                            WHEN c.segment = 'WARM' AND c.follow_up_stage = 2 THEN INTERVAL '7 days'
+                            WHEN c.segment = 'COLD' AND c.follow_up_stage = 0 THEN INTERVAL '7 days'
+                            WHEN c.segment = 'COLD' AND c.follow_up_stage = 1 THEN INTERVAL '14 days'
+                            WHEN c.segment = 'COLD' AND c.follow_up_stage = 2 THEN INTERVAL '30 days'
+                          END
+                      )
                 """)
+
                 for row in rows:
+                    segment = row['segment']
+                    stage = row['follow_up_stage'] or 0
                     customer_id = row['id']
                     ext_id = row['ext_id']
-                    
+                    business_id = row['business_id']
+
                     try:
                         config = await load_config_from_db(row['shop_slug'], conn)
-                    except:
+                    except Exception:
                         continue
-                    
-                    system_prompt = f"""You are an AI sales agent for {config.get('brandName')}.
+
+                    stage_instruction = {
+                        0: "This is a helpful, no-pressure check-in — gently ask if they need help deciding.",
+                        1: "Gently address a likely hesitation (price, trust, delivery) without being asked, and reassure them.",
+                        2: "You can mention a relevant existing incentive (e.g. the FIRST10 coupon) once if genuinely relevant. Do not invent any discount not in the catalog/policies.",
+                        3: "This is the final follow-up in this sequence. Keep it brief and low-pressure.",
+                    }.get(stage, "Gently re-engage the customer.")
+
+                    system_prompt = f"""You are the AI sales agent for {config.get('brandName')}.
 Language: {config.get('language')}
-The customer was interested (segment: {row['segment']}) but went silent.
-Write a very short, natural follow-up message to re-engage them. 
+Store policies: {config.get('policies')}
+The customer (segment: {segment}) showed interest but has gone quiet.
+{stage_instruction}
+Write a very short, natural follow-up message.
 Return ONLY raw JSON: {{"reply": "your message"}}
 """
                     messages = [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": "The customer has been inactive for a few minutes. Please generate a short follow-up message to re-engage them."}
+                        {"role": "user", "content": "Generate the next follow-up message in the sequence."}
                     ]
-                    
+
+                    reply = None
                     async with httpx.AsyncClient() as client:
-                        try:
-                            fallback_models = [
-                                GROQ_MODEL, 
-                                "llama3-70b-8192", 
-                                "llama3-8b-8192", 
-                                "mixtral-8x7b-32768", 
-                                "gemma2-9b-it"
-                            ]
-                            data = None
-                            for current_model in fallback_models:
-                                try:
-                                    groq_response = await client.post(
-                                        "https://api.groq.com/openai/v1/chat/completions",
-                                        headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
-                                        json={"model": current_model, "messages": messages, "max_tokens": 100, "temperature": 0.7},
-                                        timeout=10.0
-                                    )
-                                    data = groq_response.json()
-                                    if "error" in data and "rate limit" in str(data["error"]).lower():
-                                        continue
-                                    break
-                                except:
-                                    continue
-                            
-                            if not data or "error" in data:
-                                print(f"API Error for {ext_id}:", data.get("error") if data else "Connection error")
-                                continue
-                            raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                            if not raw:
-                                print(f"API returned empty response for {ext_id}")
-                                continue
-                            raw = re.sub(r'^```json', '', raw)
-                            raw = re.sub(r'^```', '', raw)
-                            raw = re.sub(r'```$', '', raw).strip()
+                        for current_model in FALLBACK_MODELS:
                             try:
+                                groq_response = await client.post(
+                                    "https://api.groq.com/openai/v1/chat/completions",
+                                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
+                                    json={"model": current_model, "messages": messages, "max_tokens": 120, "temperature": 0.7},
+                                    timeout=10.0
+                                )
+                                data = groq_response.json()
+                                if "error" in data:
+                                    continue
+                                raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                                raw = re.sub(r'^```json', '', raw)
+                                raw = re.sub(r'^```', '', raw)
+                                raw = re.sub(r'```$', '', raw).strip()
                                 parsed = json.loads(raw)
-                            except json.JSONDecodeError:
-                                print(f"Invalid JSON returned for {ext_id}: {raw}")
+                                reply = parsed.get("reply")
+                                break
+                            except Exception:
                                 continue
-                                
-                            reply = parsed.get("reply", "Hi, are you still there? Let me know if you need help!")
-                            
-                            await conn.execute(
-                                "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
-                                customer_id, row['business_id'], None, reply, 0, row['segment']
-                            )
-                            await conn.execute("UPDATE customers SET followed_up_at = NOW() WHERE id = $1", customer_id)
-                            print(f"Sent proactive follow up to {ext_id}")
-                        except Exception as e:
-                            print(f"Failed to generate follow up for {ext_id}: {e}")
-                            
+
+                    if not reply:
+                        continue
+
+                    await conn.execute(
+                        "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
+                        customer_id, business_id, None, reply, 0, segment
+                    )
+                    await conn.execute(
+                        "UPDATE customers SET followed_up_at = NOW(), follow_up_stage = $1 WHERE id = $2",
+                        stage + 1, customer_id
+                    )
+                    if ext_id not in conversations:
+                        conversations[ext_id] = []
+                    conversations[ext_id].append({"role": "assistant", "content": json.dumps({"reply": reply, "follow_up_stage": stage + 1})})
+                    print(f"Sent follow-up (stage {stage+1}/{FOLLOW_UP_MAX_STAGE[segment]}) to {ext_id} [{segment}]")
+
         except Exception as e:
-            print(f"Abandoned chat worker error: {e}")
+            print(f"Follow-up cadence worker error: {e}")
 
 async def post_purchase_retention_worker():
     while True:
@@ -245,15 +270,8 @@ async def post_purchase_retention_worker():
                                 if hr['reply']: messages.append({"role": "assistant", "content": hr['reply']})
                                 
                             async with httpx.AsyncClient() as client:
-                                fallback_models = [
-                                    GROQ_MODEL, 
-                                    "llama3-70b-8192", 
-                                    "llama3-8b-8192", 
-                                    "mixtral-8x7b-32768", 
-                                    "gemma2-9b-it"
-                                ]
                                 data = None
-                                for current_model in fallback_models:
+                                for current_model in FALLBACK_MODELS:
                                     try:
                                         groq_response = await client.post(
                                             "https://api.groq.com/openai/v1/chat/completions",
@@ -262,7 +280,7 @@ async def post_purchase_retention_worker():
                                             timeout=10.0
                                         )
                                         data = groq_response.json()
-                                        if "error" in data and "rate limit" in str(data["error"]).lower():
+                                        if "error" in data:
                                             continue
                                         break
                                     except:
@@ -295,6 +313,103 @@ async def post_purchase_retention_worker():
         except Exception as e:
             print(f"Retention worker error: {e}")
 
+async def dormant_customer_worker():
+    # Dormancy is a slow-moving state (days), so this checks infrequently.
+    while True:
+        await asyncio.sleep(21600)  # 6 hours
+        if not db_pool or not GROQ_API_KEY:
+            continue
+        try:
+            async with db_pool.acquire() as conn:
+                # Flip eligible customers to DORMANT and capture ONLY the rows that just transitioned —
+                # this is what guarantees exactly one re-engagement message per dormancy event (§25 anti-spam).
+                rows = await conn.fetch("""
+                    UPDATE customers c
+                    SET segment = 'DORMANT'
+                    FROM businesses b
+                    WHERE c.business_id = b.id
+                      AND c.segment IN ('CUSTOMER', 'REPEAT CUSTOMER')
+                      AND c.opted_out = FALSE
+                      AND EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+                      AND (SELECT MAX(o.created_at) FROM orders o WHERE o.customer_id = c.id)
+                          < NOW() - make_interval(days => COALESCE(b.dormant_after_days, 30))
+                    RETURNING c.id, c.ext_id, c.name, c.business_id, b.slug AS shop_slug
+                """)
+
+                for row in rows:
+                    customer_id = row['id']
+                    ext_id = row['ext_id']
+                    business_id = row['business_id']
+                    shop_slug = row['shop_slug']
+
+                    try:
+                        config = await load_config_from_db(shop_slug, conn)
+                    except Exception:
+                        continue
+
+                    last_product = await conn.fetchval("""
+                        SELECT ci.name FROM orders o
+                        LEFT JOIN catalog_items ci ON ci.id = o.product_id
+                        WHERE o.customer_id = $1
+                        ORDER BY o.created_at DESC LIMIT 1
+                    """, customer_id)
+
+                    suggested_item = await conn.fetchval(
+                        "SELECT name FROM catalog_items WHERE business_id = $1 ORDER BY RANDOM() LIMIT 1",
+                        business_id
+                    )
+
+                    system_prompt = f"""You are the AI Shopping Assistant for {config.get('brandName')}.
+Language: {config.get('language')}
+This customer previously bought {last_product or 'from us'} but hasn't ordered again in a while.
+Write a short, warm win-back message. No pressure, no invented discounts.
+If it fits naturally, mention: {suggested_item or 'our latest arrivals'}.
+Return ONLY raw JSON: {{"reply": "your message"}}
+"""
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": "Generate a short dormant-customer re-engagement message."}
+                    ]
+
+                    reply = None
+                    async with httpx.AsyncClient() as client:
+                        for current_model in FALLBACK_MODELS:
+                            try:
+                                groq_response = await client.post(
+                                    "https://api.groq.com/openai/v1/chat/completions",
+                                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
+                                    json={"model": current_model, "messages": messages, "max_tokens": 150, "temperature": 0.7},
+                                    timeout=10.0
+                                )
+                                data = groq_response.json()
+                                if "error" in data:
+                                    continue
+                                raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                                raw = re.sub(r'^```json', '', raw)
+                                raw = re.sub(r'^```', '', raw)
+                                raw = re.sub(r'```$', '', raw).strip()
+                                parsed = json.loads(raw)
+                                reply = parsed.get("reply")
+                                break
+                            except Exception:
+                                continue
+
+                    if not reply:
+                        print(f"Dormant worker: no reply generated for {ext_id}, skipping.")
+                        continue
+
+                    await conn.execute(
+                        "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
+                        customer_id, business_id, None, reply, 0, 'DORMANT'
+                    )
+                    if ext_id not in conversations:
+                        conversations[ext_id] = []
+                    conversations[ext_id].append({"role": "assistant", "content": json.dumps({"reply": reply, "dormant_reengagement": True})})
+                    print(f"Sent dormant re-engagement message to {ext_id}")
+
+        except Exception as e:
+            print(f"Dormant customer worker error: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_pool
@@ -316,6 +431,9 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS banner_url TEXT;")
+                await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS dormant_after_days INT DEFAULT 30;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS opted_out BOOLEAN DEFAULT FALSE;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS follow_up_stage INT DEFAULT 0;")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS handoffs (
                         id SERIAL PRIMARY KEY,
@@ -325,6 +443,12 @@ async def lifespan(app: FastAPI):
                         created_at TIMESTAMP DEFAULT NOW()
                     )
                 """)
+                await conn.execute("ALTER TABLE handoffs ADD COLUMN IF NOT EXISTS context_summary TEXT;")
+                await conn.execute("ALTER TABLE handoffs ADD COLUMN IF NOT EXISTS product_interest TEXT;")
+                await conn.execute("ALTER TABLE handoffs ADD COLUMN IF NOT EXISTS objection TEXT;")
+                await conn.execute("ALTER TABLE handoffs ADD COLUMN IF NOT EXISTS intent_score INT;")
+                await conn.execute("ALTER TABLE handoffs ADD COLUMN IF NOT EXISTS estimated_value NUMERIC;")
+                await conn.execute("ALTER TABLE handoffs ADD COLUMN IF NOT EXISTS urgency TEXT;")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS admin_users (
                         id SERIAL PRIMARY KEY,
@@ -349,11 +473,13 @@ async def lifespan(app: FastAPI):
     else:
         print("Warning: DATABASE_URL not set. Using in-memory fallback.")
     
-    worker_task = asyncio.create_task(abandoned_chat_worker())
-    # retention_worker_task = asyncio.create_task(post_purchase_retention_worker())
+    worker_task = asyncio.create_task(follow_up_cadence_worker())
+    retention_worker_task = asyncio.create_task(post_purchase_retention_worker())
+    dormant_worker_task = asyncio.create_task(dormant_customer_worker())
     yield
     worker_task.cancel()
-    # retention_worker_task.cancel()
+    retention_worker_task.cancel()
+    dormant_worker_task.cancel()
     if db_pool:
         await db_pool.close()
 
@@ -673,7 +799,7 @@ async def chat(req: ChatRequest):
                 async with db_pool.acquire() as conn:
                     cid = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
                     if cid:
-                        await conn.execute("UPDATE customers SET consent_whatsapp = FALSE, consent_email = FALSE, segment = 'COLD', last_interaction = NOW() WHERE id = $1", cid)
+                        await conn.execute("UPDATE customers SET consent_whatsapp = FALSE, consent_email = FALSE, opted_out = TRUE, segment = 'COLD', last_interaction = NOW() WHERE id = $1", cid)
                         await conn.execute("INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)", cid, business_id, req.message, parsed["reply"], 0, "COLD")
             except Exception as e:
                 pass
@@ -776,12 +902,31 @@ async def chat(req: ChatRequest):
 - If customer mentions their name, city, or phone anywhere, acknowledge it and include in JSON.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 LEAD SCORING (STRICT — score EVERY message):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Score this customer's CURRENT state honestly across these 7 components — vary the numbers based on actual behavior, don't default to the same values every time:
+- score_purchase_intent (0-30): browsing only=0-8, comparing options=9-18, ready to checkout=19-30
+- score_product_interest (0-20): vague interest=0-6, asking specifics=7-14, comparing specific items=15-20
+- score_engagement (0-15): one-word replies=0-5, asking questions=6-10, detailed back-and-forth=11-15
+- score_recency (0-15): they're messaging right now, so usually 12-15 unless they've clearly gone quiet mid-conversation
+- score_customer_fit (0-10): poor fit for this store's catalog=0-3, good fit=4-7, ideal fit=8-10
+- score_purchase_history (0-5): never ordered=0, ordered once=3, repeat buyer=5
+- score_estimated_value (0-5): low-value item=0-2, mid-value=3, high-value=4-5
+Just fill in each component — do NOT add them up yourself, the system computes the total.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📤 OUTPUT FORMAT (STRICT):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exactly these fields:
 {{
   "reply": "your professional customer-facing message",
-  "intent_score": integer 0-100,
+  "score_purchase_intent": integer 0-30,
+  "score_product_interest": integer 0-20,
+  "score_engagement": integer 0-15,
+  "score_recency": integer 0-15,
+  "score_customer_fit": integer 0-10,
+  "score_purchase_history": integer 0-5,
+  "score_estimated_value": integer 0-5,
   "segment": "COLD" | "WARM" | "HOT" | "CUSTOMER",
   "reasoning": "one short sentence about customer intent",
   "objection": "short phrase or null",
@@ -806,41 +951,50 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
 
     data = None
     async with httpx.AsyncClient() as client:
-        fallback_models = [
-            GROQ_MODEL, 
-            "llama3-70b-8192", 
-            "llama3-8b-8192", 
-            "mixtral-8x7b-32768", 
-            "gemma2-9b-it"
-        ]
-        
-        for attempt, current_model in enumerate(fallback_models):
-            try:
-                groq_response = await client.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {GROQ_API_KEY}"
-                    },
-                    json={
-                        "model": current_model,
-                        "messages": messages,
-                        "max_tokens": 1500,
-                        "temperature": 0.4,
-                    },
-                    timeout=30.0
-                )
-                data = groq_response.json()
-                if "error" in data and "rate limit" in str(data["error"]).lower():
-                    print(f"Rate limit hit for {current_model}, failing over to next model...")
+        for attempt, current_model in enumerate(FALLBACK_MODELS):
+            # Each model gets up to 3 retries with exponential backoff
+            for retry in range(3):
+                try:
+                    groq_response = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {GROQ_API_KEY}"
+                        },
+                        json={
+                            "model": current_model,
+                            "messages": messages,
+                            "max_tokens": 1500,
+                            "temperature": 0.4,
+                        },
+                        timeout=45.0
+                    )
+                    data = groq_response.json()
+                    
+                    if "error" in data:
+                        error_msg = str(data["error"]).lower()
+                        if "rate limit" in error_msg or "429" in error_msg or "resource_exhausted" in error_msg:
+                            wait_time = (2 ** retry) * 1.5  # 1.5s, 3s, 6s
+                            print(f"Rate limit on {current_model} (retry {retry+1}/3), waiting {wait_time}s...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            print(f"API error for {current_model}: {data['error']}")
+                            break  # Non-rate-limit error, try next model
+                    else:
+                        break  # Success!
+                except httpx.TimeoutException:
+                    print(f"Timeout for {current_model} (retry {retry+1}/3)")
+                    await asyncio.sleep(1)
                     continue
-                if "error" in data:
-                    print(f"API error for {current_model}:", data["error"])
+                except Exception as e:
+                    print(f"Connection error for {current_model}: {e}")
+                    await asyncio.sleep(1)
                     continue
+            
+            # If we got a successful response, stop trying models
+            if data and "error" not in data:
                 break
-            except Exception as e:
-                print(f"Connection error for {current_model}: {e}")
-                continue
 
     if not data or "error" in data:
         error_detail = data["error"].get("message", "Groq API error") if data and "error" in data else "Groq API error"
@@ -932,6 +1086,23 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
             "consent_email": None,
         }
 
+    # §6 Lead Scoring — total ko humara code calculate karta hai, LLM ka guess nahi lete
+    if "score_purchase_intent" in parsed:
+        def _clamp(val, lo, hi):
+            try:
+                return max(lo, min(hi, int(val)))
+            except (TypeError, ValueError):
+                return lo
+        parsed["intent_score"] = (
+            _clamp(parsed.get("score_purchase_intent"), 0, 30) +
+            _clamp(parsed.get("score_product_interest"), 0, 20) +
+            _clamp(parsed.get("score_engagement"), 0, 15) +
+            _clamp(parsed.get("score_recency"), 0, 15) +
+            _clamp(parsed.get("score_customer_fit"), 0, 10) +
+            _clamp(parsed.get("score_purchase_history"), 0, 5) +
+            _clamp(parsed.get("score_estimated_value"), 0, 5)
+        )
+
     history.append({"role": "user", "content": req.message})
     history.append({"role": "assistant", "content": json.dumps(parsed)})
     
@@ -945,7 +1116,10 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                 c_tier = get_city_tier(c_city) if c_city else None
                 
                 if parsed.get("order_ready"):
-                    parsed["segment"] = "CUSTOMER"
+                    prior_orders = 0
+                    if customer_id:
+                        prior_orders = await conn.fetchval("SELECT COUNT(*) FROM orders WHERE customer_id = $1", customer_id) or 0
+                    parsed["segment"] = "REPEAT CUSTOMER" if prior_orders > 0 else "CUSTOMER"
 
                 if not customer_id:
                     ref_code = None
@@ -983,7 +1157,8 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                             consent_email = COALESCE($9, consent_email),
                             city = COALESCE($10, city),
                             tier = COALESCE($11, tier),
-                            followed_up_at = NULL
+                            followed_up_at = NULL,
+                            follow_up_stage = 0
                         WHERE id = $3
                         """,
                         parsed.get("segment", "COLD"), 
@@ -1005,9 +1180,15 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                 )
                 
                 if parsed.get("needs_human"):
+                    urgency = {"HOT": "High", "WARM": "Medium", "COLD": "Low", "CUSTOMER": "Medium"}.get(parsed.get("segment"), "Medium")
                     await conn.execute(
-                        "INSERT INTO handoffs (customer_id, business_id, reason) VALUES ($1, $2, $3)",
-                        customer_id, business_id, parsed.get("handoff_reason", "Customer requested human assistance")
+                        """
+                        INSERT INTO handoffs (customer_id, business_id, reason, context_summary, product_interest, objection, intent_score, estimated_value, urgency)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        """,
+                        customer_id, business_id, parsed.get("handoff_reason", "Customer requested human assistance"),
+                        parsed.get("reasoning"), parsed.get("recommended_product"), parsed.get("objection"),
+                        parsed.get("intent_score", 0), parsed.get("order_amount"), urgency
                     )
                 
                 if parsed.get("order_ready"):
@@ -1154,7 +1335,8 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
                 if shop:
                     rows = await conn.fetch("""
                         SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code, c.city, c.tier, c.lifetime_value, c.source,
-                               (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage
+                               (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage,
+                               (SELECT amount FROM orders WHERE customer_id = c.id ORDER BY created_at DESC LIMIT 1) as latest_order_amount
                         FROM customers c
                         JOIN businesses b ON c.business_id = b.id
                         WHERE b.slug = $1
@@ -1163,7 +1345,8 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
                 else:
                     rows = await conn.fetch("""
                         SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code, c.city, c.tier, c.lifetime_value, c.source,
-                               (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage
+                               (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage,
+                               (SELECT amount FROM orders WHERE customer_id = c.id ORDER BY created_at DESC LIMIT 1) as latest_order_amount
                         FROM customers c
                         LEFT JOIN businesses b ON c.business_id = b.id
                         ORDER BY c.last_interaction DESC NULLS LAST
@@ -1253,9 +1436,11 @@ async def request_handoff(req: HandoffRequest):
             async with db_pool.acquire() as conn:
                 customer_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
                 if customer_id:
+                    cust = await conn.fetchrow("SELECT intent_score, segment FROM customers WHERE id = $1", customer_id)
+                    urgency = {"HOT": "High", "WARM": "Medium", "COLD": "Low", "CUSTOMER": "Medium"}.get(cust["segment"] if cust else None, "Medium")
                     await conn.execute(
-                        "INSERT INTO handoffs (customer_id, reason) VALUES ($1, $2)",
-                        customer_id, req.reason
+                        "INSERT INTO handoffs (customer_id, reason, context_summary, intent_score, urgency) VALUES ($1, $2, $3, $4, $5)",
+                        customer_id, req.reason, req.conversation_summary or None, cust["intent_score"] if cust else 0, urgency
                     )
                     await conn.execute("UPDATE customers SET segment = 'HOT' WHERE id = $1", customer_id)
                 return {"status": "success"}
@@ -1327,7 +1512,8 @@ async def get_handoffs(_ = Depends(verify_admin)):
         try:
             async with db_pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT h.id, h.reason, h.status, h.created_at, 
+                    SELECT h.id, h.reason, h.status, h.created_at,
+                           h.context_summary, h.product_interest, h.objection, h.intent_score, h.estimated_value, h.urgency,
                            c.name, c.phone 
                     FROM handoffs h
                     JOIN customers c ON h.customer_id = c.id
@@ -1531,12 +1717,41 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                         JOIN businesses b ON c.business_id = b.id
                         WHERE b.slug = $1
                     """, shop)
+                    dormant_count = await conn.fetchval("""
+                        SELECT COUNT(c.id) FROM customers c
+                        JOIN businesses b ON c.business_id = b.id
+                        WHERE c.segment = 'DORMANT' AND b.slug = $1
+                    """, shop)
+                    repeat_stats = await conn.fetchrow("""
+                        SELECT
+                            COUNT(*) FILTER (WHERE order_count >= 1) AS total_buyers,
+                            COUNT(*) FILTER (WHERE order_count > 1) AS repeat_buyers
+                        FROM (
+                            SELECT o.customer_id, COUNT(*) AS order_count
+                            FROM orders o
+                            JOIN customers cus ON o.customer_id = cus.id
+                            JOIN businesses b ON cus.business_id = b.id
+                            WHERE o.status = 'confirmed' AND b.slug = $1
+                            GROUP BY o.customer_id
+                        ) sub
+                    """, shop)
                 else:
                     total_conversations = await conn.fetchval("SELECT COUNT(DISTINCT customer_id) FROM conversations")
                     warm_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('WARM', 'HOT', 'CUSTOMER')")
                     hot_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('HOT', 'CUSTOMER')")
                     orders_placed = await conn.fetchval("SELECT COUNT(id) FROM orders WHERE status = 'confirmed'")
                     avg_intent_score_val = await conn.fetchval("SELECT AVG(intent_score) FROM customers")
+                    dormant_count = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment = 'DORMANT'")
+                    repeat_stats = await conn.fetchrow("""
+                        SELECT
+                            COUNT(*) FILTER (WHERE order_count >= 1) AS total_buyers,
+                            COUNT(*) FILTER (WHERE order_count > 1) AS repeat_buyers
+                        FROM (
+                            SELECT customer_id, COUNT(*) AS order_count
+                            FROM orders WHERE status = 'confirmed'
+                            GROUP BY customer_id
+                        ) sub
+                    """)
 
                 conversion_rate = 0.0
                 if total_conversations and total_conversations > 0:
@@ -1544,13 +1759,19 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                 
                 avg_intent_score = round(avg_intent_score_val) if avg_intent_score_val else 0
 
+                total_buyers = repeat_stats['total_buyers'] if repeat_stats else 0
+                repeat_buyers = repeat_stats['repeat_buyers'] if repeat_stats else 0
+                repeat_purchase_rate = round((repeat_buyers / total_buyers) * 100, 1) if total_buyers else 0.0
+
                 return {
                     "total_conversations": total_conversations or 0,
                     "warm_or_above": warm_or_above or 0,
                     "hot_or_above": hot_or_above or 0,
                     "orders_placed": orders_placed or 0,
                     "conversion_rate": conversion_rate,
-                    "avg_intent_score": avg_intent_score
+                    "avg_intent_score": avg_intent_score,
+                    "dormant_customers": dormant_count or 0,
+                    "repeat_purchase_rate": repeat_purchase_rate
                 }
         except Exception as e:
             print(f"Warning: Database error fetching analytics: {e}")
@@ -1561,7 +1782,9 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
         "hot_or_above": 0,
         "orders_placed": 0,
         "conversion_rate": 0,
-        "avg_intent_score": 0
+        "avg_intent_score": 0,
+        "dormant_customers": 0,
+        "repeat_purchase_rate": 0
     }
 
 @app.get("/api/analytics/weekly")
@@ -1668,16 +1891,25 @@ async def get_weekly_analytics(shop: Optional[str] = None, _ = Depends(verify_ad
 @app.get("/api/daily-report")
 async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = None, admin: dict = Depends(verify_admin)):
     """Daily Autonomous Report — Morning Snapshot style summary."""
-    from datetime import date as date_type
+    from datetime import date as date_type, datetime, timedelta, timezone
     
-    # Parse target date (default: today)
+    # IST timezone (UTC+5:30)
+    IST = timezone(timedelta(hours=5, minutes=30))
+    
+    # Parse target date (default: today in IST)
     if date:
         try:
             target_date = date_type.fromisoformat(date)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     else:
-        target_date = date_type.today()
+        target_date = datetime.now(IST).date()
+    
+    # Convert target_date to UTC range for precise filtering
+    day_start_ist = datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=IST)
+    day_end_ist = day_start_ist + timedelta(days=1)
+    day_start_utc = day_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+    day_end_utc = day_end_ist.astimezone(timezone.utc).replace(tzinfo=None)
     
     if not db_pool:
         raise HTTPException(status_code=500, detail="Database not configured")
@@ -1693,21 +1925,20 @@ async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = Non
             elif admin.get("business_id"):
                 business_id = admin["business_id"]
             
-            biz_filter_customers = "AND c.business_id = $2" if business_id else ""
-            biz_filter_convos = "AND conv.business_id = $2" if business_id else ""
-            biz_filter_orders = "AND o.business_id = $2" if business_id else ""
+            biz_filter_customers = "AND c.business_id = $3" if business_id else ""
+            biz_filter_convos = "AND conv.business_id = $3" if business_id else ""
+            biz_filter_orders = "AND o.business_id = $3" if business_id else ""
             biz_filter_handoffs_join = "JOIN customers c ON h.customer_id = c.id" if business_id else ""
             biz_filter_handoffs_where = "AND c.business_id = $1" if business_id else ""
             
-            params_date = [target_date]
-            params_date_biz = [target_date, business_id] if business_id else [target_date]
+            params_range_biz = [day_start_utc, day_end_utc, business_id] if business_id else [day_start_utc, day_end_utc]
             params_biz = [business_id] if business_id else []
             
-            # 1. New leads today (customers first seen today)
+            # 1. New leads today (customers first seen today in IST)
             new_leads = await conn.fetchval(f"""
                 SELECT COUNT(*) FROM customers c
-                WHERE c.created_at::date = $1 {biz_filter_customers}
-            """, *params_date_biz)
+                WHERE c.created_at >= $1 AND c.created_at < $2 {biz_filter_customers}
+            """, *params_range_biz)
             
             # 2. Hot prospects count (current)
             if business_id:
@@ -1718,6 +1949,17 @@ async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = Non
             else:
                 hot_prospects = await conn.fetchval(
                     "SELECT COUNT(*) FROM customers WHERE segment = 'HOT'"
+                )
+            
+            # 2b. Dormant customers count (current) — §18/§22
+            if business_id:
+                dormant_customers_count = await conn.fetchval("""
+                    SELECT COUNT(*) FROM customers c
+                    WHERE c.segment = 'DORMANT' AND c.business_id = $1
+                """, business_id)
+            else:
+                dormant_customers_count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM customers WHERE segment = 'DORMANT'"
                 )
             
             # 3. Pending handoffs count
@@ -1732,18 +1974,51 @@ async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = Non
                     "SELECT COUNT(*) FROM handoffs WHERE status = 'pending'"
                 )
             
-            # 4. Total conversations today
+            # 3b. Pending follow-ups — leads currently due for their next §17 cadence touch,
+            # using the same due-logic as follow_up_cadence_worker so the number is always accurate.
+            pending_fu_sql = """
+                SELECT COUNT(*) FROM customers c
+                WHERE c.segment IN ('HOT', 'WARM', 'COLD')
+                  AND c.opted_out = FALSE
+                  {biz_clause}
+                  AND (c.followed_up_at IS NULL OR c.followed_up_at < c.last_interaction)
+                  AND c.follow_up_stage < (CASE c.segment WHEN 'HOT' THEN 4 ELSE 3 END)
+                  AND c.last_interaction <= NOW() - (
+                      CASE
+                        WHEN c.segment = 'HOT'  AND c.follow_up_stage = 0 THEN INTERVAL '3 minutes'
+                        WHEN c.segment = 'HOT'  AND c.follow_up_stage = 1 THEN INTERVAL '4 hours'
+                        WHEN c.segment = 'HOT'  AND c.follow_up_stage = 2 THEN INTERVAL '24 hours'
+                        WHEN c.segment = 'HOT'  AND c.follow_up_stage = 3 THEN INTERVAL '48 hours'
+                        WHEN c.segment = 'WARM' AND c.follow_up_stage = 0 THEN INTERVAL '1 day'
+                        WHEN c.segment = 'WARM' AND c.follow_up_stage = 1 THEN INTERVAL '3 days'
+                        WHEN c.segment = 'WARM' AND c.follow_up_stage = 2 THEN INTERVAL '7 days'
+                        WHEN c.segment = 'COLD' AND c.follow_up_stage = 0 THEN INTERVAL '7 days'
+                        WHEN c.segment = 'COLD' AND c.follow_up_stage = 1 THEN INTERVAL '14 days'
+                        WHEN c.segment = 'COLD' AND c.follow_up_stage = 2 THEN INTERVAL '30 days'
+                      END
+                  )
+            """
+            if business_id:
+                pending_followups_count = await conn.fetchval(
+                    pending_fu_sql.format(biz_clause="AND c.business_id = $1"), business_id
+                )
+            else:
+                pending_followups_count = await conn.fetchval(
+                    pending_fu_sql.format(biz_clause="")
+                )
+            
+            # 4. Total conversations today (IST)
             total_convos = await conn.fetchval(f"""
                 SELECT COUNT(*) FROM conversations conv
-                WHERE conv.created_at::date = $1 {biz_filter_convos}
-            """, *params_date_biz)
+                WHERE conv.created_at >= $1 AND conv.created_at < $2 {biz_filter_convos}
+            """, *params_range_biz)
             
-            # 5. Orders today (count + revenue)
+            # 5. Orders today — ONLY confirmed orders within today's IST range
             order_row = await conn.fetchrow(f"""
                 SELECT COUNT(*) as cnt, COALESCE(SUM(o.amount), 0) as revenue
                 FROM orders o
-                WHERE o.status = 'confirmed' AND o.created_at::date = $1 {biz_filter_orders}
-            """, *params_date_biz)
+                WHERE o.status = 'confirmed' AND o.created_at >= $1 AND o.created_at < $2 {biz_filter_orders}
+            """, *params_range_biz)
             orders_today = order_row['cnt'] if order_row else 0
             revenue_today = float(order_row['revenue']) if order_row and order_row['revenue'] else 0.0
             
@@ -1752,11 +2027,11 @@ async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = Non
             if total_convos and total_convos > 0:
                 conversion_rate = round((orders_today / total_convos) * 100, 1)
             
-            # 7. Avg intent score today
+            # 7. Avg intent score today (IST)
             avg_intent = await conn.fetchval(f"""
                 SELECT AVG(conv.intent_score) FROM conversations conv
-                WHERE conv.created_at::date = $1 {biz_filter_convos}
-            """, *params_date_biz)
+                WHERE conv.created_at >= $1 AND conv.created_at < $2 {biz_filter_convos}
+            """, *params_range_biz)
             avg_intent_score = round(float(avg_intent), 1) if avg_intent else 0.0
             
             # 8. Segment breakdown
@@ -1772,23 +2047,25 @@ async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = Non
                 )
             segment_breakdown = {row['segment']: row['cnt'] for row in seg_rows}
             
-            # 9. Top products today (from orders + catalog_items)
+            # 9. Top products today — ONLY from confirmed orders within today's IST range
             top_products_rows = await conn.fetch(f"""
                 SELECT ci.name, COUNT(*) as cnt
                 FROM orders o
                 JOIN catalog_items ci ON o.product_id = ci.id
-                WHERE o.status = 'confirmed' AND o.created_at::date = $1 {biz_filter_orders}
+                WHERE o.status = 'confirmed' AND o.created_at >= $1 AND o.created_at < $2 {biz_filter_orders}
                 GROUP BY ci.name
                 ORDER BY cnt DESC
                 LIMIT 3
-            """, *params_date_biz)
+            """, *params_range_biz)
             top_products = [{"name": row['name'], "count": row['cnt']} for row in top_products_rows]
             
             return {
                 "date": str(target_date),
                 "new_leads_count": new_leads or 0,
                 "hot_prospects_count": hot_prospects or 0,
+                "dormant_customers_count": dormant_customers_count or 0,
                 "pending_handoffs_count": pending_handoffs or 0,
+                "pending_followups_count": pending_followups_count or 0,
                 "total_conversations_today": total_convos or 0,
                 "orders_today": orders_today,
                 "revenue_today": revenue_today,
@@ -2237,15 +2514,8 @@ Return ONLY a valid JSON array of objects with fields: format, caption, why_it_w
     messages = [{"role": "user", "content": system_prompt}]
     
     async with httpx.AsyncClient() as client:
-        fallback_models = [
-            GROQ_MODEL, 
-            "llama3-70b-8192", 
-            "llama3-8b-8192", 
-            "mixtral-8x7b-32768", 
-            "gemma2-9b-it"
-        ]
         data = None
-        for current_model in fallback_models:
+        for current_model in FALLBACK_MODELS:
             try:
                 groq_response = await client.post(
                     "https://api.groq.com/openai/v1/chat/completions",
