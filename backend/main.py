@@ -1121,6 +1121,11 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         prior_orders = await conn.fetchval("SELECT COUNT(*) FROM orders WHERE customer_id = $1", customer_id) or 0
                     parsed["segment"] = "REPEAT CUSTOMER" if prior_orders > 0 else "CUSTOMER"
 
+                if customer_id:
+                    total_orders = await conn.fetchval("SELECT COUNT(*) FROM orders WHERE customer_id = $1", customer_id) or 0
+                    if total_orders >= 2 and parsed.get("segment") != "DORMANT":
+                        parsed["segment"] = "REPEAT CUSTOMER"
+
                 if not customer_id:
                     ref_code = None
                     if req.ref:
@@ -1514,7 +1519,8 @@ async def get_handoffs(_ = Depends(verify_admin)):
                 rows = await conn.fetch("""
                     SELECT h.id, h.reason, h.status, h.created_at,
                            h.context_summary, h.product_interest, h.objection, h.intent_score, h.estimated_value, h.urgency,
-                           c.name, c.phone 
+                           c.name, c.phone,
+                           (SELECT message FROM conversations WHERE customer_id = h.customer_id AND message IS NOT NULL ORDER BY created_at DESC LIMIT 1) as latest_message
                     FROM handoffs h
                     JOIN customers c ON h.customer_id = c.id
                     ORDER BY h.created_at DESC

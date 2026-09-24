@@ -170,18 +170,27 @@ export default function Dashboard() {
         setDailyReportOpen(true);
         setContentIdeasOpen(false);
         setOrdersViewOpen(false);
+        setComingSoonPage(null);
       } else if (hash === '#content-ideas') {
         setDailyReportOpen(false);
         setContentIdeasOpen(true);
         setOrdersViewOpen(false);
+        setComingSoonPage(null);
       } else if (hash === '#orders') {
         setDailyReportOpen(false);
         setContentIdeasOpen(false);
         setOrdersViewOpen(true);
+        setComingSoonPage(null);
+      } else if (['#whatsapp', '#social', '#ads', '#competitor'].includes(hash)) {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(false);
+        setOrdersViewOpen(false);
+        setComingSoonPage(hash.slice(1));
       } else {
         setDailyReportOpen(false);
         setContentIdeasOpen(false);
         setOrdersViewOpen(false);
+        setComingSoonPage(null);
       }
     };
     handleHashChange();
@@ -247,6 +256,7 @@ export default function Dashboard() {
   // Content Ideas state
   const [contentIdeasOpen, setContentIdeasOpen] = useState(false);
   const [ordersViewOpen, setOrdersViewOpen] = useState(false);
+  const [comingSoonPage, setComingSoonPage] = useState(null); // 'whatsapp' | 'social' | 'ads' | 'competitor' | null
   const [contentIdeasLoading, setContentIdeasLoading] = useState(false);
   const [generatedIdeas, setGeneratedIdeas] = useState([]);
   const [contentProduct, setContentProduct] = useState('All Products');
@@ -855,6 +865,28 @@ export default function Dashboard() {
                >
             <span>💡</span> Content Ideas
           </div>
+
+          {selectedShop && (
+            <div style={{ margin: '16px 0 0', borderTop: `1px solid ${c.line}`, paddingTop: '16px' }}>
+              <div style={{ padding: '0 12px 8px', fontSize: '11px', color: c.muted, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Coming Soon</div>
+              {[
+                { key: 'whatsapp', icon: '💬', label: 'WhatsApp Inbox' },
+                { key: 'social', icon: '📱', label: 'Social Media' },
+                { key: 'ads', icon: '📢', label: 'Ad Intelligence' },
+                { key: 'competitor', icon: '🔍', label: 'Competitor Intel' }
+              ].map(item => (
+                <div key={item.key}
+                  style={{ padding: '10px 12px', color: comingSoonPage === item.key ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', alignItems: 'center', cursor: 'pointer', marginTop: '4px', transition: 'all 0.2s', background: comingSoonPage === item.key ? 'rgba(14,165,233,0.1)' : 'transparent', border: comingSoonPage === item.key ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
+                  onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setComingSoonPage(item.key); window.location.hash = item.key; }}
+                  onMouseEnter={e => { if (comingSoonPage !== item.key) e.currentTarget.style.color = '#fff'; }}
+                  onMouseLeave={e => { if (comingSoonPage !== item.key) e.currentTarget.style.color = c.muted; }}
+                >
+                  <span>{item.icon}</span> {item.label}
+                  <span style={{ marginLeft: 'auto', fontSize: '9px', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>SOON</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       
         <div style={{ marginTop: 'auto', marginBottom: '20px', padding: '0 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -908,7 +940,49 @@ export default function Dashboard() {
 
          <div className="dash-wrap">
           
-          {contentIdeasOpen ? (
+          {comingSoonPage ? (
+            /* Coming Soon Placeholder Views */
+            <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+              {(() => {
+                const pages = {
+                  whatsapp: { title: 'WhatsApp Business Inbox', icon: '💬', color: '#25D366', desc: 'Send & receive WhatsApp messages directly from this dashboard. Manage customer conversations, broadcast promotional offers, and automate follow-ups via WhatsApp Business API.', requirement: 'WhatsApp Business API account (via Twilio, Gupshup, or Meta Cloud API)', features: ['Two-way customer messaging', 'Broadcast campaigns to segments', 'Automated follow-up sequences', 'Media & catalog sharing', 'Message templates & quick replies'] },
+                  social: { title: 'Social Media Monitoring', icon: '📱', color: '#E1306C', desc: 'Monitor brand mentions, track engagement metrics, and manage your social media presence across Instagram, Facebook, and Twitter — all in one place.', requirement: 'Meta Business Suite / Instagram Professional account', features: ['Brand mention tracking', 'Engagement analytics dashboard', 'Comment & DM management', 'Sentiment analysis', 'Competitor social tracking'] },
+                  ads: { title: 'Advertising Intelligence', icon: '📢', color: '#4285F4', desc: 'AI-powered ad campaign management. Automatically optimize your ad spend, generate compelling ad copy, and track ROAS across Google Ads and Meta Ads.', requirement: 'Google Ads / Meta Ads Manager account', features: ['Campaign performance tracking', 'AI-generated ad copy & creatives', 'Budget optimization suggestions', 'Audience targeting insights', 'Cross-platform ROAS dashboard'] },
+                  competitor: { title: 'Competitor Intelligence', icon: '🔍', color: '#8B5CF6', desc: 'Track competitor pricing, product launches, and marketing strategies. Get AI-powered insights to stay ahead in your market.', requirement: 'No external account needed — uses public data', features: ['Competitor price monitoring', 'New product launch alerts', 'Market positioning analysis', 'SEO & keyword gap analysis', 'Weekly competitor digest report'] }
+                };
+                const p = pages[comingSoonPage];
+                return (
+                  <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                      <div style={{ fontSize: '64px', marginBottom: '16px' }}>{p.icon}</div>
+                      <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#fff', margin: '0 0 8px 0' }}>{p.title}</h1>
+                      <span style={{ display: 'inline-block', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>COMING SOON</span>
+                    </div>
+                    <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '32px', marginBottom: '24px' }}>
+                      <p style={{ color: 'var(--muted)', fontSize: '15px', lineHeight: '1.7', margin: '0 0 24px 0' }}>{p.desc}</p>
+                      <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '20px', border: '1px solid var(--line)' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Planned Features</div>
+                        {p.features.map((f, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: i < p.features.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+                            <span style={{ color: 'var(--ivory)', fontSize: '14px' }}>{f}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ background: `linear-gradient(135deg, ${p.color}15, ${p.color}05)`, border: `1px solid ${p.color}30`, borderRadius: '16px', padding: '24px', display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                      <div style={{ fontSize: '24px', flexShrink: 0 }}>🔗</div>
+                      <div>
+                        <div style={{ fontWeight: 700, color: '#fff', fontSize: '14px', marginBottom: '4px' }}>Setup Required</div>
+                        <p style={{ color: 'var(--muted)', fontSize: '13px', margin: 0, lineHeight: 1.6 }}>Requires connecting: <strong style={{ color: '#fff' }}>{p.requirement}</strong></p>
+                        <p style={{ color: 'var(--muted)', fontSize: '12px', margin: '8px 0 0 0' }}>Contact your admin or developer to configure this integration.</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : contentIdeasOpen ? (
             /* Content Ideas View */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
@@ -1394,6 +1468,40 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
+
+        {/* Sales Pipeline Tracker */}
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', marginBottom: '24px', overflowX: 'auto' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Sales Pipeline Tracker</h2>
+          <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '24px' }}>Horizontal breakdown of all leads & customers across lifecycle stages.</p>
+          
+          {dailyReport && dailyReport.segment_breakdown && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: '800px', gap: '8px' }}>
+              {[
+                { id: 'COLD', label: 'New Leads', color: 'var(--muted)' },
+                { id: 'WARM', label: 'Warm Leads', color: 'var(--accent-purple)' },
+                { id: 'HOT', label: 'Hot Leads', color: 'var(--hot)' },
+                { id: 'CUSTOMER', label: 'Customers', color: 'var(--cust)' },
+                { id: 'REPEAT CUSTOMER', label: 'Repeat', color: '#10b981' },
+                { id: 'DORMANT', label: 'Dormant', color: '#6b7280' }
+              ].map((stage, i, arr) => {
+                const count = dailyReport.segment_breakdown[stage.id] || 0;
+                return (
+                  <div key={stage.id} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: '100px', background: 'rgba(255,255,255,0.02)', borderTop: `3px solid ${stage.color}`, borderRadius: '8px', padding: '16px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>{stage.label}</div>
+                      <div style={{ fontSize: '24px', fontWeight: '800', color: '#fff' }}>{count}</div>
+                    </div>
+                    {i < arr.length - 1 && (
+                      <div style={{ color: 'var(--muted)', padding: '0 8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
         {/* Row 2: Sales Performance & Lead Funnel */}
         <div className="dash-main-grid">
           {/* Left: Sales Performance */}
@@ -1508,7 +1616,16 @@ export default function Dashboard() {
                             <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                               <span style={{ padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', fontSize: '10px' }}>Score: {h.intent_score}</span>
                               {h.estimated_value && <span style={{ padding: '2px 6px', background: 'rgba(34,197,94,0.1)', color: '#4ade80', borderRadius: '4px', fontSize: '10px' }}>Value: ₹{h.estimated_value}</span>}
-                              {h.urgency && <span style={{ padding: '2px 6px', background: h.urgency === 'High' ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.05)', color: h.urgency === 'High' ? '#ef4444' : 'inherit', borderRadius: '4px', fontSize: '10px' }}>Urgency: {h.urgency}</span>}
+                              {h.urgency && (
+                                <span style={{ 
+                                  padding: '2px 6px', 
+                                  background: h.urgency === 'High' ? 'rgba(239,68,68,0.1)' : h.urgency === 'Medium' ? 'rgba(245,158,11,0.1)' : 'rgba(156,163,175,0.1)', 
+                                  color: h.urgency === 'High' ? '#ef4444' : h.urgency === 'Medium' ? '#f59e0b' : '#9ca3af', 
+                                  borderRadius: '4px', fontSize: '10px' 
+                                }}>
+                                  Urgency: {h.urgency}
+                                </span>
+                              )}
                             </div>
                           </div>
                         )}
@@ -1521,6 +1638,12 @@ export default function Dashboard() {
                     </div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {h.latest_message && (
+                        <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', color: 'var(--ivory)', borderLeft: '3px solid var(--accent-purple)' }}>
+                          <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Latest Customer Message</div>
+                          "{h.latest_message}"
+                        </div>
+                      )}
                       <textarea 
                         placeholder="Type reply (e.g. Please pay at UPI ID: ...)" 
                         value={replyTexts[h.id] || ''}
