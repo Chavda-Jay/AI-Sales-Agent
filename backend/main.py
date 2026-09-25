@@ -216,20 +216,26 @@ Return ONLY raw JSON: {{"reply": "your message"}}
 
 async def post_purchase_retention_worker():
     while True:
-        await asyncio.sleep(20)  # Frequent checks for demo
+        # Check every 20 seconds (fast polling, safe for production database)
+        await asyncio.sleep(20)
         if not db_pool or not GROQ_API_KEY:
             continue
             
         try:
             async with db_pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT rs.id, rs.current_stage, rs.stage_updated_at, c.ext_id, c.business_id, rs.customer_id, o.product_id, ci.name as product_name
+                    SELECT rs.id, rs.current_stage, rs.stage_updated_at, c.ext_id, c.business_id, rs.customer_id, o.product_id, ci.name as product_name, c.referral_code, c.phone
                     FROM retention_stages rs
                     JOIN customers c ON c.id = rs.customer_id
                     JOIN orders o ON o.id = rs.order_id
                     LEFT JOIN catalog_items ci ON ci.id = o.product_id
-                    WHERE (rs.current_stage IN ('confirmed', 'delivered', 'satisfaction_check') AND rs.stage_updated_at < NOW() - INTERVAL '60 seconds')
-                       OR (rs.current_stage = 'review_requested' AND rs.stage_updated_at < NOW() - INTERVAL '90 seconds')
+                    WHERE (
+                           (rs.current_stage = 'confirmed' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds')
+                        OR (rs.current_stage = 'delivered' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds')
+                        OR (rs.current_stage = 'satisfaction_check' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds')
+                        OR (rs.current_stage = 'review_requested' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds')
+                        OR (rs.current_stage = 'repeat_reminder' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds' AND c.opted_out = FALSE)
+                      )
                 """)
                 for row in rows:
                     rs_id = row['id']
@@ -238,6 +244,7 @@ async def post_purchase_retention_worker():
                     business_id = row['business_id']
                     ext_id = row['ext_id']
                     product_name = row['product_name'] or "your recent purchase"
+                    customer_phone = row['phone'] or "Customer's Number"
                     
                     next_stage = None
                     instruction = ""
@@ -257,6 +264,10 @@ async def post_purchase_retention_worker():
                         suggested_item = await conn.fetchval("SELECT name FROM catalog_items WHERE business_id = $1 AND id != $2 ORDER BY RANDOM() LIMIT 1", business_id, row['product_id'] or 0)
                         suggested_item = suggested_item or "our newest arrivals"
                         instruction = f"Write a short, polite message saying it's been a while, and suggest they check out a new item we think they'll love: {suggested_item}."
+                    elif current_stage == 'repeat_reminder':
+                        next_stage = 'referral_ask'
+                        ref_code = row['referral_code'] or f"REF-{customer_id}"
+                        instruction = f"Write a warm, polite message asking them to share the store with their friends. Give them their unique referral code: '{ref_code}'. Mention that if a friend uses it, they both get a reward/discount."
                         
                     if next_stage:
                         try:
@@ -308,6 +319,9 @@ async def post_purchase_retention_worker():
                                     if ext_id not in conversations:
                                         conversations[ext_id] = []
                                     conversations[ext_id].append({"role": "assistant", "content": json.dumps({"reply": reply, "retention": True})})
+                                    
+                                    # [DEMO PURPOSE] Print log to show sir that WhatsApp API would trigger here
+                                    print(f"✅ [WHATSAPP API MOCK] Triggering message to {customer_phone}: '{reply}'")
                         except Exception as e:
                             print(f"Error generating retention message: {e}")
         except Exception as e:
@@ -425,6 +439,13 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_whatsapp BOOLEAN DEFAULT FALSE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_email BOOLEAN DEFAULT FALSE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS state TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS urban_type TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS age_range TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS gender TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS occupation TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS purchasing_power TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS life_stage TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS behavior_tags TEXT[] DEFAULT '{}';")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS tier TEXT;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS lifetime_value NUMERIC DEFAULT 0;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS preferred_channel TEXT DEFAULT 'chat';")
@@ -432,6 +453,7 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS business_id INT REFERENCES businesses(id);")
                 await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS banner_url TEXT;")
                 await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS dormant_after_days INT DEFAULT 30;")
+                await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS business_context JSONB DEFAULT '{}'::jsonb;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS opted_out BOOLEAN DEFAULT FALSE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS follow_up_stage INT DEFAULT 0;")
                 await conn.execute("""
@@ -465,6 +487,16 @@ async def lifespan(app: FastAPI):
                         customer_id INT REFERENCES customers(id),
                         current_stage TEXT DEFAULT 'confirmed',
                         stage_updated_at TIMESTAMP DEFAULT NOW()
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS reviews (
+                        id SERIAL PRIMARY KEY,
+                        customer_id INT REFERENCES customers(id),
+                        business_id INT REFERENCES businesses(id),
+                        order_id INT REFERENCES orders(id),
+                        review_text TEXT,
+                        created_at TIMESTAMP DEFAULT NOW()
                     )
                 """)
             print("Database connected and history loaded.")
@@ -638,7 +670,7 @@ conversations = {}
 
 async def load_config_from_db(slug: str, conn):
     business = await conn.fetchrow("""
-        SELECT id, brand_name, language, policies, banner_url 
+        SELECT id, brand_name, language, policies, banner_url, business_context 
         FROM businesses WHERE slug = $1
     """, slug)
     if not business:
@@ -650,12 +682,22 @@ async def load_config_from_db(slug: str, conn):
         ORDER BY id ASC
     """, business['id'])
     
+    ctx = business.get('business_context')
+    if isinstance(ctx, str):
+        try:
+            ctx = json.loads(ctx)
+        except:
+            ctx = {}
+    elif not ctx:
+        ctx = {}
+        
     return {
         "business_id": business['id'],
         "brandName": business['brand_name'],
         "language": business['language'],
         "policies": business['policies'],
         "bannerUrl": business.get('banner_url'),
+        "business_context": ctx,
         "catalog": [dict(i) for i in items]
     }
 
@@ -755,6 +797,15 @@ async def chat(req: ChatRequest):
         is_paused = False
         c_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
         if c_id:
+            # Check if customer is in review_requested stage
+            retention_stage = await conn.fetchval("SELECT current_stage FROM retention_stages WHERE customer_id = $1 ORDER BY id DESC LIMIT 1", c_id)
+            if retention_stage == 'review_requested':
+                order_id = await conn.fetchval("SELECT order_id FROM retention_stages WHERE customer_id = $1 ORDER BY id DESC LIMIT 1", c_id)
+                await conn.execute(
+                    "INSERT INTO reviews (customer_id, business_id, order_id, review_text) VALUES ($1, $2, $3, $4)",
+                    c_id, business_id, order_id, req.message
+                )
+
             pending = await conn.fetchval("SELECT id FROM handoffs WHERE customer_id = $1 AND status = 'pending'", c_id)
             if pending:
                 is_paused = True
@@ -816,11 +867,19 @@ async def chat(req: ChatRequest):
 
     detected_lang = detect_language(req.message)
 
+    context_str = ""
+    biz_ctx = config.get("business_context", {})
+    if biz_ctx:
+        context_str = "\n🏢 BRAND & BUSINESS CONTEXT:\n"
+        for k, v in biz_ctx.items():
+            if v:
+                context_str += f"- {k.replace('_', ' ').title()}: {v}\n"
+
     system_prompt = f"""You are the official AI Shopping Assistant for "{config.get('brandName')}" — a premium Indian brand.
 
 🏷️ PRODUCT CATALOG:
 {catalog_text}
-
+{context_str}
 📋 STORE POLICIES:
 {config.get('policies')}
 
@@ -895,17 +954,21 @@ async def chat(req: ChatRequest):
 - **COUPON 'FIRST10'**: If mentioned, get excited! Apply 10% discount. Show original → discounted price. Set order_amount to discounted price.
 - **ORDER DETAILS FORM**: Set `requires_details` to true when customer is ready to checkout (preferences finalized). In your text reply, naturally ask for their name and city together (e.g. "Order ke liye apna naam aur city bata dijiye" or "Could you please share your name and city for the order?"). Do NOT ask as two separate awkward questions.
 - **HUMAN HANDOFF**: Set `needs_human` to true + `handoff_reason` if: customer is angry, asks for human/manager, mentions legal/fraud/payment disputes, or asks something completely outside your knowledge.
-- **ORDER CONFIRMATION**: ONLY set `order_ready` to true AFTER you have received the customer's Name, Phone, and Address from the shipping form. DO NOT set `order_ready` to true if you do not have their details yet. If they say "yes place order" but you don't have details, set `requires_details` to true to show the form first.
+- **ORDER CONFIRMATION**: ONLY set `order_ready` to true EXACTLY ONCE when the order is first confirmed. If the order was already confirmed in previous messages (e.g. user just saying thanks), MUST set `order_ready` to false. DO NOT set `order_ready` to true if you do not have their details yet. If they say "yes place order" but you don't have details, set `requires_details` to true to show the form first.
 - **DPDP CONSENT**: When showing high purchase intent (setting requires_details or order_ready to true), naturally ask: "Would you like to receive future offers and updates via WhatsApp or email?" in the detected language. Set consent fields ONLY when customer explicitly responds.
+- **CRITICAL PRIVACY RULE (DO NOT GUESS)**: NEVER infer sensitive personal characteristics unnecessarily. Age, gender, occupation, life stage, and purchasing power MUST ONLY be saved if the customer explicitly mentions them (e.g. "I am 25", "I am a student"). **NEVER guess gender from name. NEVER guess age from chatting style.** If not told explicitly, keep these fields null.
 - **CROSS-SELL/UPSELL**: Whenever you recommend or confirm a product, consider suggesting ONE complementary item from the catalog (e.g. jeans → belt, TV → HDMI cable). NEVER force a suggestion. **CRITICAL CULTURAL RULE:** Ensure cross-selling makes logical sense in Indian culture (e.g., NEVER suggest a leather belt with a Kurta or traditional wear). Weave the suggestion naturally into your reply (e.g. "A lot of customers also pick up X with this — want me to add that too?"). Set `cross_sell_product` to the name of the suggested product, otherwise null. Only suggest once per product.
 - **WALLET DISCOUNT**: The customer currently has a Digital Wallet balance of ₹{wallet_balance}. If wallet balance > 0 and the user confirms an order, AUTOMATICALLY apply the wallet balance to reduce the total amount (deduct up to the order amount). You MUST output `wallet_discount_applied`: <amount_deducted> in your JSON. Also inform the user in your `reply` that you have applied their wallet balance.
-- If customer mentions their name, city, or phone anywhere, acknowledge it and include in JSON.
+- If customer mentions their name, city, state, or phone anywhere, acknowledge it and include in JSON.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 LEAD SCORING (STRICT — score EVERY message):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Score this customer's CURRENT state honestly across these 7 components — vary the numbers based on actual behavior, don't default to the same values every time:
-- score_purchase_intent (0-30): browsing only=0-8, comparing options=9-18, ready to checkout=19-30
+- score_purchase_intent (0-30): How close are they to buying RIGHT NOW?
+  High-intent signals (score 19-30): asking price, asking availability, asking delivery time, asking payment options, adding to cart, requesting a demo, asking how to order, comparing final options between 2 specific products.
+  Meaningful-interest signals (score 9-18): asking general product questions, engaging with content, wishlist-type interest, repeated questions about the same product.
+  Early/weak signals (score 0-8): vague browsing, one-word replies, no clear product focus.
 - score_product_interest (0-20): vague interest=0-6, asking specifics=7-14, comparing specific items=15-20
 - score_engagement (0-15): one-word replies=0-5, asking questions=6-10, detailed back-and-forth=11-15
 - score_recency (0-15): they're messaging right now, so usually 12-15 unless they've clearly gone quiet mid-conversation
@@ -944,7 +1007,15 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
   "order_amount": numeric price or null,
   "wallet_discount_applied": numeric amount deducted from wallet or 0,
   "consent_whatsapp": boolean or null,
-  "consent_email": boolean or null
+  "consent_email": boolean or null,
+  "state": "extracted state or null (only if customer mentioned it)",
+  "urban_type": "\"Urban\"/\"Semi-urban\"/\"Rural\" or null (only if inferable from known city name)",
+  "age_range": "extracted age range string or null (ONLY if customer explicitly stated their age)",
+  "gender": "extracted gender string or null (ONLY if explicitly stated — NEVER infer from name)",
+  "occupation": "extracted occupation string or null (ONLY if explicitly mentioned)",
+  "purchasing_power": "extracted purchasing power string or null (only infer loosely from order value discussed)",
+  "life_stage": "extracted life stage string or null (ONLY if explicitly mentioned)",
+  "behavior_tags": ["array", "of", "tags", "or empty array [] (ONLY use exact tags: VIP, Price-sensitive, Premium, Discount-driven, Seasonal buyer - add ONLY if behavior clearly shows)"]
 }}"""
 
     messages = [{"role": "system", "content": system_prompt}] + history[-12:] + [{"role": "user", "content": req.message}]
@@ -1086,6 +1157,12 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
             "consent_email": None,
         }
 
+    print("\n" + "="*50)
+    print("🤖 AI GENERATED JSON RESPONSE:")
+    print("="*50)
+    print(json.dumps(parsed, indent=2))
+    print("="*50 + "\n")
+
     # §6 Lead Scoring — total ko humara code calculate karta hai, LLM ka guess nahi lete
     if "score_purchase_intent" in parsed:
         def _clamp(val, lo, hi):
@@ -1102,6 +1179,14 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
             _clamp(parsed.get("score_purchase_history"), 0, 5) +
             _clamp(parsed.get("score_estimated_value"), 0, 5)
         )
+
+        if parsed.get("segment") in ["COLD", "WARM", "HOT"]:
+            if parsed["intent_score"] >= 70:
+                parsed["segment"] = "HOT"
+            elif parsed["intent_score"] >= 40:
+                parsed["segment"] = "WARM"
+            else:
+                parsed["segment"] = "COLD"
 
     history.append({"role": "user", "content": req.message})
     history.append({"role": "assistant", "content": json.dumps(parsed)})
@@ -1136,8 +1221,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     c_source = 'referral' if ref_code else 'website'
                             
                     customer_id = await conn.fetchval(
-                        "INSERT INTO customers (ext_id, name, phone, city, tier, source, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, FALSE), COALESCE($12, FALSE), $13) RETURNING id",
-                        req.customerId, c_name, c_phone, c_city, c_tier, c_source, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email"), ref_code
+                        "INSERT INTO customers (ext_id, name, phone, city, tier, source, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code, state, urban_type, age_range, gender, occupation, purchasing_power, life_stage, behavior_tags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, FALSE), COALESCE($12, FALSE), $13, $14, $15, $16, $17, $18, $19, $20, COALESCE($21::text[], '{}'::text[])) RETURNING id",
+                        req.customerId, c_name, c_phone, c_city, c_tier, c_source, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email"), ref_code,
+                        parsed.get("state"), parsed.get("urban_type"), parsed.get("age_range"), parsed.get("gender"), parsed.get("occupation"), parsed.get("purchasing_power"), parsed.get("life_stage"), parsed.get("behavior_tags")
                     )
                     
                     if ref_code:
@@ -1162,6 +1248,16 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                             consent_email = COALESCE($9, consent_email),
                             city = COALESCE($10, city),
                             tier = COALESCE($11, tier),
+                            state = COALESCE($12, state),
+                            urban_type = COALESCE($13, urban_type),
+                            age_range = COALESCE($14, age_range),
+                            gender = COALESCE($15, gender),
+                            occupation = COALESCE($16, occupation),
+                            purchasing_power = COALESCE($17, purchasing_power),
+                            life_stage = COALESCE($18, life_stage),
+                            behavior_tags = ARRAY(
+                                SELECT DISTINCT unnest(behavior_tags || COALESCE($19::text[], '{}'::text[]))
+                            ),
                             followed_up_at = NULL,
                             follow_up_stage = 0
                         WHERE id = $3
@@ -1176,7 +1272,15 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         parsed.get("consent_whatsapp"),
                         parsed.get("consent_email"),
                         c_city,
-                        c_tier
+                        c_tier,
+                        parsed.get("state"),
+                        parsed.get("urban_type"),
+                        parsed.get("age_range"),
+                        parsed.get("gender"),
+                        parsed.get("occupation"),
+                        parsed.get("purchasing_power"),
+                        parsed.get("life_stage"),
+                        parsed.get("behavior_tags")
                     )
                 
                 await conn.execute(
@@ -1319,17 +1423,21 @@ async def get_analytics_segments(shop: Optional[str] = None, _ = Depends(verify_
                         
                 tier_counts = await conn.fetch(f"SELECT COALESCE(tier, 'Tier-3/Other') as tier, COUNT(*) as count FROM customers {business_condition} GROUP BY tier")
                 source_counts = await conn.fetch(f"SELECT COALESCE(source, 'website') as source, COUNT(*) as count FROM customers {business_condition} GROUP BY source")
+                state_counts = await conn.fetch(f"SELECT COALESCE(state, 'Unknown') as state, COUNT(*) as count FROM customers {business_condition} GROUP BY state")
+                tags_counts = await conn.fetch(f"SELECT tag, COUNT(*) as count FROM (SELECT unnest(COALESCE(behavior_tags, '{{}}'::text[])) as tag FROM customers {business_condition}) t GROUP BY tag")
                 top_customers = await conn.fetch(f"SELECT name, city, lifetime_value FROM customers {business_condition} ORDER BY lifetime_value DESC NULLS LAST LIMIT 5")
                 
                 return {
                     "tiers": [dict(t) for t in tier_counts],
                     "sources": [dict(s) for s in source_counts],
+                    "states": [dict(s) for s in state_counts],
+                    "behavior_tags": [dict(t) for t in tags_counts],
                     "top_customers": [dict(tc) for tc in top_customers]
                 }
         except Exception as e:
             print(f"Warning: Database error fetching segments: {e}")
             raise HTTPException(status_code=500, detail="Database error")
-    return {"tiers": [], "sources": [], "top_customers": []}
+    return {"tiers": [], "sources": [], "states": [], "behavior_tags": [], "top_customers": []}
 
 
 @app.get("/api/customers")
@@ -1339,7 +1447,7 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
             async with db_pool.acquire() as conn:
                 if shop:
                     rows = await conn.fetch("""
-                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code, c.city, c.tier, c.lifetime_value, c.source,
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code, c.city, c.tier, c.state, c.urban_type, c.behavior_tags, c.lifetime_value, c.source, c.age_range, c.gender, c.occupation, c.purchasing_power,
                                (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage,
                                (SELECT amount FROM orders WHERE customer_id = c.id ORDER BY created_at DESC LIMIT 1) as latest_order_amount
                         FROM customers c
@@ -1349,7 +1457,7 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
                     """, shop)
                 else:
                     rows = await conn.fetch("""
-                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code, c.city, c.tier, c.lifetime_value, c.source,
+                        SELECT c.id, c.ext_id, c.name, c.phone, c.segment, c.intent_score, c.last_interaction, b.slug as shop, c.consent_whatsapp, c.consent_email, c.wallet_balance, c.referral_code, c.city, c.tier, c.state, c.urban_type, c.behavior_tags, c.lifetime_value, c.source, c.age_range, c.gender, c.occupation, c.purchasing_power,
                                (SELECT current_stage FROM retention_stages WHERE customer_id = c.id ORDER BY id DESC LIMIT 1) as retention_stage,
                                (SELECT amount FROM orders WHERE customer_id = c.id ORDER BY created_at DESC LIMIT 1) as latest_order_amount
                         FROM customers c
@@ -1769,6 +1877,18 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                 repeat_buyers = repeat_stats['repeat_buyers'] if repeat_stats else 0
                 repeat_purchase_rate = round((repeat_buyers / total_buyers) * 100, 1) if total_buyers else 0.0
 
+                if shop:
+                    source_rows = await conn.fetch("""
+                        SELECT c.source, COUNT(c.id) as cnt
+                        FROM customers c
+                        JOIN businesses b ON c.business_id = b.id
+                        WHERE b.slug = $1
+                        GROUP BY c.source
+                    """, shop)
+                else:
+                    source_rows = await conn.fetch("SELECT source, COUNT(id) as cnt FROM customers GROUP BY source")
+                discovery_sources = {row['source'] or 'unknown': row['cnt'] for row in source_rows} if source_rows else {}
+
                 return {
                     "total_conversations": total_conversations or 0,
                     "warm_or_above": warm_or_above or 0,
@@ -1777,7 +1897,8 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                     "conversion_rate": conversion_rate,
                     "avg_intent_score": avg_intent_score,
                     "dormant_customers": dormant_count or 0,
-                    "repeat_purchase_rate": repeat_purchase_rate
+                    "repeat_purchase_rate": repeat_purchase_rate,
+                    "discovery_sources": discovery_sources
                 }
         except Exception as e:
             print(f"Warning: Database error fetching analytics: {e}")
@@ -1790,7 +1911,8 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
         "conversion_rate": 0,
         "avg_intent_score": 0,
         "dormant_customers": 0,
-        "repeat_purchase_rate": 0
+        "repeat_purchase_rate": 0,
+        "discovery_sources": {}
     }
 
 @app.get("/api/analytics/weekly")
@@ -2270,6 +2392,72 @@ class CatalogRequest(BaseModel):
     catalog: list[dict]
 
 
+
+@app.get("/api/businesses/{slug}/context")
+async def get_business_context(slug: str, admin: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    try:
+        async with db_pool.acquire() as conn:
+            if admin.get('business_id'):
+                biz_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", slug)
+                if admin['business_id'] != biz_id:
+                    raise HTTPException(status_code=403, detail="Not authorized for this business")
+                    
+            context = await conn.fetchval("SELECT business_context FROM businesses WHERE slug = $1", slug)
+            if context is None:
+                raise HTTPException(status_code=404, detail="Business not found")
+            try:
+                if isinstance(context, str):
+                    return json.loads(context)
+                return context or {}
+            except Exception:
+                return {}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching business context: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching business context")
+
+@app.put("/api/businesses/{slug}/context")
+async def update_business_context(slug: str, request: Request, admin: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+        
+    try:
+        async with db_pool.acquire() as conn:
+            if admin.get('business_id'):
+                biz_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", slug)
+                if admin['business_id'] != biz_id:
+                    raise HTTPException(status_code=403, detail="Not authorized for this business")
+                    
+            existing_str = await conn.fetchval("SELECT business_context FROM businesses WHERE slug = $1", slug)
+            if existing_str is None:
+                raise HTTPException(status_code=404, detail="Business not found")
+                
+            existing_context = {}
+            if existing_str:
+                if isinstance(existing_str, str):
+                    existing_context = json.loads(existing_str)
+                else:
+                    existing_context = existing_str
+                    
+            for k, v in body.items():
+                existing_context[k] = v
+                
+            new_context_json = json.dumps(existing_context)
+            await conn.execute("UPDATE businesses SET business_context = $1::jsonb WHERE slug = $2", new_context_json, slug)
+            
+            return {"message": "Context updated successfully", "context": existing_context}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating business context: {e}")
+        raise HTTPException(status_code=500, detail="Error updating business context")
 
 @app.put("/api/businesses/{slug}/catalog")
 async def update_catalog(slug: str, items: list[CatalogItem], credentials: HTTPAuthorizationCredentials = Depends(security)):

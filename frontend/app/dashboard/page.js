@@ -11,7 +11,7 @@ const API_BASE = rawApi.replace(/\/+$/, '');
 const authFetch = async (url, options = {}) => {
   if (typeof window !== 'undefined') {
     const token = sessionStorage.getItem('admin_token');
-    if (!token) { window.location.href = '/dashboard/login'; return new Response(null, {status: 401}); }
+    if (!token) { window.location.href = '/dashboard/login'; return new Response(null, { status: 401 }); }
     const headers = { ...options.headers, 'Authorization': 'Bearer ' + token };
     const res = await fetch(url, { ...options, headers });
     if (res.status === 401 || res.status === 403) {
@@ -92,12 +92,12 @@ const styles = {
     letterSpacing: '.06em', color: c.primary, margin: 0,
   },
   card: {
-    background: c.panel, backdropFilter: 'blur(16px)', 
+    background: c.panel, backdropFilter: 'blur(16px)',
     border: `1px solid ${c.line}`, borderRadius: '24px',
     boxShadow: '0 12px 32px rgba(0,0,0,0.05)', padding: '28px',
   },
   statCard: {
-    background: c.panel, backdropFilter: 'blur(16px)', 
+    background: c.panel, backdropFilter: 'blur(16px)',
     border: `1px solid ${c.line}`, borderRadius: '24px',
     boxShadow: '0 12px 32px rgba(0,0,0,0.05)', padding: '28px', textAlign: 'center',
     display: 'flex', flexDirection: 'column', justifyContent: 'center'
@@ -212,19 +212,10 @@ export default function Dashboard() {
           } else {
             setIsSuperAdmin(true);
           }
-        } catch(e) {}
+        } catch (e) { }
       }
     }
   }, []);
-
-  
-
-  
-  
-
-
-
-
 
   const [selectedShop, setSelectedShop] = useState(null);
   const [customers, setCustomers] = useState([]);
@@ -233,6 +224,7 @@ export default function Dashboard() {
   const [ordersList, setOrdersList] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [segments, setSegments] = useState(null);
+  const [customerFilter, setCustomerFilter] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleteCustomerId, setDeleteCustomerId] = useState(null);
   const [selectedOrders, setSelectedOrders] = useState(null);
@@ -341,7 +333,7 @@ export default function Dashboard() {
       if (orderRes.ok) setSelectedOrders(await orderRes.json());
       setSelectedCustName(custName || 'Anonymous Visitor');
       setShowConvoModal(true);
-    } catch(e) {
+    } catch (e) {
       console.error(e);
     }
   };
@@ -354,7 +346,7 @@ export default function Dashboard() {
         setSelectedOrders(data);
         setShowOrderModal(true);
       }
-    } catch(e) {
+    } catch (e) {
       console.error(e);
     }
   };
@@ -390,7 +382,7 @@ export default function Dashboard() {
         const err = await res.json();
         toast.error(err.detail || 'Failed to delete store');
       }
-    } catch(e) {
+    } catch (e) {
       console.error(e);
       toast.error('Error deleting store');
     }
@@ -450,11 +442,11 @@ export default function Dashboard() {
     }
     try {
       const qs = shopId ? `?shop=${shopId}` : '';
-      
+
       if (isSuperAdmin && !shopId) {
         const storesRes = await authFetch(`${API_BASE}/api/businesses`);
         if (storesRes.ok) {
-           setStores(await storesRes.json());
+          setStores(await storesRes.json());
         }
       }
 
@@ -470,10 +462,10 @@ export default function Dashboard() {
         setHandoffs(prev => {
           const prevPendingCount = prev.filter(h => h.status === 'pending').length;
           const newPendingCount = newHandoffs.filter(h => h.status === 'pending').length;
-          
+
           if (newPendingCount > prevPendingCount) {
-             const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-             audio.play().catch(err => console.log('Audio blocked by browser:', err));
+            const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+            audio.play().catch(err => console.log('Audio blocked by browser:', err));
           }
           return newHandoffs;
         });
@@ -498,11 +490,16 @@ export default function Dashboard() {
       if (wRes.ok) {
         setWeeklyData(await wRes.json());
       }
-      
+
       const ordRes = await authFetch(`${API_BASE}/api/admin/orders${qs}`);
       if (ordRes.ok) {
         const ordData = await ordRes.json();
         setOrdersList(ordData.orders || []);
+      }
+
+      const dailyRes = await authFetch(`${API_BASE}/api/daily-report${qs}`);
+      if (dailyRes.ok) {
+        setDailyReport(await dailyRes.json());
       }
     } catch (e) {
       console.error("Could not fetch customers", e);
@@ -515,11 +512,61 @@ export default function Dashboard() {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
-  
+
   const [isForgotMode, setIsForgotMode] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetOtpSent, setResetOtpSent] = useState(false);
   const [resetOtp, setResetOtp] = useState('');
+
+  const [settingsTab, setSettingsTab] = useState('security');
+  const [businessContext, setBusinessContext] = useState({});
+  const [contextLoading, setContextLoading] = useState(false);
+  const [contextSaving, setContextSaving] = useState(false);
+
+  const fetchBusinessContext = async () => {
+    if (!selectedShop) return;
+    setContextLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/businesses/${selectedShop}/context`);
+      if (res.ok) {
+        const data = await res.json();
+        setBusinessContext(data || {});
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setContextLoading(false);
+    }
+  };
+
+  const handleSaveContext = async (e) => {
+    e.preventDefault();
+    if (!selectedShop) return;
+    setContextSaving(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/businesses/${selectedShop}/context`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(businessContext)
+      });
+      if (res.ok) {
+        toast.success("Business context saved!");
+      } else {
+        toast.error("Failed to save context");
+      }
+    } catch (e) {
+      toast.error("Error saving context");
+    } finally {
+      setContextSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (settingsOpen && settingsTab === 'context') {
+      fetchBusinessContext();
+    }
+  }, [settingsOpen, settingsTab, selectedShop]);
+
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
@@ -606,13 +653,13 @@ export default function Dashboard() {
     const intervalId = setInterval(() => {
       fetchCustomers(true, selectedShop);
     }, 3000);
-    
-  
 
-  return () => clearInterval(intervalId);
+
+
+    return () => clearInterval(intervalId);
   }, [selectedShop, isSuperAdmin]);
-    
-    
+
+
 
   const total = customers.length;
   const hotCount = customers.filter(c => c.segment === 'HOT').length;
@@ -650,7 +697,7 @@ export default function Dashboard() {
 
   return (
     <div className="dash-page" style={{ display: 'flex', minHeight: '100vh', position: 'relative' }}>
-      
+
       {/* Force Reset Modal (Superadmin only) */}
       {forceResetOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -665,8 +712,8 @@ export default function Dashboard() {
             <form onSubmit={handleForceReset} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   value={forceResetPassword}
                   onChange={e => setForceResetPassword(e.target.value)}
                   style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
@@ -674,9 +721,9 @@ export default function Dashboard() {
                   minLength={8}
                 />
               </div>
-              
-              <button 
-                type="submit" 
+
+              <button
+                type="submit"
                 disabled={passwordLoading}
                 style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}
               >
@@ -690,97 +737,157 @@ export default function Dashboard() {
       {/* Settings Modal */}
       {settingsOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <div style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: settingsTab === 'context' ? '800px' : '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', transition: 'max-width 0.3s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h2 style={{ ...sora.style, fontSize: '20px', color: c.ivory, margin: 0 }}>Store Settings</h2>
               <button onClick={() => setSettingsOpen(false)} style={{ background: 'transparent', border: 'none', color: c.muted, cursor: 'pointer', fontSize: '20px' }}>×</button>
             </div>
-            
-            {!isForgotMode ? (
-              <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label style={{ fontSize: '13px', color: c.muted, fontWeight: 500, margin: 0 }}>Current Password</label>
-                    <button type="button" onClick={() => setIsForgotMode(true)} style={{ background: 'none', border: 'none', color: 'var(--cust)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>Forgot?</button>
+
+            <div style={{ display: 'flex', gap: '20px', marginBottom: '24px', borderBottom: `1px solid ${c.line}` }}>
+              <button onClick={() => setSettingsTab('security')} style={{ background: 'none', border: 'none', padding: '8px 0', color: settingsTab === 'security' ? c.cust : c.muted, borderBottom: settingsTab === 'security' ? `2px solid ${c.cust}` : '2px solid transparent', cursor: 'pointer', fontWeight: 600 }}>Account Security</button>
+              <button onClick={() => setSettingsTab('context')} style={{ background: 'none', border: 'none', padding: '8px 0', color: settingsTab === 'context' ? c.cust : c.muted, borderBottom: settingsTab === 'context' ? `2px solid ${c.cust}` : '2px solid transparent', cursor: 'pointer', fontWeight: 600 }}>Business Context</button>
+            </div>
+
+            {settingsTab === 'security' && (
+              !isForgotMode ? (
+                <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '13px', color: c.muted, fontWeight: 500, margin: 0 }}>Current Password</label>
+                      <button type="button" onClick={() => setIsForgotMode(true)} style={{ background: 'none', border: 'none', color: 'var(--cust)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>Forgot?</button>
+                    </div>
+                    <input
+                      type="password"
+                      value={oldPassword}
+                      onChange={e => setOldPassword(e.target.value)}
+                      style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                      required
+                    />
                   </div>
-                  <input 
-                    type="password" 
-                    value={oldPassword}
-                    onChange={e => setOldPassword(e.target.value)}
-                    style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
-                    required
-                  />
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                      required
+                      minLength={8}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={passwordLoading}
+                    style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}
+                  >
+                    {passwordLoading ? 'Updating...' : 'Update Password'}
+                  </button>
+                </form>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {!resetOtpSent ? (
+                    <form onSubmit={handleSendOtp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>Registered Email</label>
+                        <input
+                          type="email"
+                          value={resetEmail}
+                          onChange={e => setResetEmail(e.target.value)}
+                          style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                          required
+                        />
+                      </div>
+                      <button type="submit" disabled={passwordLoading} style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}>
+                        {passwordLoading ? 'Sending OTP...' : 'Send OTP'}
+                      </button>
+                      <button type="button" onClick={() => setIsForgotMode(false)} style={{ background: 'none', border: 'none', color: c.muted, fontSize: '13px', cursor: 'pointer', marginTop: '4px' }}>Back to Change Password</button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>Enter OTP</label>
+                        <input
+                          type="text"
+                          value={resetOtp}
+                          onChange={e => setResetOtp(e.target.value)}
+                          style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none', letterSpacing: '2px' }}
+                          required
+                          placeholder="e.g. 1234"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
+                        <input
+                          type="password"
+                          value={newPassword}
+                          onChange={e => setNewPassword(e.target.value)}
+                          style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                          required
+                          minLength={8}
+                        />
+                      </div>
+                      <button type="submit" disabled={passwordLoading} style={{ background: 'var(--hot)', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}>
+                        {passwordLoading ? 'Resetting...' : 'Reset Password'}
+                      </button>
+                      <button type="button" onClick={() => setResetOtpSent(false)} style={{ background: 'none', border: 'none', color: c.muted, fontSize: '13px', cursor: 'pointer', marginTop: '4px' }}>Use a different email</button>
+                    </form>
+                  )}
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
-                  <input 
-                    type="password" 
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
-                    required
-                    minLength={8}
-                  />
-                </div>
-                
-                <button 
-                  type="submit" 
-                  disabled={passwordLoading}
-                  style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}
-                >
-                  {passwordLoading ? 'Updating...' : 'Update Password'}
-                </button>
-              </form>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {!resetOtpSent ? (
-                  <form onSubmit={handleSendOtp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>Registered Email</label>
-                      <input 
-                        type="email" 
-                        value={resetEmail}
-                        onChange={e => setResetEmail(e.target.value)}
-                        style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
-                        required
-                      />
-                    </div>
-                    <button type="submit" disabled={passwordLoading} style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}>
-                      {passwordLoading ? 'Sending OTP...' : 'Send OTP'}
-                    </button>
-                    <button type="button" onClick={() => setIsForgotMode(false)} style={{ background: 'none', border: 'none', color: c.muted, fontSize: '13px', cursor: 'pointer', marginTop: '4px' }}>Back to Change Password</button>
-                  </form>
-                ) : (
-                  <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>Enter OTP</label>
-                      <input 
-                        type="text" 
-                        value={resetOtp}
-                        onChange={e => setResetOtp(e.target.value)}
-                        style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none', letterSpacing: '2px' }}
-                        required
-                        placeholder="e.g. 1234"
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>New Password</label>
-                      <input 
-                        type="password" 
-                        value={newPassword}
-                        onChange={e => setNewPassword(e.target.value)}
-                        style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
-                        required
-                        minLength={8}
-                      />
-                    </div>
-                    <button type="submit" disabled={passwordLoading} style={{ background: 'var(--hot)', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: passwordLoading ? 'not-allowed' : 'pointer', opacity: passwordLoading ? 0.7 : 1 }}>
-                      {passwordLoading ? 'Resetting...' : 'Reset Password'}
-                    </button>
-                    <button type="button" onClick={() => setResetOtpSent(false)} style={{ background: 'none', border: 'none', color: c.muted, fontSize: '13px', cursor: 'pointer', marginTop: '4px' }}>Use a different email</button>
-                  </form>
-                )}
-              </div>
+              )
+            )}
+
+            {settingsTab === 'context' && (
+              contextLoading ? (
+                <div style={{ color: c.muted, textAlign: 'center', padding: '40px 0' }}>Loading context...</div>
+              ) : (
+                <form onSubmit={handleSaveContext} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', maxHeight: '55vh', overflowY: 'auto', paddingRight: '8px' }} className="custom-scroll">
+                    {[
+                      { key: 'company_name', label: 'Company Name', placeholder: 'e.g. Urban Threads LLC' },
+                      { key: 'website', label: 'Website URL', placeholder: 'e.g. urbanthreads.com' },
+                      { key: 'target_customer', label: 'Target Customer', placeholder: 'e.g. Gen Z, Millennials' },
+                      { key: 'geographic_market', label: 'Geographic Market', placeholder: 'e.g. US, Canada, India' },
+                      { key: 'product_categories', label: 'Product Categories', placeholder: 'e.g. Shirts, Pants, Shoes' },
+                      { key: 'avg_order_value', label: 'Avg Order Value', placeholder: 'e.g. 1500', type: 'number' },
+                      { key: 'gross_margin_percent', label: 'Gross Margin (%)', placeholder: 'e.g. 40', type: 'number' },
+                      { key: 'sales_channels', label: 'Sales Channels', placeholder: 'e.g. Shopify, Amazon, Retail' },
+                      { key: 'existing_crm', label: 'Existing CRM', placeholder: 'e.g. HubSpot, Salesforce' },
+                      { key: 'customer_database', label: 'Customer Database Size', placeholder: 'e.g. 10,000 emails' },
+                      { key: 'ecommerce_platform', label: 'E-commerce Platform', placeholder: 'e.g. Shopify' },
+                      { key: 'payment_system', label: 'Payment System', placeholder: 'e.g. Stripe, Razorpay' },
+                      { key: 'whatsapp_system', label: 'WhatsApp System', placeholder: 'e.g. Twilio, Gupshup' },
+                      { key: 'email_system', label: 'Email System', placeholder: 'e.g. Klaviyo, Mailchimp' },
+                      { key: 'social_media_accounts', label: 'Social Media', placeholder: 'e.g. Instagram @urbanthreads' },
+                      { key: 'advertising_platforms', label: 'Ads Platforms', placeholder: 'e.g. Meta Ads, Google Ads' },
+                      { key: 'current_monthly_sales', label: 'Current Monthly Sales', placeholder: 'e.g. 1000000', type: 'number' },
+                      { key: 'monthly_marketing_budget', label: 'Monthly Marketing Budget', placeholder: 'e.g. 50000', type: 'number' },
+                      { key: 'target_monthly_sales', label: 'Target Monthly Sales', placeholder: 'e.g. 2000000', type: 'number' },
+                      { key: 'target_cac', label: 'Target CAC', placeholder: 'e.g. 250', type: 'number' },
+                      { key: 'target_roas', label: 'Target ROAS', placeholder: 'e.g. 3.5', type: 'number' },
+                      { key: 'target_repeat_purchase_rate', label: 'Target Repeat Purchase Rate (%)', placeholder: 'e.g. 25', type: 'number' },
+                    ].map(field => (
+                      <div key={field.key} style={{ flex: '1 1 calc(50% - 16px)', minWidth: '200px' }}>
+                        <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>{field.label}</label>
+                        <input
+                          type={field.type || "text"}
+                          value={businessContext[field.key] || ''}
+                          onChange={e => setBusinessContext(p => ({ ...p, [field.key]: e.target.value }))}
+                          placeholder={field.placeholder}
+                          style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '10px 12px', borderRadius: '8px', outline: 'none' }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={contextSaving}
+                    style={{ background: c.cust, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, marginTop: '8px', cursor: contextSaving ? 'not-allowed' : 'pointer', opacity: contextSaving ? 0.7 : 1 }}
+                  >
+                    {contextSaving ? 'Saving...' : 'Save Context'}
+                  </button>
+                </form>
+              )
             )}
           </div>
         </div>
@@ -792,24 +899,24 @@ export default function Dashboard() {
       )}
 
       {/* Sidebar */}
-      <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`} style={{display: 'flex', flexDirection: 'column', background: 'var(--bg)', borderRight: '1px solid var(--line)', padding: '24px 0'}}>
+      <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg)', borderRight: '1px solid var(--line)', padding: '24px 0' }}>
         <div style={{ padding: '0 24px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ background: 'var(--primary)', borderRadius: '8px', padding: '6px', flexShrink: 0 }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
           </div>
           <span style={{ fontSize: '18px', fontWeight: '800', color: 'var(--ivory)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {selectedShop ? shopBrandName : 'AI Sales Agent'} 
+            {selectedShop ? shopBrandName : 'AI Sales Agent'}
             {!selectedShop && <span style={{ fontSize: '10px', background: 'rgba(59,130,246,0.2)', color: 'var(--primary)', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '4px' }}>B2C</span>}
           </span>
         </div>
-        
+
         <div style={{ padding: '0 12px' }}>
           {isSuperAdmin && (
             <div style={{ padding: '12px', color: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
-                 onClick={() => { setSelectedShop(null); setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); }}
-                 onMouseEnter={e => { if(selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
-                 onMouseLeave={e => { if(selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = c.muted; }}
-                 >
+              onClick={() => { setSelectedShop(null); setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); }}
+              onMouseEnter={e => { if (selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
+              onMouseLeave={e => { if (selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = c.muted; }}
+            >
               <span>🏪</span> My Stores
             </div>
           )}
@@ -823,46 +930,46 @@ export default function Dashboard() {
           )}
 
           <div style={{ padding: '12px', color: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
-               onClick={() => { window.location.hash = ''; }}>
+            onClick={() => { window.location.hash = ''; }}>
             <span>🏠</span> Store Dashboard
           </div>
 
           <div style={{ padding: '12px', color: ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-               onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(true); window.location.hash = 'orders'; } }}
-               onMouseEnter={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
-               onMouseLeave={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = c.muted; }}
-               >
+            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(true); window.location.hash = 'orders'; } }}
+            onMouseEnter={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = c.muted; }}
+          >
             <span>📦</span> Orders
           </div>
 
           <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s' }}
-               onClick={() => { if(selectedShop) window.location.href = `/dashboard/catalog?shop=${selectedShop}`; }}
-               onMouseEnter={e => { if(selectedShop) e.currentTarget.style.color = '#fff'; }}
-               onMouseLeave={e => { if(selectedShop) e.currentTarget.style.color = c.muted; }}
-               >
+            onClick={() => { if (selectedShop) window.location.href = `/dashboard/catalog?shop=${selectedShop}`; }}
+            onMouseEnter={e => { if (selectedShop) e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={e => { if (selectedShop) e.currentTarget.style.color = c.muted; }}
+          >
             <span>🏷️</span> Manage Catalog
           </div>
 
           <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: 'pointer', marginTop: '8px', opacity: 1, transition: 'all 0.2s' }}
-               onClick={() => setSettingsOpen(true)}
-               onMouseEnter={e => e.currentTarget.style.color = '#fff'}
-               onMouseLeave={e => e.currentTarget.style.color = c.muted}
-               >
+            onClick={() => setSettingsOpen(true)}
+            onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+            onMouseLeave={e => e.currentTarget.style.color = c.muted}
+          >
             <span>⚙️</span> Settings
           </div>
           <div style={{ padding: '12px', color: dailyReportOpen && !contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: dailyReportOpen && !contentIdeasOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: dailyReportOpen && !contentIdeasOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-               onClick={() => { if (selectedShop) { setDailyReportOpen(true); setContentIdeasOpen(false); setOrdersViewOpen(false); window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); } }}
-               onMouseEnter={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = '#fff'; }}
-               onMouseLeave={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = c.muted; }}
-               >
+            onClick={() => { if (selectedShop) { setDailyReportOpen(true); setContentIdeasOpen(false); setOrdersViewOpen(false); window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); } }}
+            onMouseEnter={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = c.muted; }}
+          >
             <span>📊</span> Daily Report
           </div>
-          
+
           <div style={{ padding: '12px', color: contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: contentIdeasOpen ? 'rgba(234,179,8,0.1)' : 'transparent', border: contentIdeasOpen ? '1px solid rgba(234,179,8,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-               onClick={() => { if(selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(true); setOrdersViewOpen(false); window.location.hash = 'content-ideas'; } }}
-               onMouseEnter={e => { if(selectedShop && !contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
-               onMouseLeave={e => { if(selectedShop && !contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
-               >
+            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(true); setOrdersViewOpen(false); window.location.hash = 'content-ideas'; } }}
+            onMouseEnter={e => { if (selectedShop && !contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={e => { if (selectedShop && !contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
+          >
             <span>💡</span> Content Ideas
           </div>
 
@@ -888,10 +995,10 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      
+
         <div style={{ marginTop: 'auto', marginBottom: '20px', padding: '0 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-          <button 
+          <button
             onClick={() => {
               sessionStorage.removeItem('admin_token');
               window.location.href = '/dashboard/login';
@@ -916,7 +1023,7 @@ export default function Dashboard() {
       <div className="dash-main">
         <header style={{ padding: '24px 32px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, position: 'relative' }}>
-            <button 
+            <button
               className="dash-hamburger"
               style={{ background: 'transparent', border: 'none', color: 'var(--ivory)', cursor: 'pointer', marginRight: '8px', display: 'none' }}
               onClick={() => setSidebarOpen(true)}
@@ -938,8 +1045,8 @@ export default function Dashboard() {
           </div>
         </header>
 
-         <div className="dash-wrap">
-          
+        <div className="dash-wrap">
+
           {comingSoonPage ? (
             /* Coming Soon Placeholder Views */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
@@ -1024,7 +1131,7 @@ export default function Dashboard() {
                     </select>
                   </div>
                   <div>
-                    <button 
+                    <button
                       onClick={generateIdeas}
                       disabled={contentIdeasLoading}
                       style={{ background: 'linear-gradient(135deg, #eab308, #ca8a04)', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: '12px', fontSize: '14px', fontWeight: 600, cursor: contentIdeasLoading ? 'not-allowed' : 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(234, 179, 8, 0.2)', display: 'flex', alignItems: 'center', gap: '8px', opacity: contentIdeasLoading ? 0.7 : 1 }}
@@ -1045,14 +1152,14 @@ export default function Dashboard() {
                   {generatedIdeas.map((idea, idx) => (
                     <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
                       <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: 'linear-gradient(90deg, #eab308, transparent)' }}></div>
-                      
+
                       <div style={{ display: 'inline-block', padding: '6px 12px', background: 'rgba(234, 179, 8, 0.1)', color: '#eab308', borderRadius: '8px', fontSize: '12px', fontWeight: 700, marginBottom: '16px', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
                         {idea.format || 'Post'}
                       </div>
-                      
+
                       <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px', marginBottom: '16px', position: 'relative' }}>
                         <p style={{ color: '#fff', fontSize: '14px', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap', paddingRight: '50px' }}>{idea.caption}</p>
-                        <button 
+                        <button
                           onClick={(e) => {
                             navigator.clipboard.writeText(idea.caption);
                             const btn = e.currentTarget;
@@ -1076,7 +1183,7 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : (
-                 <div style={{ textAlign: 'center', padding: '80px 0', color: c.muted, background: 'rgba(255,255,255,0.01)', borderRadius: '24px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                <div style={{ textAlign: 'center', padding: '80px 0', color: c.muted, background: 'rgba(255,255,255,0.01)', borderRadius: '24px', border: '1px dashed rgba(255,255,255,0.1)' }}>
                   <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>📱</div>
                   <p style={{ fontSize: '16px', fontWeight: 500, color: c.ivory }}>Ready to create viral content?</p>
                   <p style={{ fontSize: '14px', marginTop: '8px' }}>Select a product and format, then click Generate Ideas.</p>
@@ -1122,8 +1229,8 @@ export default function Dashboard() {
                       { label: 'Pending Follow-ups', value: dailyReport.pending_followups_count, icon: '⏱️', color: '#eab308' },
                     ].map((stat, i) => (
                       <div key={i} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)', transition: 'all 0.3s' }}
-                           onMouseEnter={e => { e.currentTarget.style.borderColor = stat.color + '40'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                           onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.transform = 'translateY(0)'; }}>
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = stat.color + '40'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.transform = 'translateY(0)'; }}>
                         <div style={{ fontSize: '28px', marginBottom: '12px' }}>{stat.icon}</div>
                         <div style={{ ...mono, fontSize: '36px', fontWeight: 800, color: stat.color, marginBottom: '4px' }}>{stat.value}</div>
                         <div style={{ ...inter, fontSize: '13px', color: c.muted, fontWeight: 500 }}>{stat.label}</div>
@@ -1234,9 +1341,9 @@ export default function Dashboard() {
                     cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', backdropFilter: 'blur(12px)',
                     position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '20px'
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(14,165,233,0.3)'; e.currentTarget.style.boxShadow = '0 12px 40px rgba(0,0,0,0.4), 0 0 20px rgba(14,165,233,0.1)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.boxShadow = 'none'; }}>
-                    
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(14,165,233,0.3)'; e.currentTarget.style.boxShadow = '0 12px 40px rgba(0,0,0,0.4), 0 0 20px rgba(14,165,233,0.1)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.boxShadow = 'none'; }}>
+
                     {/* Header Row */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -1252,7 +1359,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); setForceResetOpen(s); }}
                           style={{ background: 'transparent', color: c.muted, border: `1px solid ${c.line}`, padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
                           onMouseEnter={e => { e.currentTarget.style.background = c.panel2; e.currentTarget.style.color = '#fff'; }}
@@ -1260,7 +1367,7 @@ export default function Dashboard() {
                         >
                           Reset Pwd
                         </button>
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); setStoreToDelete(s); setStoreDeleteInput(''); }}
                           style={{ background: 'transparent', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
                           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'; }}
@@ -1374,496 +1481,631 @@ export default function Dashboard() {
             /* Store Detail View */
             <div>
 
-        {/* Top Row: Stat Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-          {[
-            { 
-              label: 'Total Customers', 
-              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : total, 
-              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
-              trend: '+12.5%',
-              trendUp: true
-            },
-            { 
-              label: 'Orders Placed', 
-              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.orders_placed || 0),
-              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>,
-              trend: '+8.2%',
-              trendUp: true
-            },
-            { 
-              label: 'AI Conversations', 
-              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.total_conversations || 0),
-              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>,
-              trend: '+24.1%',
-              trendUp: true
-            },
-            { 
-              label: 'HOT Leads', 
-              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : hotCount, 
-              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2c0 0-5 6.5-5 11a5 5 0 0 0 10 0c0-4.5-5-11-5-11z"></path></svg>,
-              trend: '+5.4%',
-              trendUp: true
-            },
-            { 
-              label: 'WARM Leads', 
-              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : warmCount, 
-              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>,
-              trend: 'Stable',
-              trendUp: true
-            },
-            { 
-              label: 'COLD Leads', 
-              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : coldCount, 
-              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>,
-              trend: '-2.0%',
-              trendUp: false
-            },
-            { 
-              label: 'Dormant Customers', 
-              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.dormant_customers || 0), 
-              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>,
-              trend: 'Action Reqd',
-              trendUp: false
-            },
-            { 
-              label: 'Repeat Purchase Rate', 
-              val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : `${analytics?.repeat_purchase_rate || 0}%`, 
-              icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>,
-              trend: '+4.1%',
-              trendUp: true
-            },
-          ].map((stat, i) => (
-            <div key={i} style={{
-              background: 'var(--panel)',
-              border: '1px solid var(--line)',
-              borderRadius: '16px',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              position: 'relative',
-              boxShadow: 'var(--shadow-sm)',
-              transition: 'transform 0.2s',
-              cursor: 'default',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
-                <div style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
-                  {stat.icon}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: stat.trendUp ? 'var(--cust)' : 'var(--hot)' }}>
-                  {stat.trendUp ? (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
-                  ) : (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline><polyline points="16 17 22 17 22 11"></polyline></svg>
-                  )}
-                  {stat.trend}
-                </div>
-              </div>
-              <div style={{ color: 'var(--muted)', fontSize: '13px', fontWeight: '500', marginBottom: '4px' }}>
-                {stat.label}
-              </div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: 'var(--ivory)' }}>
-                {stat.val}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Sales Pipeline Tracker */}
-        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', marginBottom: '24px', overflowX: 'auto' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Sales Pipeline Tracker</h2>
-          <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '24px' }}>Horizontal breakdown of all leads & customers across lifecycle stages.</p>
-          
-          {dailyReport && dailyReport.segment_breakdown && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: '800px', gap: '8px' }}>
-              {[
-                { id: 'COLD', label: 'New Leads', color: 'var(--muted)' },
-                { id: 'WARM', label: 'Warm Leads', color: 'var(--accent-purple)' },
-                { id: 'HOT', label: 'Hot Leads', color: 'var(--hot)' },
-                { id: 'CUSTOMER', label: 'Customers', color: 'var(--cust)' },
-                { id: 'REPEAT CUSTOMER', label: 'Repeat', color: '#10b981' },
-                { id: 'DORMANT', label: 'Dormant', color: '#6b7280' }
-              ].map((stage, i, arr) => {
-                const count = dailyReport.segment_breakdown[stage.id] || 0;
-                return (
-                  <div key={stage.id} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-                    <div style={{ flex: 1, minWidth: '100px', background: 'rgba(255,255,255,0.02)', borderTop: `3px solid ${stage.color}`, borderRadius: '8px', padding: '16px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>{stage.label}</div>
-                      <div style={{ fontSize: '24px', fontWeight: '800', color: '#fff' }}>{count}</div>
-                    </div>
-                    {i < arr.length - 1 && (
-                      <div style={{ color: 'var(--muted)', padding: '0 8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        {/* Row 2: Sales Performance & Lead Funnel */}
-        <div className="dash-main-grid">
-          {/* Left: Sales Performance */}
-          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', minHeight: '360px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Sales Performance</h2>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)' }}></span> This Week</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--line)' }}></span> Last Week</div>
-              </div>
-            </div>
-            <div style={{ flex: 1, position: 'relative' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={weeklyData.length > 0 ? weeklyData : [
-                  { name: 'Mon', leads: 0, hot: 0, orders: 0 },
-                  { name: 'Tue', leads: 0, hot: 0, orders: 0 },
-                  { name: 'Wed', leads: 0, hot: 0, orders: 0 },
-                  { name: 'Thu', leads: 0, hot: 0, orders: 0 },
-                  { name: 'Fri', leads: 0, hot: 0, orders: 0 },
-                  { name: 'Sat', leads: 0, hot: 0, orders: 0 },
-                  { name: 'Sun', leads: 0, hot: 0, orders: 0 },
-                ]} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
-                  <XAxis dataKey="name" stroke="var(--muted)" fontSize={12} tickLine={false} axisLine={false} dy={10} />
-                  <YAxis stroke="var(--muted)" fontSize={12} tickLine={false} axisLine={false} dx={-10} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: '12px', boxShadow: 'var(--shadow-sm)' }} 
-                    itemStyle={{ fontWeight: 600, fontFamily: 'var(--font-inter)' }}
-                  />
-                  <Area type="monotone" dataKey="orders" name="Orders" stroke="var(--primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
-                  <Line type="monotone" dataKey="hot" name="Hot Leads" stroke="var(--muted)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Right: Lead Funnel */}
-          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Lead Funnel</h2>
-            <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '32px' }}>Conversion breakdown from all AI conversations.</p>
-            
-            {analytics && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, justifyContent: 'center' }}>
+              {/* Top Row: Stat Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '24px' }}>
                 {[
-                  { label: 'Conversations', count: analytics.total_conversations, color: 'var(--primary)' },
-                  { label: 'Warm+ Leads', count: analytics.warm_or_above, color: 'var(--accent-purple)' },
-                  { label: 'Hot Leads', count: analytics.hot_or_above, color: 'var(--hot)' },
-                  { label: 'Orders Placed', count: analytics.orders_placed, color: 'var(--cust)' },
-                ].map((stage, i, arr) => {
-                  const max = Math.max(1, arr[0].count);
-                  const width = Math.max(2, (stage.count / max) * 100);
-                  const percent = Math.round((stage.count / max) * 100);
-                  return (
-                    <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--muted)' }}>{stage.label}</div>
-                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>{stage.count} <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: '500' }}>({percent}%)</span></div>
+                  {
+                    label: 'Total Customers',
+                    val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : total,
+                    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
+                    trend: '+12.5%',
+                    trendUp: true
+                  },
+                  {
+                    label: 'Orders Placed',
+                    val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.orders_placed || 0),
+                    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>,
+                    trend: '+8.2%',
+                    trendUp: true
+                  },
+                  {
+                    label: 'AI Conversations',
+                    val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.total_conversations || 0),
+                    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>,
+                    trend: '+24.1%',
+                    trendUp: true
+                  },
+                  {
+                    label: 'HOT Leads',
+                    val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : hotCount,
+                    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2c0 0-5 6.5-5 11a5 5 0 0 0 10 0c0-4.5-5-11-5-11z"></path></svg>,
+                    trend: '+5.4%',
+                    trendUp: true
+                  },
+                  {
+                    label: 'WARM Leads',
+                    val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : warmCount,
+                    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>,
+                    trend: 'Stable',
+                    trendUp: true
+                  },
+                  {
+                    label: 'COLD Leads',
+                    val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : coldCount,
+                    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>,
+                    trend: '-2.0%',
+                    trendUp: false
+                  },
+                  {
+                    label: 'Dormant Customers',
+                    val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : (analytics?.dormant_customers || 0),
+                    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>,
+                    trend: 'Action Reqd',
+                    trendUp: false
+                  },
+                  {
+                    label: 'Repeat Purchase Rate',
+                    val: loading ? <span style={{ opacity: 0.5, letterSpacing: '2px' }}>...</span> : `${analytics?.repeat_purchase_rate || 0}%`,
+                    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>,
+                    trend: '+4.1%',
+                    trendUp: true
+                  },
+                ].map((stat, i) => (
+                  <div key={i} style={{
+                    background: 'var(--panel)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '16px',
+                    padding: '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    position: 'relative',
+                    boxShadow: 'var(--shadow-sm)',
+                    transition: 'transform 0.2s',
+                    cursor: 'default',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                      <div style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
+                        {stat.icon}
                       </div>
-                      <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
-                        <div style={{ width: `${width}%`, height: '100%', background: stage.color, borderRadius: '4px', transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)' }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Row 3: Needs Attention & Market Segments */}
-        <div className="dash-main-grid">
-          {/* Left: Needs Attention */}
-          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Needs Attention</h2>
-              {pendingHandoffs.length > 0 && (
-                <span style={{ background: 'var(--hot)', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '12px' }}>
-                  {pendingHandoffs.length} Pending
-                </span>
-              )}
-            </div>
-
-            {handoffs.length === 0 ? (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: '14px', padding: '40px 0' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                All caught up! No handoffs requested.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }}>
-                {pendingHandoffs.map(h => (
-                  <div key={h.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                      <div>
-                        <div style={{ fontWeight: '700', color: 'var(--ivory)', fontSize: '14px', marginBottom: '4px' }}>
-                          {h.name || 'Unknown Customer'}
-                        </div>
-                        <div style={{ color: 'var(--hot)', fontSize: '13px', fontWeight: '500' }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px', verticalAlign: 'middle' }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                          Reason: {h.reason}
-                        </div>
-                        {h.context_summary && (
-                          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px', padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-                            <div style={{ marginBottom: '4px' }}><strong>Context:</strong> {h.context_summary}</div>
-                            {h.product_interest && <div><strong>Product:</strong> {h.product_interest}</div>}
-                            {h.objection && <div style={{ color: '#fca5a5' }}><strong>Objection:</strong> {h.objection}</div>}
-                            <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <span style={{ padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', fontSize: '10px' }}>Score: {h.intent_score}</span>
-                              {h.estimated_value && <span style={{ padding: '2px 6px', background: 'rgba(34,197,94,0.1)', color: '#4ade80', borderRadius: '4px', fontSize: '10px' }}>Value: ₹{h.estimated_value}</span>}
-                              {h.urgency && (
-                                <span style={{ 
-                                  padding: '2px 6px', 
-                                  background: h.urgency === 'High' ? 'rgba(239,68,68,0.1)' : h.urgency === 'Medium' ? 'rgba(245,158,11,0.1)' : 'rgba(156,163,175,0.1)', 
-                                  color: h.urgency === 'High' ? '#ef4444' : h.urgency === 'Medium' ? '#f59e0b' : '#9ca3af', 
-                                  borderRadius: '4px', fontSize: '10px' 
-                                }}>
-                                  Urgency: {h.urgency}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: stat.trendUp ? 'var(--cust)' : 'var(--hot)' }}>
+                        {stat.trendUp ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline><polyline points="16 17 22 17 22 11"></polyline></svg>
                         )}
-                      </div>
-                      <div style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: '500' }}>
-                        {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-                        })}
+                        {stat.trend}
                       </div>
                     </div>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {h.latest_message && (
-                        <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', color: 'var(--ivory)', borderLeft: '3px solid var(--accent-purple)' }}>
-                          <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Latest Customer Message</div>
-                          "{h.latest_message}"
-                        </div>
-                      )}
-                      <textarea 
-                        placeholder="Type reply (e.g. Please pay at UPI ID: ...)" 
-                        value={replyTexts[h.id] || ''}
-                        onChange={(e) => setReplyTexts(prev => ({ ...prev, [h.id]: e.target.value }))}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(h.id); } }}
-                        style={{ 
-                          width: '100%', border: '1px solid var(--line)', borderRadius: '8px', padding: '10px 12px',
-                          fontSize: '13px', background: 'rgba(0,0,0,0.2)', color: 'var(--ivory)', outline: 'none',
-                          minHeight: '60px', resize: 'vertical', fontFamily: 'var(--font-inter)'
-                        }}
-                      />
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => sendReply(h.id)} style={{ flex: 1, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                          Send Message
-                        </button>
-                        <button onClick={() => resolveHandoff(h.id)} style={{ flex: 1, background: 'transparent', border: '1px solid var(--line)', borderRadius: '8px', color: 'var(--muted)', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                          Resolve
-                        </button>
-                      </div>
+                    <div style={{ color: 'var(--muted)', fontSize: '13px', fontWeight: '500', marginBottom: '4px' }}>
+                      {stat.label}
+                    </div>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: 'var(--ivory)' }}>
+                      {stat.val}
                     </div>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
 
-          {/* Right: Market Segments */}
-          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Market Segments</h2>
-            <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '24px' }}>Customer distribution by city tiers and acquisition source.</p>
-            
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '32px' }}>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <div style={{ width: '140px', height: '140px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={segments?.tiers?.length > 0 ? segments.tiers : [{ tier: 'Tier-1', count: 1 }]}
-                        cx="50%" cy="50%" innerRadius={45} outerRadius={60}
-                        paddingAngle={5} dataKey="count" stroke="none"
-                      >
-                        {(segments?.tiers?.length > 0 ? segments.tiers : [{ tier: 'Tier-1', count: 1 }]).map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={['var(--primary)', 'var(--accent-purple)', 'var(--accent-cyan)', 'var(--muted)'][index % 4]} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: '8px' }} itemStyle={{ color: '#fff', fontSize: '12px' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div style={{ flex: 1, paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em' }}>BY TIER</div>
-                  {(segments?.tiers || []).map((t, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#fff' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: ['var(--primary)', 'var(--accent-purple)', 'var(--accent-cyan)', 'var(--muted)'][i % 4] }}></span>
-                        {t.tier}
-                      </div>
-                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff' }}>{t.count}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              {/* Sales Pipeline Tracker */}
+              <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', marginBottom: '24px', overflowX: 'auto' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Sales Pipeline Tracker</h2>
+                <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '24px' }}>Horizontal breakdown of all leads & customers across lifecycle stages.</p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderTop: '1px solid var(--line)', paddingTop: '24px' }}>
-                <div>
-                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>TOP SOURCE</div>
-                  <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--accent-green)', textTransform: 'capitalize' }}>
-                    {segments?.sources?.[0]?.source || 'Website'}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>{segments?.sources?.[0]?.count || 0} customers</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>TOP SPENDER</div>
-                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {segments?.top_customers?.[0]?.name || 'No data'}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>₹{segments?.top_customers?.[0]?.lifetime_value || 0}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Row 4: Recent Customers */}
-        <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', overflow: 'hidden', marginBottom: '40px' }}>
-          <div style={{ padding: '24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Recent Customers</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--cust)', fontWeight: '600' }}>
-               <div style={{ width: '8px', height: '8px', background: 'var(--cust)', borderRadius: '50%', boxShadow: '0 0 10px var(--cust)' }} />
-               Live Sync
-            </div>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', letterSpacing: '0.05em' }}>
-                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>NAME</th>
-                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>STATUS</th>
-                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>PRICE</th>
-                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>SOURCE</th>
-                  <th style={{ padding: '16px 24px', fontWeight: '600' }}>TIME</th>
-                  <th style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right' }}>ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {customers.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px', fontSize: '14px' }}>No live activity yet.</td>
-                  </tr>
-                ) : (
-                  customers.slice(0, 15).map(cust => (
-                    <tr 
-                      key={cust.id} 
-                      style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.2s', cursor: 'pointer' }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      onClick={() => viewOrders(cust.id)}
-                    >
-                      <td style={{ padding: '16px 24px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#fff' }}>
-                            {cust.name ? cust.name.charAt(0).toUpperCase() : '?'}
+                {dailyReport && dailyReport.segment_breakdown && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: '800px', gap: '8px' }}>
+                    {[
+                      { id: 'COLD', label: 'New Leads', color: 'var(--muted)' },
+                      { id: 'WARM', label: 'Warm Leads', color: 'var(--accent-purple)' },
+                      { id: 'HOT', label: 'Hot Leads', color: 'var(--hot)' },
+                      { id: 'CUSTOMER', label: 'Customers', color: 'var(--cust)' },
+                      { id: 'REPEAT CUSTOMER', label: 'Repeat', color: '#10b981' },
+                      { id: 'DORMANT', label: 'Dormant', color: '#6b7280' }
+                    ].map((stage, i, arr) => {
+                      const count = dailyReport.segment_breakdown[stage.id] || 0;
+                      return (
+                        <div key={stage.id} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                          <div style={{ flex: 1, minWidth: '100px', background: 'rgba(255,255,255,0.02)', borderTop: `3px solid ${stage.color}`, borderRadius: '8px', padding: '16px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>{stage.label}</div>
+                            <div style={{ fontSize: '24px', fontWeight: '800', color: '#fff' }}>{count}</div>
                           </div>
-                          <div>
-                            <div style={{ fontWeight: '600', color: '#fff', fontSize: '14px' }}>{cust.name || 'Anonymous'}</div>
-                            <div style={{ color: 'var(--muted)', fontSize: '12px' }}>{cust.city || 'Unknown City'}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td style={{ padding: '16px 24px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                          <span style={{ 
-                            display: 'inline-block', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700',
-                            background: cust.segment === 'HOT' ? 'rgba(244, 63, 94, 0.1)' : cust.segment === 'CUSTOMER' ? 'rgba(16, 185, 129, 0.1)' : cust.segment === 'REPEAT CUSTOMER' ? 'rgba(34, 197, 94, 0.2)' : cust.segment === 'DORMANT' ? 'rgba(148, 163, 184, 0.1)' : 'rgba(139, 92, 246, 0.1)',
-                            color: cust.segment === 'HOT' ? 'var(--hot)' : cust.segment === 'CUSTOMER' ? 'var(--accent-green)' : cust.segment === 'REPEAT CUSTOMER' ? '#4ade80' : cust.segment === 'DORMANT' ? '#94a3b8' : 'var(--accent-purple)'
-                          }}>
-                            {cust.segment}
-                          </span>
-                          {cust.opted_out && (
-                            <span style={{ display: 'inline-block', padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: '600', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                              OPTED OUT
-                            </span>
+                          {i < arr.length - 1 && (
+                            <div style={{ color: 'var(--muted)', padding: '0 8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                            </div>
                           )}
                         </div>
-                      </td>
-                      <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
-                        ₹{cust.latest_order_amount || cust.lifetime_value || 0}
-                      </td>
-                      <td style={{ padding: '16px 24px', color: 'var(--ivory)', fontSize: '13px', textTransform: 'capitalize' }}>
-                        {cust.source || 'website'}
-                      </td>
-                      <td style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '12px' }}>
-                        {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-                        }) : 'just now'}
-                      </td>
-                      <td style={{ padding: '16px 24px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteCustomer(e, cust.id);
-                            }}
-                            style={{ background: 'transparent', color: 'var(--hot)', border: '1px solid var(--hot)', borderRadius: '6px', padding: '6px 8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            title="Delete"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                          </button>
-                          <button 
-                            onClick={(e) => viewConversation(e, cust.id, cust.name)}
-                            style={{ background: 'transparent', color: 'var(--primary)', border: '1px solid var(--primary)', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                          >
-                            Details
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        
-        {/* Referrals Section */}
-        <div style={{ ...styles.card, marginTop: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-            <h2 style={styles.sectionTitle}>🎁 Referral Engine</h2>
-            <span style={styles.badge(c.primary, '#fff')}>{referrals.length} Total</span>
-          </div>
-          {referrals.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: c.muted, fontSize: '15px' }}>
-              No referrals generated yet.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {referrals.map(r => (
-                <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: c.ivory }}>Referrer: {r.referrer_name}</div>
-                    <div style={{ fontSize: '13px', color: c.muted }}>Referred: {r.referred_name}</div>
-                    <div style={{ fontSize: '11px', color: c.muted, marginTop: '4px' }}>Code: {r.referral_code}</div>
+                      );
+                    })}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                    {r.reward_status === 'earned' ? (
-                      <span style={styles.badge(c.cust, '#fff')}>Earned ₹{r.reward_amount}</span>
-                    ) : (
-                      <span style={styles.badge(c.muted, '#fff')}>Pending</span>
+                )}
+              </div>
+              {/* Row 2: Sales Performance & Lead Funnel */}
+              <div className="dash-main-grid">
+                {/* Left: Sales Performance */}
+                <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', minHeight: '360px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Sales Performance</h2>
+                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)' }}></span> This Week</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--line)' }}></span> Last Week</div>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={weeklyData.length > 0 ? weeklyData : [
+                        { name: 'Mon', leads: 0, hot: 0, orders: 0 },
+                        { name: 'Tue', leads: 0, hot: 0, orders: 0 },
+                        { name: 'Wed', leads: 0, hot: 0, orders: 0 },
+                        { name: 'Thu', leads: 0, hot: 0, orders: 0 },
+                        { name: 'Fri', leads: 0, hot: 0, orders: 0 },
+                        { name: 'Sat', leads: 0, hot: 0, orders: 0 },
+                        { name: 'Sun', leads: 0, hot: 0, orders: 0 },
+                      ]} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
+                        <XAxis dataKey="name" stroke="var(--muted)" fontSize={12} tickLine={false} axisLine={false} dy={10} />
+                        <YAxis stroke="var(--muted)" fontSize={12} tickLine={false} axisLine={false} dx={-10} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: '12px', boxShadow: 'var(--shadow-sm)' }}
+                          itemStyle={{ fontWeight: 600, fontFamily: 'var(--font-inter)' }}
+                        />
+                        <Area type="monotone" dataKey="orders" name="Orders" stroke="var(--primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
+                        <Line type="monotone" dataKey="hot" name="Hot Leads" stroke="var(--muted)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Right: Lead Funnel */}
+                <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
+                  <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Lead Funnel</h2>
+                  <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '32px' }}>Conversion breakdown from all AI conversations.</p>
+
+                  {analytics && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, justifyContent: 'center' }}>
+                      {[
+                        { label: 'Conversations', count: analytics.total_conversations, color: 'var(--primary)' },
+                        { label: 'Warm+ Leads', count: analytics.warm_or_above, color: 'var(--accent-purple)' },
+                        { label: 'Hot Leads', count: analytics.hot_or_above, color: 'var(--hot)' },
+                        { label: 'Orders Placed', count: analytics.orders_placed, color: 'var(--cust)' },
+                      ].map((stage, i, arr) => {
+                        const max = Math.max(1, arr[0].count);
+                        const width = Math.max(2, (stage.count / max) * 100);
+                        const percent = Math.round((stage.count / max) * 100);
+                        return (
+                          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--muted)' }}>{stage.label}</div>
+                              <div style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>{stage.count} <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: '500' }}>({percent}%)</span></div>
+                            </div>
+                            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                              <div style={{ width: `${width}%`, height: '100%', background: stage.color, borderRadius: '4px', transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 3: Needs Attention & Market Segments */}
+              <div className="dash-main-grid">
+                {/* Left: Needs Attention */}
+                <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                    <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Needs Attention</h2>
+                    {pendingHandoffs.length > 0 && (
+                      <span style={{ background: 'var(--hot)', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '12px' }}>
+                        {pendingHandoffs.length} Pending
+                      </span>
                     )}
-                    <div style={{ fontSize: '11px', color: c.muted }}>
-                      {new Date(r.created_at + (r.created_at.endsWith('Z') ? '' : 'Z')).toLocaleDateString('en-IN')}
+                  </div>
+
+                  {handoffs.length === 0 ? (
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: '14px', padding: '40px 0' }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                      All caught up! No handoffs requested.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }}>
+                      {pendingHandoffs.map(h => (
+                        <div key={h.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                            <div>
+                              <div style={{ fontWeight: '700', color: 'var(--ivory)', fontSize: '14px', marginBottom: '4px' }}>
+                                {h.name || 'Unknown Customer'}
+                              </div>
+                              <div style={{ color: 'var(--hot)', fontSize: '13px', fontWeight: '500' }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px', verticalAlign: 'middle' }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                Reason: {h.reason}
+                              </div>
+                              {h.context_summary && (
+                                <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px', padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                                  <div style={{ marginBottom: '4px' }}><strong>Context:</strong> {h.context_summary}</div>
+                                  {h.product_interest && <div><strong>Product:</strong> {h.product_interest}</div>}
+                                  {h.objection && <div style={{ color: '#fca5a5' }}><strong>Objection:</strong> {h.objection}</div>}
+                                  <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', fontSize: '10px' }}>Score: {h.intent_score}</span>
+                                    {h.estimated_value && <span style={{ padding: '2px 6px', background: 'rgba(34,197,94,0.1)', color: '#4ade80', borderRadius: '4px', fontSize: '10px' }}>Value: ₹{h.estimated_value}</span>}
+                                    {h.urgency && (
+                                      <span style={{
+                                        padding: '2px 6px',
+                                        background: h.urgency === 'High' ? 'rgba(239,68,68,0.1)' : h.urgency === 'Medium' ? 'rgba(245,158,11,0.1)' : 'rgba(156,163,175,0.1)',
+                                        color: h.urgency === 'High' ? '#ef4444' : h.urgency === 'Medium' ? '#f59e0b' : '#9ca3af',
+                                        borderRadius: '4px', fontSize: '10px'
+                                      }}>
+                                        Urgency: {h.urgency}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: '500' }}>
+                              {new Date(h.created_at + (h.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
+                                month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                              })}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {h.latest_message && (
+                              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 12px', borderRadius: '8px', fontSize: '13px', color: 'var(--ivory)', borderLeft: '3px solid var(--accent-purple)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Latest Customer Message</div>
+                                "{h.latest_message}"
+                              </div>
+                            )}
+                            <textarea
+                              placeholder="Type reply (e.g. Please pay at UPI ID: ...)"
+                              value={replyTexts[h.id] || ''}
+                              onChange={(e) => setReplyTexts(prev => ({ ...prev, [h.id]: e.target.value }))}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(h.id); } }}
+                              style={{
+                                width: '100%', border: '1px solid var(--line)', borderRadius: '8px', padding: '10px 12px',
+                                fontSize: '13px', background: 'rgba(0,0,0,0.2)', color: 'var(--ivory)', outline: 'none',
+                                minHeight: '60px', resize: 'vertical', fontFamily: 'var(--font-inter)'
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={() => sendReply(h.id)} style={{ flex: 1, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                Send Message
+                              </button>
+                              <button onClick={() => resolveHandoff(h.id)} style={{ flex: 1, background: 'transparent', border: '1px solid var(--line)', borderRadius: '8px', color: 'var(--muted)', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                Resolve
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: Demographics & Tags */}
+                <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
+                  <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Demographics & Tags</h2>
+                  <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '24px' }}>Click on any demographic or tag to filter the recent customers table.</p>
+
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Top Row: Age & Gender */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      {/* Age Range */}
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>BY AGE</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(() => {
+                            const counts = customers.reduce((acc, c) => {
+                              if (c.age_range && c.age_range !== 'Unknown') {
+                                acc[c.age_range] = (acc[c.age_range] || 0) + 1;
+                              }
+                              return acc;
+                            }, {});
+                            return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([v, count], i) => (
+                              <div key={i} onClick={() => setCustomerFilter({ type: 'age_range', value: v })} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', cursor: 'pointer', border: customerFilter?.type === 'age_range' && customerFilter?.value === v ? '1px solid var(--primary)' : '1px solid transparent' }}>
+                                <span style={{ fontSize: '12px', color: '#fff' }}>{v}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--primary)', fontWeight: 700 }}>{count}</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                      
+                      {/* Gender */}
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>GENDER</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(() => {
+                            const counts = customers.reduce((acc, c) => {
+                              if (c.gender && c.gender !== 'Unknown') {
+                                acc[c.gender] = (acc[c.gender] || 0) + 1;
+                              }
+                              return acc;
+                            }, {});
+                            return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([v, count], i) => (
+                              <div key={i} onClick={() => setCustomerFilter({ type: 'gender', value: v })} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', cursor: 'pointer', border: customerFilter?.type === 'gender' && customerFilter?.value === v ? '1px solid var(--accent-cyan)' : '1px solid transparent' }}>
+                                <span style={{ fontSize: '12px', color: '#fff', textTransform: 'capitalize' }}>{v}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--accent-cyan)', fontWeight: 700 }}>{count}</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle Row: Occupation & Purchasing Power */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      {/* Occupation */}
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>OCCUPATION</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(() => {
+                            const counts = customers.reduce((acc, c) => {
+                              if (c.occupation && c.occupation !== 'Unknown') {
+                                acc[c.occupation] = (acc[c.occupation] || 0) + 1;
+                              }
+                              return acc;
+                            }, {});
+                            return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([v, count], i) => (
+                              <div key={i} onClick={() => setCustomerFilter({ type: 'occupation', value: v })} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', cursor: 'pointer', border: customerFilter?.type === 'occupation' && customerFilter?.value === v ? '1px solid var(--accent-purple)' : '1px solid transparent' }}>
+                                <span style={{ fontSize: '12px', color: '#fff', textTransform: 'capitalize', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--accent-purple)', fontWeight: 700 }}>{count}</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                      
+                      {/* Purchasing Power */}
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>PURCHASING POWER</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(() => {
+                            const counts = customers.reduce((acc, c) => {
+                              if (c.purchasing_power && c.purchasing_power !== 'Unknown') {
+                                acc[c.purchasing_power] = (acc[c.purchasing_power] || 0) + 1;
+                              }
+                              return acc;
+                            }, {});
+                            return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([v, count], i) => (
+                              <div key={i} onClick={() => setCustomerFilter({ type: 'purchasing_power', value: v })} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', cursor: 'pointer', border: customerFilter?.type === 'purchasing_power' && customerFilter?.value === v ? '1px solid var(--hot)' : '1px solid transparent' }}>
+                                <span style={{ fontSize: '12px', color: '#fff', textTransform: 'capitalize' }}>{v}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--hot)', fontWeight: 700 }}>{count}</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* States List */}
+                    <div>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>BY STATE (Top 3)</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {(() => {
+                          const stateCounts = customers.reduce((acc, c) => {
+                            if (c.state && c.state !== 'Unknown') {
+                              acc[c.state] = (acc[c.state] || 0) + 1;
+                            }
+                            return acc;
+                          }, {});
+                          const topStates = Object.entries(stateCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+                          if (topStates.length === 0) return <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No state data yet</div>;
+                          return topStates.map(([st, count], i) => (
+                            <div 
+                              key={i} 
+                              onClick={() => setCustomerFilter({ type: 'state', value: st })}
+                              style={{ 
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                padding: '6px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '20px', cursor: 'pointer',
+                                border: customerFilter?.type === 'state' && customerFilter?.value === st ? '1px solid var(--cust)' : '1px solid var(--line)'
+                              }}
+                            >
+                              <span style={{ fontSize: '12px', color: '#fff' }}>{st}</span>
+                              <span style={{ fontSize: '10px', color: 'var(--cust)', fontWeight: 700 }}>{count}</span>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Behavior Tags */}
+                    <div>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>BEHAVIOR TAGS</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {(() => {
+                          const tagCounts = customers.reduce((acc, c) => {
+                            (c.behavior_tags || []).forEach(tag => {
+                              if (tag && tag !== 'Unknown') {
+                                acc[tag] = (acc[tag] || 0) + 1;
+                              }
+                            });
+                            return acc;
+                          }, {});
+                          const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+                          if (topTags.length === 0) return <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No tags yet</div>;
+                          return topTags.map(([tag, count], i) => (
+                            <div 
+                              key={i}
+                              onClick={() => setCustomerFilter({ type: 'tag', value: tag })}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                padding: '6px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: '20px', cursor: 'pointer',
+                                border: customerFilter?.type === 'tag' && customerFilter?.value === tag ? '1px solid var(--accent-green)' : '1px solid var(--line)',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              <span style={{ fontSize: '12px', color: '#fff' }}>#{tag}</span>
+                              <span style={{ fontSize: '10px', color: 'var(--muted)', background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '10px' }}>{count}</span>
+                            </div>
+                          ));
+                        })()}
+                      </div>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+
+              {/* Row 4: Recent Customers */}
+              {(() => {
+                const filteredCustomers = customerFilter
+                  ? customers.filter(c => {
+                    if (customerFilter.type === 'state') return (c.state || 'Unknown') === customerFilter.value;
+                    if (customerFilter.type === 'tag') return (c.behavior_tags || []).includes(customerFilter.value);
+                    if (customerFilter.type === 'age_range') return (c.age_range || 'Unknown') === customerFilter.value;
+                    if (customerFilter.type === 'gender') return (c.gender || 'Unknown') === customerFilter.value;
+                    if (customerFilter.type === 'occupation') return (c.occupation || 'Unknown') === customerFilter.value;
+                    if (customerFilter.type === 'purchasing_power') return (c.purchasing_power || 'Unknown') === customerFilter.value;
+                    return true;
+                  })
+                  : customers;
+
+                return (
+                  <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', overflow: 'hidden', marginBottom: '40px' }}>
+                    <div style={{ padding: '24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Recent Customers</h2>
+                        {customerFilter && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '20px', fontSize: '11px', fontWeight: '600', color: '#38bdf8' }}>
+                            <span>{customerFilter.type === 'tag' ? `#${customerFilter.value}` : customerFilter.value}</span>
+                            <button onClick={() => setCustomerFilter(null)} style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--cust)', fontWeight: '600' }}>
+                        <div style={{ width: '8px', height: '8px', background: 'var(--cust)', borderRadius: '50%', boxShadow: '0 0 10px var(--cust)' }} />
+                        Live Sync
+                      </div>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', letterSpacing: '0.05em' }}>
+                            <th style={{ padding: '16px 24px', fontWeight: '600' }}>NAME</th>
+                            <th style={{ padding: '16px 24px', fontWeight: '600' }}>STATUS</th>
+                            <th style={{ padding: '16px 24px', fontWeight: '600' }}>PRICE</th>
+                            <th style={{ padding: '16px 24px', fontWeight: '600' }}>SOURCE</th>
+                            <th style={{ padding: '16px 24px', fontWeight: '600' }}>TIME</th>
+                            <th style={{ padding: '16px 24px', fontWeight: '600', textAlign: 'right' }}>ACTIONS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredCustomers.length === 0 ? (
+                            <tr>
+                              <td colSpan="7" style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px', fontSize: '14px' }}>
+                                {customerFilter ? 'No customers found for this filter.' : 'No live activity yet.'}
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredCustomers.slice(0, 15).map(cust => (
+                              <tr
+                                key={cust.id}
+                                style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.2s', cursor: 'pointer' }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                onClick={() => viewOrders(cust.id)}
+                              >
+                                <td style={{ padding: '16px 24px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#fff' }}>
+                                      {cust.name ? cust.name.charAt(0).toUpperCase() : '?'}
+                                    </div>
+                                    <div>
+                                      <div style={{ fontWeight: '600', color: '#fff', fontSize: '14px' }}>{cust.name || 'Anonymous'}</div>
+                                      <div style={{ color: 'var(--muted)', fontSize: '12px' }}>{cust.city || 'Unknown City'}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td style={{ padding: '16px 24px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                    <span style={{
+                                      display: 'inline-block', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700',
+                                      background: cust.segment === 'HOT' ? 'rgba(244, 63, 94, 0.1)' : cust.segment === 'CUSTOMER' ? 'rgba(16, 185, 129, 0.1)' : cust.segment === 'REPEAT CUSTOMER' ? 'rgba(34, 197, 94, 0.2)' : cust.segment === 'DORMANT' ? 'rgba(148, 163, 184, 0.1)' : 'rgba(139, 92, 246, 0.1)',
+                                      color: cust.segment === 'HOT' ? 'var(--hot)' : cust.segment === 'CUSTOMER' ? 'var(--accent-green)' : cust.segment === 'REPEAT CUSTOMER' ? '#4ade80' : cust.segment === 'DORMANT' ? '#94a3b8' : 'var(--accent-purple)'
+                                    }}>
+                                      {cust.segment}
+                                    </span>
+                                    {cust.opted_out && (
+                                      <span style={{ display: 'inline-block', padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: '600', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                                        OPTED OUT
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
+                                  ₹{cust.latest_order_amount || cust.lifetime_value || 0}
+                                </td>
+                                <td style={{ padding: '16px 24px', color: 'var(--ivory)', fontSize: '13px', textTransform: 'capitalize' }}>
+                                  {cust.source || 'website'}
+                                </td>
+                                <td style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '12px' }}>
+                                  {cust.last_interaction ? new Date(cust.last_interaction + (cust.last_interaction.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
+                                    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                                  }) : 'just now'}
+                                </td>
+                                <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteCustomer(e, cust.id);
+                                      }}
+                                      style={{ background: 'transparent', color: 'var(--hot)', border: '1px solid var(--hot)', borderRadius: '6px', padding: '6px 8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                      title="Delete"
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    </button>
+                                    <button
+                                      onClick={(e) => viewConversation(e, cust.id, cust.name)}
+                                      style={{ background: 'transparent', color: 'var(--primary)', border: '1px solid var(--primary)', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                    >
+                                      Details
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Referrals Section */}
+              <div style={{ ...styles.card, marginTop: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                  <h2 style={styles.sectionTitle}>🎁 Referral Engine</h2>
+                  <span style={styles.badge(c.primary, '#fff')}>{referrals.length} Total</span>
+                </div>
+                {referrals.length === 0 ? (
+                  <div style={{ padding: '40px 20px', textAlign: 'center', color: c.muted, fontSize: '15px' }}>
+                    No referrals generated yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {referrals.map(r => (
+                      <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: c.ivory }}>Referrer: {r.referrer_name}</div>
+                          <div style={{ fontSize: '13px', color: c.muted }}>Referred: {r.referred_name}</div>
+                          <div style={{ fontSize: '11px', color: c.muted, marginTop: '4px' }}>Code: {r.referral_code}</div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                          {r.reward_status === 'earned' ? (
+                            <span style={styles.badge(c.cust, '#fff')}>Earned ₹{r.reward_amount}</span>
+                          ) : (
+                            <span style={styles.badge(c.muted, '#fff')}>Pending</span>
+                          )}
+                          <div style={{ fontSize: '11px', color: c.muted }}>
+                            {new Date(r.created_at + (r.created_at.endsWith('Z') ? '' : 'Z')).toLocaleDateString('en-IN')}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
             </div>
           )}
@@ -1963,7 +2205,7 @@ export default function Dashboard() {
               Are you sure you want to permanently delete this lead? This action cannot be undone and will remove them from the database.
             </p>
             <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-              <button 
+              <button
                 style={{ flex: 1, padding: '12px', background: 'transparent', border: `1px solid ${c.line}`, borderRadius: '8px', color: c.ivory, cursor: 'pointer', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s' }}
                 onClick={() => setDeleteCustomerId(null)}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
@@ -1971,7 +2213,7 @@ export default function Dashboard() {
               >
                 Cancel
               </button>
-              <button 
+              <button
                 style={{ flex: 1, padding: '12px', background: c.hot, border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(248,81,73,0.3)' }}
                 onClick={confirmDelete}
                 onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
@@ -1995,8 +2237,8 @@ export default function Dashboard() {
             </p>
             <div style={{ marginBottom: '32px', textAlign: 'left' }}>
               <label style={{ display: 'block', fontSize: '12px', color: c.muted, marginBottom: '8px', fontWeight: 600 }}>Type DELETE to confirm</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={storeDeleteInput}
                 onChange={e => setStoreDeleteInput(e.target.value)}
                 placeholder="DELETE"
@@ -2004,7 +2246,7 @@ export default function Dashboard() {
               />
             </div>
             <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-              <button 
+              <button
                 style={{ flex: 1, padding: '12px', background: 'transparent', border: `1px solid ${c.line}`, borderRadius: '8px', color: c.ivory, cursor: 'pointer', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s' }}
                 onClick={() => setStoreToDelete(null)}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
@@ -2012,7 +2254,7 @@ export default function Dashboard() {
               >
                 Cancel
               </button>
-              <button 
+              <button
                 disabled={storeDeleteInput !== 'DELETE'}
                 style={{ flex: 1, padding: '12px', background: c.hot, border: 'none', borderRadius: '8px', color: '#fff', cursor: storeDeleteInput === 'DELETE' ? 'pointer' : 'not-allowed', fontSize: '14px', fontWeight: 600, transition: 'all 0.2s', boxShadow: storeDeleteInput === 'DELETE' ? '0 4px 12px rgba(248,81,73,0.3)' : 'none', opacity: storeDeleteInput === 'DELETE' ? 1 : 0.5 }}
                 onClick={confirmDeleteStore}
