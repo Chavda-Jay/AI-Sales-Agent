@@ -386,11 +386,11 @@ export default function Home() {
     <>
       <Toaster position="top-center" />
       <nav className="navbar" style={{ justifyContent: 'space-between' }}>
-        <div style={{ width: '120px' }}></div>
-        <div className="nav-brand">
+        <div style={{ flex: 1 }}></div>
+        <div className="nav-brand" style={{ textAlign: 'center' }}>
           {config?.brandName || 'Store'}
         </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', width: '120px', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
           <button 
             className="nav-cart-btn"
             onClick={() => setIsCartOpen(true)}

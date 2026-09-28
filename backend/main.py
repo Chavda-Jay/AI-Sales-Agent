@@ -424,6 +424,62 @@ Return ONLY raw JSON: {{"reply": "your message"}}
         except Exception as e:
             print(f"Dormant customer worker error: {e}")
 
+async def recency_decay_worker():
+    while True:
+        await asyncio.sleep(21600)  # Check every 6 hours
+        if not db_pool:
+            continue
+        try:
+            async with db_pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT id, score_breakdown, intent_score, 
+                           EXTRACT(EPOCH FROM (NOW() - COALESCE(last_interaction, created_at))) / 86400 as days_inactive
+                    FROM customers
+                    WHERE score_breakdown IS NOT NULL
+                """)
+                for row in rows:
+                    try:
+                        breakdown = json.loads(row['score_breakdown']) if isinstance(row['score_breakdown'], str) else row['score_breakdown']
+                        days = int(row['days_inactive'])
+                        if days > 0:
+                            current_recency = breakdown.get("recency", 0)
+                            new_recency = max(0, 15 - days)
+                            
+                            if current_recency != new_recency:
+                                breakdown["recency"] = new_recency
+                                new_score = sum([
+                                    breakdown.get("purchase_intent", 0),
+                                    breakdown.get("product_interest", 0),
+                                    breakdown.get("engagement", 0),
+                                    breakdown.get("recency", 0),
+                                    breakdown.get("customer_fit", 0),
+                                    breakdown.get("purchase_history", 0),
+                                    breakdown.get("estimated_value", 0)
+                                ])
+                                
+                                if new_score >= 80: band = "HOT"
+                                elif new_score >= 60: band = "HIGH"
+                                elif new_score >= 40: band = "MEDIUM"
+                                elif new_score >= 20: band = "LOW"
+                                else: band = "VERY LOW"
+
+                                if new_score >= 80: new_segment = "HOT"
+                                elif new_score >= 50: new_segment = "WARM"
+                                else: new_segment = "COLD"
+                                
+                                await conn.execute("""
+                                    UPDATE customers 
+                                    SET score_breakdown = $1::jsonb,
+                                        intent_score = $2,
+                                        score_band = $3,
+                                        segment = CASE WHEN segment IN ('CUSTOMER', 'REPEAT CUSTOMER', 'DORMANT') THEN segment ELSE $4 END
+                                    WHERE id = $5
+                                """, json.dumps(breakdown), new_score, band, new_segment, row['id'])
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"Recency decay worker error: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_pool
@@ -456,6 +512,8 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS business_context JSONB DEFAULT '{}'::jsonb;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS opted_out BOOLEAN DEFAULT FALSE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS follow_up_stage INT DEFAULT 0;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS score_band TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS score_breakdown JSONB;")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS handoffs (
                         id SERIAL PRIMARY KEY,
@@ -508,10 +566,12 @@ async def lifespan(app: FastAPI):
     worker_task = asyncio.create_task(follow_up_cadence_worker())
     retention_worker_task = asyncio.create_task(post_purchase_retention_worker())
     dormant_worker_task = asyncio.create_task(dormant_customer_worker())
+    recency_worker_task = asyncio.create_task(recency_decay_worker())
     yield
     worker_task.cancel()
     retention_worker_task.cancel()
     dormant_worker_task.cancel()
+    recency_worker_task.cancel()
     if db_pool:
         await db_pool.close()
 
@@ -1164,26 +1224,70 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
     print("="*50 + "\n")
 
     # §6 Lead Scoring — total ko humara code calculate karta hai, LLM ka guess nahi lete
+    score_band = None
+    score_breakdown = None
+
     if "score_purchase_intent" in parsed:
         def _clamp(val, lo, hi):
             try:
                 return max(lo, min(hi, int(val)))
             except (TypeError, ValueError):
                 return lo
-        parsed["intent_score"] = (
-            _clamp(parsed.get("score_purchase_intent"), 0, 30) +
-            _clamp(parsed.get("score_product_interest"), 0, 20) +
-            _clamp(parsed.get("score_engagement"), 0, 15) +
-            _clamp(parsed.get("score_recency"), 0, 15) +
-            _clamp(parsed.get("score_customer_fit"), 0, 10) +
-            _clamp(parsed.get("score_purchase_history"), 0, 5) +
-            _clamp(parsed.get("score_estimated_value"), 0, 5)
-        )
+
+        actual_order_score = 0
+        if db_pool:
+            try:
+                async with db_pool.acquire() as tconn:
+                    tmp_cid = await tconn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
+                    if tmp_cid:
+                        order_count = await tconn.fetchval("SELECT COUNT(*) FROM orders WHERE customer_id = $1 AND status = 'confirmed'", tmp_cid) or 0
+                        if order_count == 0:
+                            actual_order_score = 0
+                        elif order_count == 1:
+                            actual_order_score = 3
+                        else:
+                            actual_order_score = 5
+            except Exception:
+                pass
+        
+        parsed["score_purchase_history"] = actual_order_score
+
+        c_pi = _clamp(parsed.get("score_purchase_intent"), 0, 30)
+        c_pri = _clamp(parsed.get("score_product_interest"), 0, 20)
+        c_eng = _clamp(parsed.get("score_engagement"), 0, 15)
+        c_rec = _clamp(parsed.get("score_recency"), 0, 15)
+        c_fit = _clamp(parsed.get("score_customer_fit"), 0, 10)
+        c_ph = _clamp(parsed.get("score_purchase_history"), 0, 5)
+        c_ev = _clamp(parsed.get("score_estimated_value"), 0, 5)
+
+        score_breakdown = {
+            "purchase_intent": c_pi,
+            "product_interest": c_pri,
+            "engagement": c_eng,
+            "recency": c_rec,
+            "customer_fit": c_fit,
+            "purchase_history": c_ph,
+            "estimated_value": c_ev
+        }
+
+        parsed["intent_score"] = c_pi + c_pri + c_eng + c_rec + c_fit + c_ph + c_ev
+        score = parsed["intent_score"]
+
+        if score >= 80:
+            score_band = "HOT"
+        elif score >= 60:
+            score_band = "HIGH"
+        elif score >= 40:
+            score_band = "MEDIUM"
+        elif score >= 20:
+            score_band = "LOW"
+        else:
+            score_band = "VERY LOW"
 
         if parsed.get("segment") in ["COLD", "WARM", "HOT"]:
-            if parsed["intent_score"] >= 70:
+            if score >= 80:
                 parsed["segment"] = "HOT"
-            elif parsed["intent_score"] >= 40:
+            elif score >= 40:
                 parsed["segment"] = "WARM"
             else:
                 parsed["segment"] = "COLD"
@@ -1221,9 +1325,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     c_source = 'referral' if ref_code else 'website'
                             
                     customer_id = await conn.fetchval(
-                        "INSERT INTO customers (ext_id, name, phone, city, tier, source, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code, state, urban_type, age_range, gender, occupation, purchasing_power, life_stage, behavior_tags) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, FALSE), COALESCE($12, FALSE), $13, $14, $15, $16, $17, $18, $19, $20, COALESCE($21::text[], '{}'::text[])) RETURNING id",
+                        "INSERT INTO customers (ext_id, name, phone, city, tier, source, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code, state, urban_type, age_range, gender, occupation, purchasing_power, life_stage, behavior_tags, score_band, score_breakdown) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, FALSE), COALESCE($12, FALSE), $13, $14, $15, $16, $17, $18, $19, $20, COALESCE($21::text[], '{}'::text[]), $22, $23::jsonb) RETURNING id",
                         req.customerId, c_name, c_phone, c_city, c_tier, c_source, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email"), ref_code,
-                        parsed.get("state"), parsed.get("urban_type"), parsed.get("age_range"), parsed.get("gender"), parsed.get("occupation"), parsed.get("purchasing_power"), parsed.get("life_stage"), parsed.get("behavior_tags")
+                        parsed.get("state"), parsed.get("urban_type"), parsed.get("age_range"), parsed.get("gender"), parsed.get("occupation"), parsed.get("purchasing_power"), parsed.get("life_stage"), parsed.get("behavior_tags"), score_band, json.dumps(score_breakdown) if score_breakdown else None
                     )
                     
                     if ref_code:
@@ -1258,6 +1362,8 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                             behavior_tags = ARRAY(
                                 SELECT DISTINCT unnest(behavior_tags || COALESCE($19::text[], '{}'::text[]))
                             ),
+                            score_band = COALESCE($20, score_band),
+                            score_breakdown = COALESCE($21::jsonb, score_breakdown),
                             followed_up_at = NULL,
                             follow_up_stage = 0
                         WHERE id = $3
@@ -1280,7 +1386,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         parsed.get("occupation"),
                         parsed.get("purchasing_power"),
                         parsed.get("life_stage"),
-                        parsed.get("behavior_tags")
+                        parsed.get("behavior_tags"),
+                        score_band,
+                        json.dumps(score_breakdown) if score_breakdown else None
                     )
                 
                 await conn.execute(

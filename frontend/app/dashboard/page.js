@@ -1239,7 +1239,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Sales Summary + Intent Score */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                     <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '28px', backdropFilter: 'blur(12px)' }}>
                       <div style={{ ...sora, fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: c.primary, marginBottom: '20px' }}>💰 Sales Summary</div>
                       <div className="responsive-grid-3" style={{ gap: '24px' }}>
@@ -1267,7 +1267,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Segment Breakdown + Top Products */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                     {/* Segment Breakdown */}
                     <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '28px', backdropFilter: 'blur(12px)' }}>
                       <div style={{ ...sora, fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: c.primary, marginBottom: '20px' }}>📈 Segment Breakdown</div>
@@ -1327,7 +1327,7 @@ export default function Dashboard() {
           ) : !selectedShop && isSuperAdmin ? (
             /* Connected Businesses View */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
                   <h1 style={{ ...sora.style, fontSize: '28px', fontWeight: 800, color: '#fff', margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>Connected Businesses</h1>
                   <p style={{ color: c.muted, margin: 0, fontSize: '15px' }}>Overview ({stores.length} Stores Active)</p>
@@ -1417,7 +1417,7 @@ export default function Dashboard() {
           ) : ordersViewOpen ? (
             /* Orders View */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
                   <div style={{ fontFamily: 'var(--font-sora, sans-serif)', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.18em', color: 'var(--primary)', marginBottom: '8px' }}>
                     {stores.find(s => s.id === selectedShop)?.name || 'Store'} • Order Management System
@@ -1553,7 +1553,7 @@ export default function Dashboard() {
                     transition: 'transform 0.2s',
                     cursor: 'default',
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                       <div style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
                         {stat.icon}
                       </div>
@@ -1613,7 +1613,7 @@ export default function Dashboard() {
               <div className="dash-main-grid">
                 {/* Left: Sales Performance */}
                 <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', minHeight: '360px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                     <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Sales Performance</h2>
                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)' }}></span> This Week</div>
@@ -1688,7 +1688,7 @@ export default function Dashboard() {
               <div className="dash-main-grid">
                 {/* Left: Needs Attention */}
                 <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                     <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Needs Attention</h2>
                     {pendingHandoffs.length > 0 && (
                       <span style={{ background: 'var(--hot)', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '12px' }}>
@@ -1706,7 +1706,7 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }}>
                       {pendingHandoffs.map(h => (
                         <div key={h.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                             <div>
                               <div style={{ fontWeight: '700', color: 'var(--ivory)', fontSize: '14px', marginBottom: '4px' }}>
                                 {h.name || 'Unknown Customer'}
@@ -1786,7 +1786,7 @@ export default function Dashboard() {
 
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     {/* Top Row: Age & Gender */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
                       {/* Age Range */}
                       <div>
                         <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>BY AGE</div>
@@ -1831,7 +1831,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Middle Row: Occupation & Purchasing Power */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
                       {/* Occupation */}
                       <div>
                         <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted)', letterSpacing: '0.05em', marginBottom: '12px' }}>OCCUPATION</div>
@@ -1959,7 +1959,7 @@ export default function Dashboard() {
 
                 return (
                   <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', overflow: 'hidden', marginBottom: '40px' }}>
-                    <div style={{ padding: '24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ padding: '24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Recent Customers</h2>
                         {customerFilter && (
@@ -2074,7 +2074,7 @@ export default function Dashboard() {
 
               {/* Referrals Section */}
               <div style={{ ...styles.card, marginTop: '24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                   <h2 style={styles.sectionTitle}>🎁 Referral Engine</h2>
                   <span style={styles.badge(c.primary, '#fff')}>{referrals.length} Total</span>
                 </div>
