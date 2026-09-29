@@ -917,15 +917,62 @@ async def chat(req: ChatRequest):
         return parsed
 
     wallet_balance = 0
+    cust_name = None
+    cust_city = None
+    cust_state = None
+    cust_segment = None
+    cust_ltv = None
+    cust_last_product = None
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
-                bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE ext_id = $1", req.customerId)
-                if bal: wallet_balance = float(bal)
+                # Fetch full customer profile for personalization (§9)
+                cust_row = await conn.fetchrow(
+                    "SELECT name, city, state, segment, lifetime_value, wallet_balance FROM customers WHERE ext_id = $1",
+                    req.customerId
+                )
+                if cust_row:
+                    cust_name = cust_row['name']
+                    cust_city = cust_row['city']
+                    cust_state = cust_row['state']
+                    cust_segment = cust_row['segment']
+                    cust_ltv = float(cust_row['lifetime_value']) if cust_row['lifetime_value'] else None
+                    if cust_row['wallet_balance']:
+                        wallet_balance = float(cust_row['wallet_balance'])
+                    
+                    # Fetch last purchased product
+                    cust_db_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
+                    if cust_db_id:
+                        cust_last_product = await conn.fetchval("""
+                            SELECT ci.name FROM orders o
+                            LEFT JOIN catalog_items ci ON ci.id = o.product_id
+                            WHERE o.customer_id = $1 AND o.status = 'confirmed'
+                            ORDER BY o.created_at DESC LIMIT 1
+                        """, cust_db_id)
         except Exception:
             pass
 
     detected_lang = detect_language(req.message)
+
+    # Build personalization context string (§9)
+    p_name = cust_name if cust_name else "not known — do not guess or invent one"
+    p_location = ""
+    if cust_city and cust_state:
+        p_location = f"{cust_city}, {cust_state}"
+    elif cust_city:
+        p_location = cust_city
+    elif cust_state:
+        p_location = cust_state
+    else:
+        p_location = "not known"
+    p_last_product = cust_last_product if cust_last_product else "no previous purchase"
+    p_segment = cust_segment if cust_segment else "new visitor"
+    p_ltv = f"₹{cust_ltv:.0f}" if cust_ltv else "no data"
+
+    personalization_str = f"""\n👤 KNOWN CUSTOMER INFO:
+Name: {p_name}, Location: {p_location}, Stage: {p_segment}, LTV: {p_ltv}, Last Purchase: {p_last_product}
+RULE: Never invent unknown fields. Use this naturally; do NOT force name/details in every message.
+CRITICAL: YOUR ENTIRE RESPONSE MUST BE A VALID JSON OBJECT EXACTLY MATCHING THE REQUESTED SCHEMA."""
 
     context_str = ""
     biz_ctx = config.get("business_context", {})
@@ -942,10 +989,12 @@ async def chat(req: ChatRequest):
 {context_str}
 📋 STORE POLICIES:
 {config.get('policies')}
+{personalization_str}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 CORE IDENTITY & TONE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Har recommendation ka goal hai: customer ki asli zaroorat + unke buy karne ke chances + unki satisfaction + business ke liye value — sab balance karna. Kabhi bhi sirf price badhane ke liye push mat karo.
 - You are a warm, knowledgeable, and professional shopping assistant — NOT a generic chatbot.
 - Talk like a real, experienced salesperson in a premium store: friendly, confident, helpful.
 - Be conversational and human. Use the customer's name once you know it.
@@ -1017,7 +1066,9 @@ async def chat(req: ChatRequest):
 - **ORDER CONFIRMATION**: ONLY set `order_ready` to true EXACTLY ONCE when the order is first confirmed. If the order was already confirmed in previous messages (e.g. user just saying thanks), MUST set `order_ready` to false. DO NOT set `order_ready` to true if you do not have their details yet. If they say "yes place order" but you don't have details, set `requires_details` to true to show the form first.
 - **DPDP CONSENT**: When showing high purchase intent (setting requires_details or order_ready to true), naturally ask: "Would you like to receive future offers and updates via WhatsApp or email?" in the detected language. Set consent fields ONLY when customer explicitly responds.
 - **CRITICAL PRIVACY RULE (DO NOT GUESS)**: NEVER infer sensitive personal characteristics unnecessarily. Age, gender, occupation, life stage, and purchasing power MUST ONLY be saved if the customer explicitly mentions them (e.g. "I am 25", "I am a student"). **NEVER guess gender from name. NEVER guess age from chatting style.** If not told explicitly, keep these fields null.
-- **CROSS-SELL/UPSELL**: Whenever you recommend or confirm a product, consider suggesting ONE complementary item from the catalog (e.g. jeans → belt, TV → HDMI cable). NEVER force a suggestion. **CRITICAL CULTURAL RULE:** Ensure cross-selling makes logical sense in Indian culture (e.g., NEVER suggest a leather belt with a Kurta or traditional wear). Weave the suggestion naturally into your reply (e.g. "A lot of customers also pick up X with this — want me to add that too?"). Set `cross_sell_product` to the name of the suggested product, otherwise null. Only suggest once per product.
+- **CROSS-SELL**: Whenever you recommend or confirm a product, consider suggesting ONE complementary item from the catalog (e.g. jeans → belt, TV → HDMI cable). NEVER force a suggestion. **CRITICAL CULTURAL RULE:** Ensure cross-selling makes logical sense in Indian culture (e.g., NEVER suggest a leather belt with a Kurta or traditional wear). Weave the suggestion naturally into your reply. Set `cross_sell_product` to the name of the suggested product, otherwise null. Only suggest once per product.
+- **UPSELL**: Agar customer jis product mein interested hai uska catalog mein ek BEHTAR-FIT variant available hai (jaise bada size, extra feature, longer warranty) JO UNKI STATED NEED ko genuinely better serve karta hai, to politely mention karo. Set `upsell_product` field. **STRICT RULE: Kabhi bhi sirf isliye upsell mat karo kyunki wo product mehenga hai — sirf tab jab wo unki actual requirement ko behtar solve karta ho.** Agar customer ne already budget clear bata diya hai, to us budget se upar ka product upsell mat karo.
+- **COMPARISON**: Jab customer explicitly 2 ya zyada specific products ke beech confuse ho (jaise "iska size L aur XL mein kya fark hai" ya "A aur B mein kya fark hai"), to short structured comparison do (2-3 key differences), unki stated need ke hisaab se recommendation do — pura catalog dump mat karo.
 - **WALLET DISCOUNT**: The customer currently has a Digital Wallet balance of ₹{wallet_balance}. If wallet balance > 0 and the user confirms an order, AUTOMATICALLY apply the wallet balance to reduce the total amount (deduct up to the order amount). You MUST output `wallet_discount_applied`: <amount_deducted> in your JSON. Also inform the user in your `reply` that you have applied their wallet balance.
 - If customer mentions their name, city, state, or phone anywhere, acknowledge it and include in JSON.
 
@@ -1055,6 +1106,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
   "objection": "short phrase or null",
   "recommended_product": "product name or null",
   "cross_sell_product": "complementary product name or null",
+  "upsell_product": "better variant product name or null",
   "next_action": "short recommended next step",
   "customer_name": "extracted name or null",
   "customer_city": "extracted city or null",
@@ -1095,8 +1147,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         json={
                             "model": current_model,
                             "messages": messages,
-                            "max_tokens": 1500,
+                            "max_tokens": 4000,
                             "temperature": 0.4,
+                            "response_format": {"type": "json_object"}
                         },
                         timeout=45.0
                     )
@@ -1139,6 +1192,8 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
 
     raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     
+    print(f"\n--- RAW LLM OUTPUT START ---\n{raw}\n--- RAW LLM OUTPUT END ---\n")
+    
     raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
     raw = re.sub(r'\s*```\s*$', '', raw, flags=re.MULTILINE)
     raw = raw.strip()
@@ -1147,6 +1202,8 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
     
     try:
         parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            parsed["raw_llm_output"] = raw
     except json.JSONDecodeError:
         pass
     
@@ -1184,6 +1241,8 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                 
                 fixed = ''.join(result)
                 parsed = json.loads(fixed)
+                if isinstance(parsed, dict):
+                    parsed["raw_llm_output"] = raw
         except Exception as e2:
             pass
     
@@ -1215,6 +1274,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
             "order_amount": None,
             "consent_whatsapp": None,
             "consent_email": None,
+            "raw_llm_output": raw
         }
 
     print("\n" + "="*50)
@@ -1577,6 +1637,78 @@ async def get_customers(shop: Optional[str] = None, _ = Depends(verify_admin)):
             print(f"Warning: Database error fetching customers: {e}")
             raise HTTPException(status_code=500, detail="Database error")
     return []
+def get_next_action(segment, follow_up_stage, opted_out):
+    if opted_out:
+        return "Do not contact (opted out)"
+    if segment == 'HOT' and (follow_up_stage or 0) < 4:
+        return f"Follow-up due soon (stage {follow_up_stage or 0}/4)"
+    if segment == 'DORMANT':
+        return "Dormant win-back sent, monitor response"
+    if segment in ('CUSTOMER', 'REPEAT CUSTOMER'):
+        return "Await first repeat purchase window"
+    return "Continue nurturing"
+
+@app.get("/api/customers/{customer_id}/profile")
+async def get_customer_profile(customer_id: int, _ = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="DB not connected")
+    async with db_pool.acquire() as conn:
+        customer = await conn.fetchrow("""
+            SELECT id, ext_id, name, phone, city, state, source, lifetime_value,
+                   intent_score, segment, preferred_channel, opted_out, last_interaction,
+                   follow_up_stage
+            FROM customers WHERE id = $1
+        """, customer_id)
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        
+        # Calculate avg order value & last purchase
+        order_metrics = await conn.fetchrow("""
+            SELECT AVG(amount) as avg_order_value, MAX(created_at) as last_purchase 
+            FROM orders 
+            WHERE customer_id = $1 AND status = 'confirmed'
+        """, customer_id)
+        
+        avg_order_value = float(order_metrics['avg_order_value']) if order_metrics and order_metrics['avg_order_value'] else 0.0
+        last_purchase = order_metrics['last_purchase'] if order_metrics else None
+        
+        # Internal reuse of endpoints
+        try:
+            products_purchased = await get_customer_orders(customer_id)
+        except Exception:
+            products_purchased = []
+            
+        try:
+            consent_status = await get_customer_consent(customer_id, None)
+        except Exception:
+            consent_status = {"whatsapp": False, "email": False}
+        
+        next_action = get_next_action(customer['segment'], customer['follow_up_stage'], customer['opted_out'])
+        
+        profile = {
+            "Customer ID": customer['id'],
+            "ext_id": customer['ext_id'],
+            "Name": customer['name'],
+            "Contact info": customer['phone'],
+            "City/state": f"{customer['city'] or ''}, {customer['state'] or ''}".strip(", ") if customer['city'] or customer['state'] else "",
+            "Source": customer['source'],
+            "Products viewed": None,  # Not tracked currently
+            "Products purchased": products_purchased,
+            "Purchase history": len(products_purchased),
+            "Average order value": avg_order_value,
+            "Last purchase": last_purchase,
+            "Total lifetime value": float(customer['lifetime_value']) if customer['lifetime_value'] else 0.0,
+            "Interests inferred": None,  # Not explicitly tracked as separate field
+            "Intent score": customer['intent_score'],
+            "Customer segment": customer['segment'],
+            # Note: Currently preferred_channel is static ('chat') because we are a single-channel (chat widget) application. 
+            # It will be made dynamic when future channels (e.g. WhatsApp) are added.
+            "Preferred communication channel": customer['preferred_channel'],
+            "Consent/communication status": consent_status,
+            "Last interaction": customer['last_interaction'],
+            "Next recommended action": next_action
+        }
+        return profile
 
 @app.get("/api/customers/{customer_id}/consent")
 async def get_customer_consent(customer_id: int, _ = Depends(verify_admin)):

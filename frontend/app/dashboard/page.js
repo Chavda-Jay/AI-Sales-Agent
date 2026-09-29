@@ -227,8 +227,8 @@ export default function Dashboard() {
   const [customerFilter, setCustomerFilter] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleteCustomerId, setDeleteCustomerId] = useState(null);
-  const [selectedOrders, setSelectedOrders] = useState(null);
-  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [replyTexts, setReplyTexts] = useState({});
   const [weeklyData, setWeeklyData] = useState([]);
   const [stores, setStores] = useState([]);
@@ -338,13 +338,13 @@ export default function Dashboard() {
     }
   };
 
-  const viewOrders = async (customerId) => {
+  const viewProfile = async (customerId) => {
     try {
-      const res = await authFetch(`${API_BASE}/api/customers/${customerId}/orders`);
+      const res = await authFetch(`${API_BASE}/api/customers/${customerId}/profile`);
       if (res.ok) {
         const data = await res.json();
-        setSelectedOrders(data);
-        setShowOrderModal(true);
+        setSelectedProfile(data);
+        setShowProfileModal(true);
       }
     } catch (e) {
       console.error(e);
@@ -2002,7 +2002,7 @@ export default function Dashboard() {
                                 style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.2s', cursor: 'pointer' }}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                onClick={() => viewOrders(cust.id)}
+                                onClick={() => viewProfile(cust.id)}
                               >
                                 <td style={{ padding: '16px 24px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -2112,30 +2112,123 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {showOrderModal && (
-        <div className="modal-overlay" onClick={() => setShowOrderModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowOrderModal(false)}>✖</button>
-            <h2 style={{ ...styles.sectionTitle, marginBottom: '24px' }}>Order History</h2>
-            {selectedOrders && selectedOrders.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {selectedOrders.map((o, idx) => (
-                  <div key={idx} className="order-item">
+      {showProfileModal && selectedProfile && (
+        <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
+          <div className="modal-content" style={{ maxWidth: '600px', padding: '32px' }} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowProfileModal(false)}>✖</button>
+            <h2 style={{ ...styles.sectionTitle, marginBottom: '24px' }}>Customer Profile</h2>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Customer ID</div>
+                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Customer ID"] || '-'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Name</div>
+                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Name"] || '-'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Contact Info</div>
+                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Contact info"] || '-'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>City/State</div>
+                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["City/state"] || '-'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Source</div>
+                <div style={{ color: c.ivory, fontWeight: 600, textTransform: 'capitalize' }}>{selectedProfile["Source"] || '-'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Segment</div>
+                <div style={{ display: 'inline-flex', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 700,
+                  background: selectedProfile["Customer segment"] === 'HOT' ? 'rgba(255,59,48,0.1)' : 'rgba(255,255,255,0.05)',
+                  color: selectedProfile["Customer segment"] === 'HOT' ? '#ff3b30' : c.muted }}>
+                  {selectedProfile["Customer segment"] || '-'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '20px', borderRadius: '12px', border: `1px solid ${c.line}`, marginBottom: '24px' }}>
+              <div style={{ fontSize: '12px', color: c.cust, fontWeight: 700, marginBottom: '12px', textTransform: 'uppercase' }}>Intelligence & Actions</div>
+              <div style={{ display: 'grid', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Intent Score:</span>
+                  <span style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Intent score"]} / 100</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Lifetime Value:</span>
+                  <span style={{ color: '#34c759', fontWeight: 600 }}>₹{selectedProfile["Total lifetime value"]}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Average Order Value:</span>
+                  <span style={{ color: c.ivory, fontWeight: 600 }}>₹{selectedProfile["Average order value"]}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Last Purchase:</span>
+                  <span style={{ color: c.ivory, fontWeight: 600, fontSize: '13px' }}>
+                    {selectedProfile["Last purchase"] ? new Date(selectedProfile["Last purchase"] + (selectedProfile["Last purchase"].endsWith('Z') ? '' : 'Z')).toLocaleDateString('en-IN') : 'N/A'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Products Viewed:</span>
+                  <span style={{ color: c.ivory, fontWeight: 600, fontSize: '13px' }}>{selectedProfile["Products viewed"] || 'None tracked'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Interests Inferred:</span>
+                  <span style={{ color: c.ivory, fontWeight: 600, fontSize: '13px' }}>{selectedProfile["Interests inferred"] || 'None tracked'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Next Action:</span>
+                  <span style={{ color: c.accent, fontWeight: 600, fontSize: '13px' }}>{selectedProfile["Next recommended action"]}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '20px', borderRadius: '12px', border: `1px solid ${c.line}`, marginBottom: '24px' }}>
+              <div style={{ fontSize: '12px', color: c.cust, fontWeight: 700, marginBottom: '12px', textTransform: 'uppercase' }}>Communication & Consent</div>
+              <div style={{ display: 'grid', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Preferred Channel:</span>
+                  <span style={{ color: c.ivory, fontWeight: 600, textTransform: 'capitalize' }}>{selectedProfile["Preferred communication channel"] || 'Chat'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Consent Status:</span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ background: selectedProfile["Consent/communication status"]?.whatsapp ? 'rgba(52, 199, 89, 0.1)' : 'rgba(255,255,255,0.05)', color: selectedProfile["Consent/communication status"]?.whatsapp ? '#34c759' : c.muted, padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>WhatsApp</span>
+                    <span style={{ background: selectedProfile["Consent/communication status"]?.email ? 'rgba(52, 199, 89, 0.1)' : 'rgba(255,255,255,0.05)', color: selectedProfile["Consent/communication status"]?.email ? '#34c759' : c.muted, padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>Email</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: c.muted, fontSize: '13px' }}>Last Interaction:</span>
+                  <span style={{ color: c.ivory, fontWeight: 600, fontSize: '13px' }}>
+                    {selectedProfile["Last interaction"] ? new Date(selectedProfile["Last interaction"] + (selectedProfile["Last interaction"].endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true}) : 'N/A'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <h3 style={{ fontSize: '14px', color: c.ivory, marginBottom: '16px', fontWeight: 600 }}>Products Purchased ({selectedProfile["Purchase history"]})</h3>
+            {selectedProfile["Products purchased"] && selectedProfile["Products purchased"].length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '200px', overflowY: 'auto' }}>
+                {selectedProfile["Products purchased"].map((o, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
                     <div>
-                      <div style={{ fontWeight: 600, color: c.ivory }}>{o.product_name || 'Unknown Product'}</div>
-                      <div style={{ fontSize: '12px', color: c.muted, marginTop: '4px' }}>Order ID: {o.id}</div>
-                      <div style={{ fontSize: '12px', color: c.muted, marginTop: '2px' }}>
+                      <div style={{ fontWeight: 600, color: c.ivory, fontSize: '13px' }}>{o.product_name || 'Unknown Product'}</div>
+                      <div style={{ fontSize: '11px', color: c.muted, marginTop: '4px' }}>
                         {new Date(o.created_at + (o.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', {
-                          day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
+                          day: 'numeric', month: 'short', year: 'numeric'
                         })}
                       </div>
                     </div>
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: c.cust }}>₹{o.amount}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#34c759' }}>₹{o.amount}</div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div style={{ textAlign: 'center', color: c.muted, padding: '32px 0' }}>No orders found for this customer.</div>
+              <div style={{ color: c.muted, fontSize: '13px', fontStyle: 'italic', padding: '12px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>
+                No purchases yet.
+              </div>
             )}
           </div>
         </div>

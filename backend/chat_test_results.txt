@@ -1,0 +1,151 @@
+
+--- TEST: Cotton T-shirt aur Formal Shirt mein kya fark hai, mujhe office ke liye chahiye ---
+REPLY: Sure! Here’s a quick look:
+
+👕 **Cotton T-shirt** — 499
+Basic comfortable cotton T‑shirt, everyday wear.
+
+👔 **Formal Shirt** — 1299
+Premium formal shirt for office and meetings, better fabric.
+
+Formal Shirt aapke office ke liye best hai because it looks more polished, while Cotton T‑shirt casual hai. Aapko kaun sa size aur colour chahiye? Also, aapke office look ke liye **Premium Sneakers** bhi achhe rahenge. Let me know!
+UPSELL PRODUCT: None
+CROSS SELL: Premium Sneakers
+JSON OUTPUT: {
+  "reply": "Sure! Here\u2019s a quick look:\n\n\ud83d\udc55 **Cotton T-shirt** \u2014 499\nBasic comfortable cotton T\u2011shirt, everyday wear.\n\n\ud83d\udc54 **Formal Shirt** \u2014 1299\nPremium formal shirt for office and meetings, better fabric.\n\nFormal Shirt aapke office ke liye best hai because it looks more polished, while Cotton T\u2011shirt casual hai. Aapko kaun sa size aur colour chahiye? Also, aapke office look ke liye **Premium Sneakers** bhi achhe rahenge. Let me know!",
+  "score_purchase_intent": 13,
+  "score_product_interest": 12,
+  "score_engagement": 9,
+  "score_recency": 13,
+  "score_customer_fit": 7,
+  "score_purchase_history": 0,
+  "score_estimated_value": 3,
+  "segment": "WARM",
+  "reasoning": "User is comparing two catalog items and wants to buy for office use",
+  "objection": null,
+  "recommended_product": "Formal Shirt",
+  "cross_sell_product": "Premium Sneakers",
+  "upsell_product": null,
+  "next_action": "Ask for size and colour preference",
+  "customer_name": null,
+  "customer_city": null,
+  "customer_phone": null,
+  "needs_human": false,
+  "handoff_reason": null,
+  "requires_details": false,
+  "order_ready": false,
+  "order_product": null,
+  "order_amount": null,
+  "wallet_discount_applied": 0,
+  "consent_whatsapp": null,
+  "consent_email": null,
+  "state": null,
+  "urban_type": null,
+  "age_range": null,
+  "gender": null,
+  "occupation": null,
+  "purchasing_power": "mid",
+  "life_stage": null,
+  "behavior_tags": [
+    "Premium"
+  ],
+  "intent_score": 57,
+  "walletBalance": 0.0
+}
+
+--- TEST: mera budget 1000 hai, kuch achha sneakers dikhao ---
+REPLY: Here are the options within ₹1000:
+
+👟 **Sports Sneakers** — ₹999, budget-friendly sports sneakers for everyday use.
+![Sports Sneakers](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/sports_sneakers.jpg)
+
+Would you like to add them to your cart?
+UPSELL PRODUCT: None
+CROSS SELL: Cotton T-shirt
+JSON OUTPUT: {
+  "reply": "Here are the options within \u20b91000:\n\n\ud83d\udc5f **Sports Sneakers** \u2014 \u20b9999, budget-friendly sports sneakers for everyday use.\n![Sports Sneakers](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/sports_sneakers.jpg)\n\nWould you like to add them to your cart?",
+  "score_purchase_intent": 22,
+  "score_product_interest": 18,
+  "score_engagement": 12,
+  "score_recency": 15,
+  "score_customer_fit": 7,
+  "score_purchase_history": 0,
+  "score_estimated_value": 1,
+  "segment": "WARM",
+  "reasoning": "User is actively looking for sneakers within a tight budget.",
+  "objection": null,
+  "recommended_product": "Sports Sneakers",
+  "cross_sell_product": "Cotton T-shirt",
+  "upsell_product": null,
+  "next_action": "Ask if they want to add to cart",
+  "customer_name": null,
+  "customer_city": null,
+  "customer_phone": null,
+  "needs_human": false,
+  "handoff_reason": null,
+  "requires_details": false,
+  "order_ready": false,
+  "order_product": null,
+  "order_amount": null,
+  "wallet_discount_applied": 0,
+  "consent_whatsapp": null,
+  "consent_email": null,
+  "state": null,
+  "urban_type": null,
+  "age_range": null,
+  "gender": null,
+  "occupation": null,
+  "purchasing_power": null,
+  "life_stage": null,
+  "behavior_tags": [
+    "Price-sensitive"
+  ],
+  "intent_score": 75,
+  "walletBalance": 0.0
+}
+
+--- TEST: Cotton T-shirt lena hai ---
+REPLY: Sure! Here’s the Cotton T‑shirt:
+👕 **Cotton T‑shirt** — 499, basic comfortable cotton T‑shirt for everyday wear.
+Would you like to place the order? Please share your name and city, and let me know if you’d like to receive offers via WhatsApp or email.
+UPSELL PRODUCT: None
+CROSS SELL: Sports Sneakers
+JSON OUTPUT: {
+  "reply": "Sure! Here\u2019s the Cotton T\u2011shirt:\n\ud83d\udc55 **Cotton T\u2011shirt** \u2014 499, basic comfortable cotton T\u2011shirt for everyday wear.\nWould you like to place the order? Please share your name and city, and let me know if you\u2019d like to receive offers via WhatsApp or email.",
+  "score_purchase_intent": 22,
+  "score_product_interest": 14,
+  "score_engagement": 8,
+  "score_recency": 13,
+  "score_customer_fit": 8,
+  "score_purchase_history": 0,
+  "score_estimated_value": 1,
+  "segment": "WARM",
+  "reasoning": "User wants to buy a cotton T\u2011shirt from our catalog",
+  "objection": null,
+  "recommended_product": "Cotton T\u2011shirt",
+  "cross_sell_product": "Sports Sneakers",
+  "upsell_product": null,
+  "next_action": "Collect order details (name, city, consent)",
+  "customer_name": null,
+  "customer_city": null,
+  "customer_phone": null,
+  "needs_human": false,
+  "handoff_reason": null,
+  "requires_details": true,
+  "order_ready": false,
+  "order_product": "Cotton T\u2011shirt",
+  "order_amount": 499,
+  "wallet_discount_applied": 0,
+  "consent_whatsapp": null,
+  "consent_email": null,
+  "state": null,
+  "urban_type": null,
+  "age_range": null,
+  "gender": null,
+  "occupation": null,
+  "purchasing_power": null,
+  "life_stage": null,
+  "behavior_tags": [],
+  "intent_score": 66,
+  "walletBalance": 0.0
+}

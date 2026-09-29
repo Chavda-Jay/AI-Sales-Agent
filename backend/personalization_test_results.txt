@@ -1,0 +1,62 @@
+
+============================================================
+TEST: PAST ORDER INQUIRY - Should use context naturally
+Customer ID: demo-customer-1789462200889
+Message: kya mere pehle order ke hisaab se kuch suggest kar sakte ho?
+============================================================
+
+AI REPLY:
+Bilkul, Rudra! Aapke Samsung TV ke liye ek smart speaker perfect rahega. 🎶 **Amazon Echo Dot** — 3499, 5th Gen Alexa with Deep Sea Blue color. Yeh aapke TV ko voice control aur extra sound experience dega. ![Product Image](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/echo_dot.jpg)
+Kya aap iske baare mein aur details dekhna chahenge?
+
+KEY FIELDS:
+  recommended_product: Amazon Echo Dot
+  customer_name: None
+  segment: REPEAT CUSTOMER
+
+RAW LLM OUTPUT:
+{"reply":"Bilkul, Rudra! Aapke Samsung TV ke liye ek smart speaker perfect rahega. 🎶 **Amazon Echo Dot** — 3499, 5th Gen Alexa with Deep Sea Blue color. Yeh aapke TV ko voice control aur extra sound experience dega. ![Product Image](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/echo_dot.jpg)\nKya aap iske baare mein aur details dekhna chahenge?","score_purchase_intent":12,"score_product_interest":12,"score_engagement":8,"score_recency":14,"score_customer_fit":8,"score_purchase_history":5,"score_estimated_value":3,"segment":"CUSTOMER","reasoning":"User asks for suggestion based on previous TV purchase","objection":null,"recommended_product":"Amazon Echo Dot","cross_sell_product":null,"upsell_product":null,"next_action":"Provide more details or confirm interest","customer_name":null,"customer_city":null,"customer_phone":null,"needs_human":false,"handoff_reason":null,"requires_details":false,"order_ready":false,"order_product":null,"order_amount":null,"wallet_discount_applied":0,"consent_whatsapp":null,"consent_email":null,"state":null,"urban_type":"Semi-urban","age_range":null,"gender":null,"occupation":null,"purchasing_power":null,"life_stage":null,"behavior_tags":["VIP"]}
+
+FULL JSON:
+{
+  "reply": "Bilkul, Rudra! Aapke Samsung TV ke liye ek smart speaker perfect rahega. 🎶 **Amazon Echo Dot** — 3499, 5th Gen Alexa with Deep Sea Blue color. Yeh aapke TV ko voice control aur extra sound experience dega. ![Product Image](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/echo_dot.jpg)\nKya aap iske baare mein aur details dekhna chahenge?",
+  "score_purchase_intent": 12,
+  "score_product_interest": 12,
+  "score_engagement": 8,
+  "score_recency": 14,
+  "score_customer_fit": 8,
+  "score_purchase_history": 5,
+  "score_estimated_value": 3,
+  "segment": "REPEAT CUSTOMER",
+  "reasoning": "User asks for suggestion based on previous TV purchase",
+  "objection": null,
+  "recommended_product": "Amazon Echo Dot",
+  "cross_sell_product": null,
+  "upsell_product": null,
+  "next_action": "Provide more details or confirm interest",
+  "customer_name": null,
+  "customer_city": null,
+  "customer_phone": null,
+  "needs_human": false,
+  "handoff_reason": null,
+  "requires_details": false,
+  "order_ready": false,
+  "order_product": null,
+  "order_amount": null,
+  "wallet_discount_applied": 0,
+  "consent_whatsapp": null,
+  "consent_email": null,
+  "state": null,
+  "urban_type": "Semi-urban",
+  "age_range": null,
+  "gender": null,
+  "occupation": null,
+  "purchasing_power": null,
+  "life_stage": null,
+  "behavior_tags": [
+    "VIP"
+  ],
+  "raw_llm_output": "{\"reply\":\"Bilkul, Rudra! Aapke Samsung TV ke liye ek smart speaker perfect rahega. 🎶 **Amazon Echo Dot** — 3499, 5th Gen Alexa with Deep Sea Blue color. Yeh aapke TV ko voice control aur extra sound experience dega. ![Product Image](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/echo_dot.jpg)\\nKya aap iske baare mein aur details dekhna chahenge?\",\"score_purchase_intent\":12,\"score_product_interest\":12,\"score_engagement\":8,\"score_recency\":14,\"score_customer_fit\":8,\"score_purchase_history\":5,\"score_estimated_value\":3,\"segment\":\"CUSTOMER\",\"reasoning\":\"User asks for suggestion based on previous TV purchase\",\"objection\":null,\"recommended_product\":\"Amazon Echo Dot\",\"cross_sell_product\":null,\"upsell_product\":null,\"next_action\":\"Provide more details or confirm interest\",\"customer_name\":null,\"customer_city\":null,\"customer_phone\":null,\"needs_human\":false,\"handoff_reason\":null,\"requires_details\":false,\"order_ready\":false,\"order_product\":null,\"order_amount\":null,\"wallet_discount_applied\":0,\"consent_whatsapp\":null,\"consent_email\":null,\"state\":null,\"urban_type\":\"Semi-urban\",\"age_range\":null,\"gender\":null,\"occupation\":null,\"purchasing_power\":null,\"life_stage\":null,\"behavior_tags\":[\"VIP\"]}",
+  "intent_score": 62,
+  "walletBalance": 0.0
+}
