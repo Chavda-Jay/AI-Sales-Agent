@@ -1,0 +1,26 @@
+{
+  "2026": {
+    "New Year": "2026-01-01",
+    "Uttarayan / Makar Sankranti": "2026-01-14",
+    "Republic Day": "2026-01-26",
+    "Holi": "DATE - VERIFY",
+    "Akshaya Tritiya": "DATE - VERIFY",
+    "Eid ul-Fitr": "DATE - VERIFY (lunar, confirm closer to date)",
+    "Raksha Bandhan": "DATE - VERIFY",
+    "Independence Day": "2026-08-15",
+    "Janmashtami": "DATE - VERIFY",
+    "Ganesh Chaturthi": "DATE - VERIFY",
+    "Navratri": "DATE - VERIFY",
+    "Dussehra": "DATE - VERIFY",
+    "Diwali": "DATE - VERIFY",
+    "Eid ul-Adha": "DATE - VERIFY (lunar, confirm closer to date)",
+    "Christmas": "2026-12-25"
+  },
+  "seasons": {
+    "Monsoon": "June-September",
+    "Summer": "March-June",
+    "Wedding season": "November-February, April-May",
+    "School/college season": "June-July admissions, March-April exams",
+    "Back to school": "June-July"
+  }
+}

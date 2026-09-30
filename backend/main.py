@@ -44,6 +44,10 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if SUPABASE_URL and SUPABASE_KEY:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# §10 Festival calendar (loaded at startup from festival_calendar.json)
+festival_calendar = {}
+
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "openai/gpt-oss-120b"
 FALLBACK_MODELS = [
@@ -514,6 +518,7 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS follow_up_stage INT DEFAULT 0;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS score_band TEXT;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS score_breakdown JSONB;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS preferred_language TEXT;")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS handoffs (
                         id SERIAL PRIMARY KEY,
@@ -562,6 +567,14 @@ async def lifespan(app: FastAPI):
             print(f"Warning: Could not connect to database or load history. Using in-memory fallback. Error: {e}")
     else:
         print("Warning: DATABASE_URL not set. Using in-memory fallback.")
+    
+    # §10 Load festival calendar
+    global festival_calendar
+    cal_path = os.path.join(BASE_DIR, "festival_calendar.json")
+    if os.path.exists(cal_path):
+        with open(cal_path, "r", encoding="utf-8") as fc:
+            festival_calendar = json.load(fc)
+        print(f"Festival calendar loaded: {len(festival_calendar.get(str(datetime.now().year), {}))} events for {datetime.now().year}")
     
     worker_task = asyncio.create_task(follow_up_cadence_worker())
     retention_worker_task = asyncio.create_task(post_purchase_retention_worker())
@@ -762,11 +775,73 @@ async def load_config_from_db(slug: str, conn):
     }
 
 def detect_language(text: str) -> str:
+    """Detect the script/language of the user's message from Unicode ranges."""
+    # Check specific scripts first (most-specific to least-specific)
+    if re.search(r'[\u0B80-\u0BFF]', text):
+        return 'Tamil'
+    if re.search(r'[\u0C00-\u0C7F]', text):
+        return 'Telugu'
+    if re.search(r'[\u0C80-\u0CFF]', text):
+        return 'Kannada'
+    if re.search(r'[\u0D00-\u0D7F]', text):
+        return 'Malayalam'
+    if re.search(r'[\u0980-\u09FF]', text):
+        return 'Bengali'
+    if re.search(r'[\u0A00-\u0A7F]', text):
+        return 'Punjabi'
     if re.search(r'[\u0A80-\u0AFF]', text):
-        return 'Gujarati — reply ONLY in Gujarati script (ગુજરાતી)'
+        return 'Gujarati'
     if re.search(r'[\u0900-\u097F]', text):
-        return 'Hindi — reply ONLY in Hindi (Devanagari) script'
-    return 'English or Hinglish (Roman script) — if the customer mixed Hindi words in Roman letters, reply the same natural Hinglish way; if they wrote plain English, reply in plain English'
+        # Devanagari — could be Hindi or Marathi; check common Marathi markers
+        marathi_markers = ['आहे', 'काय', 'नाही', 'होता', 'असे', 'करा', 'मला', 'तुम्ही', 'आम्ही', 'हे', 'ची', 'चा', 'चे']
+        if any(m in text for m in marathi_markers):
+            return 'Marathi'
+        return 'Hindi'
+    return 'English or Hinglish'
+
+def get_upcoming_festivals() -> str:
+    """Return a prompt-ready string of festivals within the next 14 days."""
+    from datetime import date as date_type
+    today = datetime.now().date()
+    year_str = str(today.year)
+    upcoming = []
+    
+    year_events = festival_calendar.get(year_str, {})
+    for name, date_str in year_events.items():
+        if "VERIFY" in str(date_str):
+            continue  # Skip unverified dates
+        try:
+            fest_date = date_type.fromisoformat(date_str)
+            delta = (fest_date - today).days
+            if 0 <= delta <= 14:
+                upcoming.append(f"{name} on {date_str}")
+        except (ValueError, TypeError):
+            continue
+    
+    # Also check current season
+    seasons = festival_calendar.get("seasons", {})
+    month = today.month
+    season_hints = []
+    if 6 <= month <= 9:
+        season_hints.append("Monsoon season")
+    if 3 <= month <= 6:
+        season_hints.append("Summer season")
+    if month in [11, 12, 1, 2, 4, 5]:
+        season_hints.append("Wedding season")
+    if month in [6, 7]:
+        season_hints.append("School/college admissions season")
+    if month in [3, 4]:
+        season_hints.append("Exam season")
+    
+    result = ""
+    if upcoming:
+        result += "📅 Upcoming: " + ", ".join(upcoming) + " — mention ONLY if naturally relevant, never force it."
+    if season_hints:
+        if result:
+            result += "\n"
+        result += "🌤️ Current season: " + ", ".join(season_hints) + "."
+    return result
+
 
 class ChatRequest(BaseModel):
     customerId: str
@@ -923,12 +998,13 @@ async def chat(req: ChatRequest):
     cust_segment = None
     cust_ltv = None
     cust_last_product = None
+    cust_preferred_lang = None
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
                 # Fetch full customer profile for personalization (§9)
                 cust_row = await conn.fetchrow(
-                    "SELECT name, city, state, segment, lifetime_value, wallet_balance FROM customers WHERE ext_id = $1",
+                    "SELECT name, city, state, segment, lifetime_value, wallet_balance, preferred_language FROM customers WHERE ext_id = $1",
                     req.customerId
                 )
                 if cust_row:
@@ -939,6 +1015,7 @@ async def chat(req: ChatRequest):
                     cust_ltv = float(cust_row['lifetime_value']) if cust_row['lifetime_value'] else None
                     if cust_row['wallet_balance']:
                         wallet_balance = float(cust_row['wallet_balance'])
+                    cust_preferred_lang = cust_row.get('preferred_language')
                     
                     # Fetch last purchased product
                     cust_db_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", req.customerId)
@@ -953,6 +1030,13 @@ async def chat(req: ChatRequest):
             pass
 
     detected_lang = detect_language(req.message)
+    
+    # Build language context for system prompt (§10)
+    lang_context = f"Detected language from current message: {detected_lang}."
+    if cust_preferred_lang:
+        lang_context += f" This customer previously communicated in: {cust_preferred_lang}."
+
+    festival_str = get_upcoming_festivals()
 
     # Build personalization context string (§9)
     p_name = cust_name if cust_name else "not known — do not guess or invent one"
@@ -991,6 +1075,8 @@ CRITICAL: YOUR ENTIRE RESPONSE MUST BE A VALID JSON OBJECT EXACTLY MATCHING THE 
 {config.get('policies')}
 {personalization_str}
 
+{festival_str}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 CORE IDENTITY & TONE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1005,12 +1091,18 @@ CRITICAL: YOUR ENTIRE RESPONSE MUST BE A VALID JSON OBJECT EXACTLY MATCHING THE 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🌐 LANGUAGE (CRITICAL):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Detected language: {detected_lang}
-- ALWAYS reply in the SAME language/script as the customer's message.
-- If they write in Hindi (Devanagari script), reply in Hindi (Devanagari). 
-- If they write in Hinglish (Hindi written using English/Latin alphabet like "kese ho"), you MUST reply in Hinglish using ONLY the English alphabet.
-- CRITICAL: NEVER use Gurmukhi/Punjabi scripts or any other unrelated scripts.
-- Sound native, conversational, and natural.
+{lang_context}
+- Detect the language/script the customer used and reply in the SAME language and script.
+- Supported: Hindi (Devanagari or Hinglish/Roman), English, Gujarati, Marathi, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi.
+- If they mix languages, mirror that style. If unclear, default to English or Hinglish based on script used.
+- Sound native, conversational, and natural in whichever language you reply in.
+- You MUST also output a "detected_language" field in your JSON with one of: "English", "Hindi", "Hinglish", "Gujarati", "Marathi", "Tamil", "Telugu", "Kannada", "Malayalam", "Bengali", "Punjabi".
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ SENSITIVITY GUARDRAIL (STRICT):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NEVER use a customer's religion, caste, political view, or health condition to target messaging. Festival mentions are GENERAL/CULTURAL context only, never targeted at assumed religious identity. Do not exploit any sensitive personal characteristic for sales.
+
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🛍️ HOW TO RESPOND TO DIFFERENT SITUATIONS:
@@ -1127,8 +1219,10 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
   "occupation": "extracted occupation string or null (ONLY if explicitly mentioned)",
   "purchasing_power": "extracted purchasing power string or null (only infer loosely from order value discussed)",
   "life_stage": "extracted life stage string or null (ONLY if explicitly mentioned)",
-  "behavior_tags": ["array", "of", "tags", "or empty array [] (ONLY use exact tags: VIP, Price-sensitive, Premium, Discount-driven, Seasonal buyer - add ONLY if behavior clearly shows)"]
+  "behavior_tags": ["array", "of", "tags", "or empty array [] (ONLY use exact tags: VIP, Price-sensitive, Premium, Discount-driven, Seasonal buyer - add ONLY if behavior clearly shows)"],
+  "detected_language": "English | Hindi | Hinglish | Gujarati | Marathi | Tamil | Telugu | Kannada | Malayalam | Bengali | Punjabi"
 }}"""
+
 
     messages = [{"role": "system", "content": system_prompt}] + history[-12:] + [{"role": "user", "content": req.message}]
 
@@ -1424,6 +1518,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                             ),
                             score_band = COALESCE($20, score_band),
                             score_breakdown = COALESCE($21::jsonb, score_breakdown),
+                            preferred_language = COALESCE($22, preferred_language),
                             followed_up_at = NULL,
                             follow_up_stage = 0
                         WHERE id = $3
@@ -1448,7 +1543,8 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         parsed.get("life_stage"),
                         parsed.get("behavior_tags"),
                         score_band,
-                        json.dumps(score_breakdown) if score_breakdown else None
+                        json.dumps(score_breakdown) if score_breakdown else None,
+                        parsed.get("detected_language")
                     )
                 
                 await conn.execute(

@@ -1,0 +1,138 @@
+======================================================================
+PART 1: ROMANIZED SCRIPT TESTS (via /api/chat)
+======================================================================
+
+============================================================
+LANGUAGE: Gujarati
+USER MESSAGE: aa product ni kimmat shun chhe? mane janvu chhe
+============================================================
+
+AI REPLY:
+Kaunse product ki price jaan na chahte hain? Hum aapko details de dete hain 😊
+
+REASONING: User asked price but didn't specify product
+
+============================================================
+LANGUAGE: Marathi
+USER MESSAGE: ya utpadanachi kimmat kay aahe?
+============================================================
+
+AI REPLY:
+Kripya tumhi konta utpadanacha vichar karta ahat? Tumhala aavdyacha category sangal tar mi price aani details dene shakto.
+
+REASONING: Customer asked for price but didn't specify product
+
+============================================================
+LANGUAGE: Tamil
+USER MESSAGE: indha thayarippin vilai enna?
+============================================================
+
+AI REPLY:
+Indha thayarippin vilai enna? Kripaya, ethai product aaga irukkum endru sollunga, naan unga kitta price solla mudiyum.
+
+REASONING: User is asking for price but no product specified.
+
+============================================================
+LANGUAGE: Telugu
+USER MESSAGE: ee utpatti dhara entha?
+============================================================
+
+AI REPLY:
+कृपया बताइए कि आप किस उत्पाद के बारे में पूछ रहे हैं?
+
+REASONING: User is asking for product origin, indicating initial interest.
+
+============================================================
+LANGUAGE: Kannada
+USER MESSAGE: ee utpannada bele eshtu?
+============================================================
+
+AI REPLY:
+Sure! Which product are you interested in? We have TVs, fridges, laptops, gaming consoles and more. Let me know the name so I can share the price 😊
+
+REASONING: User asked for price but didn't specify product
+
+============================================================
+LANGUAGE: Malayalam
+USER MESSAGE: ee ulpannatthinte vila ethra?
+============================================================
+
+AI REPLY:
+Could you please let me know which product you’re referring to?
+
+REASONING: User asked price but did not specify product
+
+============================================================
+LANGUAGE: Bengali
+USER MESSAGE: ei ponyer daam koto?
+============================================================
+
+AI REPLY:
+Mujhe maaf kijiye, Sharma Electronics mein sirf listed products hi milte hain. Kya aapko humare koi product dekhna hai?
+
+REASONING: User asked price for an unknown product
+
+============================================================
+LANGUAGE: Punjabi
+USER MESSAGE: is utpaad di keemat ki hai?
+============================================================
+
+AI REPLY:
+Namaste! Sharma Electronics mein humare paas kai products hain, isliye 'is utpaad' se thoda clear kijiye ki aap kis cheez ki keemat jaanna chahte hain? Kya aap Samsung TV, MacBook, ya kisi aur product ke baare mein pooch rahe hain? 😊
+
+REASONING: Customer is asking for the price of an unspecified product in Punjabi.
+
+
+======================================================================
+PART 2: NATIVE SCRIPT TESTS (via /api/chat)
+======================================================================
+
+============================================================
+LANGUAGE: Gujarati-Script
+USER MESSAGE: આ પ્રોડક્ટની કિંમત શું છે?
+============================================================
+
+AI REPLY:
+કૃપા કરીને તમે કયા પ્રોડક્ટની કિંમત જાણવા માંગો છો તે જણાવો 🙏
+
+REASONING: Customer wants price but hasn't specified product
+
+============================================================
+LANGUAGE: Marathi-Script
+USER MESSAGE: या उत्पादनाची किंमत काय आहे?
+============================================================
+
+AI REPLY:
+कृपया बताइए कि आप किस उत्पाद के बारे में पूछ रहे हैं?
+
+REASONING: User wants price info but hasn't specified product.
+
+============================================================
+LANGUAGE: Tamil-Script
+USER MESSAGE: இந்த தயாரிப்பின் விலை என்ன?
+============================================================
+
+AI REPLY:
+தயவுசெய்து தயாரிப்பு பெயரை குறிப்பிடுங்கள், அதன் விலை தெரியப்படுத்துகிறேன்.
+
+REASONING: User asked for price but did not specify product.
+
+============================================================
+LANGUAGE: Telugu-Script
+USER MESSAGE: ఈ ఉత్పత్తి ధర ఎంత?
+============================================================
+
+AI REPLY:
+Sure! Could you tell me which product you’re interested in? We have a range of electronics and apparel to choose from.
+
+REASONING: User asked price but didn’t specify product
+
+============================================================
+LANGUAGE: Bengali-Script
+USER MESSAGE: এই পণ্যের দাম কত?
+============================================================
+
+AI REPLY:
+দয়া করে নির্দিষ্ট করুন কোন পণ্যটির দাম জানতে চান?
+
+REASONING: User wants price but product not specified
