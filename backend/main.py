@@ -51,9 +51,9 @@ festival_calendar = {}
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "openai/gpt-oss-120b"
 FALLBACK_MODELS = [
-    GROQ_MODEL, 
+    GROQ_MODEL,
     "openai/gpt-oss-20b",
-    "qwen/qwen3.8-27b", 
+    "qwen/qwen3.8-27b",
     "allam-2-7b"
 ]
 
@@ -484,6 +484,44 @@ async def recency_decay_worker():
         except Exception as e:
             print(f"Recency decay worker error: {e}")
 
+MORNING_REPORT_HOUR = 8
+EVENING_REPORT_HOUR = 20
+
+async def daily_report_worker():
+    from datetime import datetime
+    import json
+    while True:
+        await asyncio.sleep(1800)  # 30 min check interval
+        if not db_pool:
+            continue
+        try:
+            now = datetime.now()
+            report_type = None
+            if now.hour == MORNING_REPORT_HOUR:
+                report_type = 'morning'
+            elif now.hour == EVENING_REPORT_HOUR:
+                report_type = 'evening'
+            if not report_type:
+                continue
+            async with db_pool.acquire() as conn:
+                businesses = await conn.fetch("SELECT id FROM businesses")
+                for b in businesses:
+                    exists = await conn.fetchval(
+                        "SELECT id FROM daily_reports WHERE business_id=$1 AND report_date=CURRENT_DATE AND report_type=$2",
+                        b['id'], report_type
+                    )
+                    if exists:
+                        continue
+                    report_data = await compute_daily_report(b['id'], conn, now.date())
+                    await conn.execute(
+                        "INSERT INTO daily_reports (business_id, report_date, report_type, data) VALUES ($1, CURRENT_DATE, $2, $3::jsonb)",
+                        b['id'], report_type, json.dumps(report_data)
+                    )
+                    print(f"Saved {report_type} report for business {b['id']}")
+        except Exception as e:
+            print(f"Daily report worker error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_pool
@@ -562,6 +600,17 @@ async def lifespan(app: FastAPI):
                         created_at TIMESTAMP DEFAULT NOW()
                     )
                 """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_reports (
+                        id SERIAL PRIMARY KEY,
+                        business_id INT REFERENCES businesses(id),
+                        report_date DATE,
+                        report_type TEXT,
+                        data JSONB,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE(business_id, report_date, report_type)
+                    )
+                """)
             print("Database connected and history loaded.")
         except Exception as e:
             print(f"Warning: Could not connect to database or load history. Using in-memory fallback. Error: {e}")
@@ -570,7 +619,7 @@ async def lifespan(app: FastAPI):
     
     # §10 Load festival calendar
     global festival_calendar
-    cal_path = os.path.join(BASE_DIR, "festival_calendar.json")
+    cal_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "festival_calendar.json")
     if os.path.exists(cal_path):
         with open(cal_path, "r", encoding="utf-8") as fc:
             festival_calendar = json.load(fc)
@@ -580,11 +629,13 @@ async def lifespan(app: FastAPI):
     retention_worker_task = asyncio.create_task(post_purchase_retention_worker())
     dormant_worker_task = asyncio.create_task(dormant_customer_worker())
     recency_worker_task = asyncio.create_task(recency_decay_worker())
+    daily_report_task = asyncio.create_task(daily_report_worker())
     yield
     worker_task.cancel()
     retention_worker_task.cancel()
     dormant_worker_task.cancel()
     recency_worker_task.cancel()
+    daily_report_task.cancel()
     if db_pool:
         await db_pool.close()
 
@@ -835,7 +886,7 @@ def get_upcoming_festivals() -> str:
     
     result = ""
     if upcoming:
-        result += "📅 Upcoming: " + ", ".join(upcoming) + " — mention ONLY if naturally relevant, never force it."
+        result += "📅 Upcoming Festivals: " + ", ".join(upcoming) + ".\nCRITICAL RULE: If the customer is browsing casually or asks about festivals/offers, you MUST explicitly mention the exact festival name (e.g., 'Navratri') in your response. Do NOT use generic terms like 'festive season'. Give a warm festival wish!"
     if season_hints:
         if result:
             result += "\n"
@@ -875,8 +926,7 @@ async def voice_to_text(file: UploadFile = File(...)):
             files = {'file': (file.filename, content, file.content_type)}
             data = {
                 'model': 'whisper-large-v3-turbo',
-                'language': 'hi',
-                'prompt': 'This is a customer speaking to a shopping assistant in India. They may speak in Hindi, Gujarati, Hinglish, or English. Transcribe exactly what they say. Do NOT add any commentary.'
+                'prompt': 'This is a customer speaking to a shopping assistant in India. They may speak in English, Hindi, Hinglish, Gujarati, Marathi, Tamil, Telugu, Kannada, Malayalam, Bengali, or Punjabi. Transcribe exactly what they say in their original language. Do NOT add commentary. Do NOT translate to English.'
             }
             response = await client.post(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
@@ -1087,6 +1137,8 @@ CRITICAL: YOUR ENTIRE RESPONSE MUST BE A VALID JSON OBJECT EXACTLY MATCHING THE 
 - NEVER sound robotic, repetitive, or overly formal. Vary your language naturally.
 - Keep responses concise (2-4 sentences for simple queries, more only when listing products).
 - Show genuine enthusiasm about the products you sell. You love this brand!
+- If asked whether you are human/AI, be honest: you are an AI assistant for {config.get('brandName')}. Do NOT claim to be a human, but stay warm and natural about it.
+- NEVER fabricate information (prices, stock, policies, delivery dates, certifications) that isn't in the catalog/policies given to you. If you don't know, say so and offer to connect them with the team.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🌐 LANGUAGE (CRITICAL):
@@ -1129,9 +1181,17 @@ NEVER use a customer's religion, caste, political view, or health condition to t
 - Once product choices (if any) are finalized and the customer is ready to checkout, set `requires_details` to true to show the shipping form.
 - Do NOT ask for name/phone/address in text when setting requires_details to true — the form handles that.
 
-**Objections / Hesitation:**
-- Address concerns empathetically. Highlight value, quality, return policy.
-- "I totally understand! The quality of this fabric is premium — and we have hassle-free returns if it doesn't work out."
+**Objections / Hesitation (Handle these specific concerns proactively):**
+- Too expensive: Highlight value/quality, do NOT offer forced discounts unless explicitly in catalog/policies.
+- Need to think: Do not pressure. Leave helpful info and mention you'll be around for any questions.
+- Need to ask family: Respect their decision, provide concise details they can share with family.
+- Found cheaper elsewhere: Highlight our unique value (warranty/quality/service), never badmouth competitors.
+- Delivery concern: Address using ONLY the exact information in {config.get('policies')} (do not fabricate timelines or numbers). If no delivery timeline is given, state generally that it will be delivered safely but do not invent a timeframe.
+- Quality concern: Reassure using genuine catalog details and warranty info.
+- Warranty concern: Provide ONLY the warranty information listed in {config.get('policies')}. Do not invent warranties.
+- Payment concern: Share ONLY the payment options listed in {config.get('policies')}.
+- Trust concern: Reassure using business credibility, reviews, and ONLY the rules in {config.get('policies')} (no fake claims).
+- Not ready now: Do not pressure. Acknowledge and politely wait (follow-up cadence will handle it later).
 
 **Off-topic / Irrelevant Questions:**
 - Politely redirect: "That's a great question! I'm specialized in helping you shop at {config.get('brandName')} though 😊 — anything I can help you find from our collection?"
@@ -1199,7 +1259,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
   "recommended_product": "product name or null",
   "cross_sell_product": "complementary product name or null",
   "upsell_product": "better variant product name or null",
-  "next_action": "short recommended next step",
+  "next_action": "one of ['Buy now', 'Add to cart', 'Book appointment', 'Schedule demo', 'Request callback', 'Request quotation', 'Visit store', 'Start checkout', 'Continue browsing', 'Awaiting response']",
   "customer_name": "extracted name or null",
   "customer_city": "extracted city or null",
   "customer_phone": "extracted phone or null",
@@ -1224,13 +1284,13 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
 }}"""
 
 
-    messages = [{"role": "system", "content": system_prompt}] + history[-12:] + [{"role": "user", "content": req.message}]
+    messages = [{"role": "system", "content": system_prompt}] + history[-4:] + [{"role": "user", "content": req.message}]
 
     data = None
     async with httpx.AsyncClient() as client:
         for attempt, current_model in enumerate(FALLBACK_MODELS):
-            # Each model gets up to 3 retries with exponential backoff
-            for retry in range(3):
+            # Each model gets up to 4 retries with longer exponential backoff
+            for retry in range(4):
                 try:
                     groq_response = await client.post(
                         "https://api.groq.com/openai/v1/chat/completions",
@@ -1245,48 +1305,83 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                             "temperature": 0.4,
                             "response_format": {"type": "json_object"}
                         },
-                        timeout=45.0
+                        timeout=60.0
                     )
+                    
+                    # Check HTTP status code FIRST (Groq returns 429 as HTTP status)
+                    if groq_response.status_code == 429:
+                        # Use Retry-After header if available, otherwise exponential backoff
+                        retry_after = groq_response.headers.get("retry-after")
+                        if retry_after:
+                            wait_time = min(float(retry_after), 30.0)
+                        else:
+                            wait_time = (2 ** retry) * 2  # 2s, 4s, 8s, 16s
+                        print(f"⚠️ Rate limit 429 on {current_model} (retry {retry+1}/4), waiting {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    
+                    if groq_response.status_code == 503 or groq_response.status_code == 502:
+                        wait_time = (2 ** retry) * 2
+                        print(f"⚠️ Server error {groq_response.status_code} on {current_model} (retry {retry+1}/4), waiting {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    
                     data = groq_response.json()
                     
                     if "error" in data:
                         error_msg = str(data["error"]).lower()
-                        if "rate limit" in error_msg or "429" in error_msg or "resource_exhausted" in error_msg:
-                            wait_time = (2 ** retry) * 1.5  # 1.5s, 3s, 6s
-                            print(f"Rate limit on {current_model} (retry {retry+1}/3), waiting {wait_time}s...")
+                        if "rate limit" in error_msg or "429" in error_msg or "resource_exhausted" in error_msg or "overloaded" in error_msg:
+                            retry_after = groq_response.headers.get("retry-after")
+                            if retry_after:
+                                wait_time = min(float(retry_after), 30.0)
+                            else:
+                                wait_time = (2 ** retry) * 2
+                            print(f"⚠️ Rate limit (body) on {current_model} (retry {retry+1}/4), waiting {wait_time}s...")
                             await asyncio.sleep(wait_time)
                             continue
+                        elif "not found" in error_msg or "does not exist" in error_msg or "invalid" in error_msg:
+                            print(f"❌ Model {current_model} not found/invalid, skipping to next model...")
+                            break  # This model doesn't exist, try next
                         else:
-                            print(f"API error for {current_model}: {data['error']}")
+                            print(f"❌ API error for {current_model}: {data['error']}")
                             break  # Non-rate-limit error, try next model
                     else:
                         break  # Success!
                 except httpx.TimeoutException:
-                    print(f"Timeout for {current_model} (retry {retry+1}/3)")
-                    await asyncio.sleep(1)
+                    print(f"⏰ Timeout for {current_model} (retry {retry+1}/4)")
+                    await asyncio.sleep(2)
                     continue
                 except Exception as e:
-                    print(f"Connection error for {current_model}: {e}")
-                    await asyncio.sleep(1)
+                    print(f"🔌 Connection error for {current_model}: {e}")
+                    await asyncio.sleep(2)
                     continue
             
             # If we got a successful response, stop trying models
             if data and "error" not in data:
+                print(f"✅ Success with model: {current_model}")
                 break
 
     if not data or "error" in data:
-        error_detail = data["error"].get("message", "Groq API error") if data and "error" in data else "Groq API error"
-        print("Groq error:", error_detail)
+        error_detail = data["error"].get("message", "Groq API error") if data and isinstance(data.get("error"), dict) else str(data.get("error", "Groq API error")) if data else "Groq API unreachable"
+        print(f"❌ ALL MODELS FAILED. Last error: {error_detail}")
+        try:
+            with open("groq_fail_log.txt", "w", encoding="utf-8") as f:
+                f.write(f"Error Detail: {error_detail}\nData: {json.dumps(data)}\n")
+        except:
+            pass
         fallback = {
-            "reply": "I'm sorry, I am experiencing high traffic right now. Please wait a moment and try again. ⏳",
+            "reply": "Ek chhota sa technical issue aa gaya hai, please apna message ek baar phir bhejiye! 🙏",
             "intent_score": 50, "segment": "WARM", "requires_details": False, "order_ready": False,
-            "order_product": None, "order_amount": None
+            "order_product": None, "order_amount": None, "next_action": "Awaiting response"
         }
         return fallback
 
     raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     
-    print(f"\n--- RAW LLM OUTPUT START ---\n{raw}\n--- RAW LLM OUTPUT END ---\n")
+    try:
+        print(f"\n--- RAW LLM OUTPUT START ---\n{raw}\n--- RAW LLM OUTPUT END ---\n")
+    except Exception as e:
+        print("Could not print RAW output due to encoding error:", e)
     
     raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
     raw = re.sub(r'\s*```\s*$', '', raw, flags=re.MULTILINE)
@@ -1371,11 +1466,14 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
             "raw_llm_output": raw
         }
 
-    print("\n" + "="*50)
-    print("🤖 AI GENERATED JSON RESPONSE:")
-    print("="*50)
-    print(json.dumps(parsed, indent=2))
-    print("="*50 + "\n")
+    try:
+        print("\n" + "="*50)
+        print("🤖 AI GENERATED JSON RESPONSE:")
+        print("="*50)
+        print(json.dumps(parsed, indent=2))
+        print("="*50 + "\n")
+    except Exception as e:
+        print("Could not print JSON to terminal due to encoding error:", e)
 
     # §6 Lead Scoring — total ko humara code calculate karta hai, LLM ka guess nahi lete
     score_band = None
@@ -1405,6 +1503,10 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                 pass
         
         parsed["score_purchase_history"] = actual_order_score
+
+        ALLOWED_ACTIONS = ["Buy now", "Add to cart", "Book appointment", "Schedule demo", "Request callback", "Request quotation", "Visit store", "Start checkout", "Continue browsing", "Awaiting response"]
+        if parsed.get("next_action") not in ALLOWED_ACTIONS:
+            parsed["next_action"] = "Continue browsing"
 
         c_pi = _clamp(parsed.get("score_purchase_intent"), 0, 30)
         c_pri = _clamp(parsed.get("score_product_interest"), 0, 20)
@@ -1479,9 +1581,9 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     c_source = 'referral' if ref_code else 'website'
                             
                     customer_id = await conn.fetchval(
-                        "INSERT INTO customers (ext_id, name, phone, city, tier, source, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code, state, urban_type, age_range, gender, occupation, purchasing_power, life_stage, behavior_tags, score_band, score_breakdown) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, FALSE), COALESCE($12, FALSE), $13, $14, $15, $16, $17, $18, $19, $20, COALESCE($21::text[], '{}'::text[]), $22, $23::jsonb) RETURNING id",
+                        "INSERT INTO customers (ext_id, name, phone, city, tier, source, segment, intent_score, shop, business_id, consent_whatsapp, consent_email, referred_by_code, state, urban_type, age_range, gender, occupation, purchasing_power, life_stage, behavior_tags, score_band, score_breakdown, preferred_language) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, FALSE), COALESCE($12, FALSE), $13, $14, $15, $16, $17, $18, $19, $20, COALESCE($21::text[], '{}'::text[]), $22, $23::jsonb, $24) RETURNING id",
                         req.customerId, c_name, c_phone, c_city, c_tier, c_source, parsed.get("segment", "COLD"), parsed.get("intent_score", 0), req.shop, business_id, parsed.get("consent_whatsapp"), parsed.get("consent_email"), ref_code,
-                        parsed.get("state"), parsed.get("urban_type"), parsed.get("age_range"), parsed.get("gender"), parsed.get("occupation"), parsed.get("purchasing_power"), parsed.get("life_stage"), parsed.get("behavior_tags"), score_band, json.dumps(score_breakdown) if score_breakdown else None
+                        parsed.get("state"), parsed.get("urban_type"), parsed.get("age_range"), parsed.get("gender"), parsed.get("occupation"), parsed.get("purchasing_power"), parsed.get("life_stage"), parsed.get("behavior_tags"), score_band, json.dumps(score_breakdown) if score_breakdown else None, parsed.get("detected_language")
                     )
                     
                     if ref_code:
@@ -1919,6 +2021,75 @@ async def clear_chat_history(customer_id: str):
             
     return {"status": "success"}
 
+class WishlistReq(BaseModel):
+    customerId: str
+    catalogItemId: int
+
+@app.post("/api/wishlist")
+async def add_wishlist(req: WishlistReq):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    try:
+        async with db_pool.acquire() as conn:
+            cust = await conn.fetchrow("SELECT id, business_id FROM customers WHERE ext_id = $1", req.customerId)
+            if not cust:
+                item = await conn.fetchrow("SELECT ci.business_id, b.slug as shop FROM catalog_items ci JOIN businesses b ON b.id = ci.business_id WHERE ci.id = $1", req.catalogItemId)
+                if not item:
+                    raise HTTPException(status_code=404, detail="Item not found")
+                cust_id = await conn.fetchval(
+                    "INSERT INTO customers (ext_id, source, segment, business_id, shop) VALUES ($1, 'website', 'COLD', $2, $3) RETURNING id",
+                    req.customerId, item['business_id'], item['shop']
+                )
+                cust = {'id': cust_id, 'business_id': item['business_id']}
+            try:
+                await conn.execute(
+                    "INSERT INTO wishlist_items (customer_id, catalog_item_id, business_id) VALUES ($1, $2, $3)",
+                    cust['id'], req.catalogItemId, cust['business_id']
+                )
+            except asyncpg.exceptions.UniqueViolationError:
+                pass
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Wishlist POST error: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+@app.delete("/api/wishlist/{catalog_item_id}")
+async def remove_wishlist(catalog_item_id: int, customerId: str):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    try:
+        async with db_pool.acquire() as conn:
+            cust = await conn.fetchrow("SELECT id FROM customers WHERE ext_id = $1", customerId)
+            if cust:
+                await conn.execute(
+                    "DELETE FROM wishlist_items WHERE customer_id = $1 AND catalog_item_id = $2",
+                    cust['id'], catalog_item_id
+                )
+        return {"status": "success"}
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail="Database error")
+
+@app.get("/api/wishlist/{customer_id}")
+async def get_wishlist(customer_id: str):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    try:
+        async with db_pool.acquire() as conn:
+            cust = await conn.fetchrow("SELECT id FROM customers WHERE ext_id = $1", customer_id)
+            if not cust:
+                return []
+            items = await conn.fetch(
+                "SELECT ci.* FROM wishlist_items wi JOIN catalog_items ci ON ci.id = wi.catalog_item_id WHERE wi.customer_id = $1 ORDER BY wi.created_at DESC",
+                cust['id']
+            )
+            return [dict(i) for i in items]
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail="Database error")
+
 class ManagerReply(BaseModel):
     message: str
 
@@ -2221,9 +2392,28 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                         WHERE b.slug = $1
                         GROUP BY c.source
                     """, shop)
+                    most_wishlisted_rows = await conn.fetch("""
+                        SELECT ci.name, COUNT(*) as count
+                        FROM wishlist_items wi
+                        JOIN catalog_items ci ON ci.id = wi.catalog_item_id
+                        JOIN businesses b ON b.id = wi.business_id
+                        WHERE b.slug = $1
+                        GROUP BY ci.name
+                        ORDER BY count DESC
+                        LIMIT 3
+                    """, shop)
                 else:
                     source_rows = await conn.fetch("SELECT source, COUNT(id) as cnt FROM customers GROUP BY source")
+                    most_wishlisted_rows = await conn.fetch("""
+                        SELECT ci.name, COUNT(*) as count
+                        FROM wishlist_items wi
+                        JOIN catalog_items ci ON ci.id = wi.catalog_item_id
+                        GROUP BY ci.name
+                        ORDER BY count DESC
+                        LIMIT 3
+                    """)
                 discovery_sources = {row['source'] or 'unknown': row['cnt'] for row in source_rows} if source_rows else {}
+                most_wishlisted = [dict(row) for row in most_wishlisted_rows] if most_wishlisted_rows else []
 
                 return {
                     "total_conversations": total_conversations or 0,
@@ -2234,7 +2424,8 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                     "avg_intent_score": avg_intent_score,
                     "dormant_customers": dormant_count or 0,
                     "repeat_purchase_rate": repeat_purchase_rate,
-                    "discovery_sources": discovery_sources
+                    "discovery_sources": discovery_sources,
+                    "most_wishlisted": most_wishlisted
                 }
         except Exception as e:
             print(f"Warning: Database error fetching analytics: {e}")
@@ -2248,7 +2439,8 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
         "avg_intent_score": 0,
         "dormant_customers": 0,
         "repeat_purchase_rate": 0,
-        "discovery_sources": {}
+        "discovery_sources": {},
+        "most_wishlisted": []
     }
 
 @app.get("/api/analytics/weekly")
@@ -2352,6 +2544,167 @@ async def get_weekly_analytics(shop: Optional[str] = None, _ = Depends(verify_ad
             raise HTTPException(status_code=500, detail="Database error")
     return []
 
+async def compute_daily_report(business_id: Optional[int], conn, target_date):
+    from datetime import datetime, timedelta, timezone
+    
+    # IST timezone (UTC+5:30)
+    IST = timezone(timedelta(hours=5, minutes=30))
+    
+    # Convert target_date to UTC range for precise filtering
+    day_start_ist = datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=IST)
+    day_end_ist = day_start_ist + timedelta(days=1)
+    day_start_utc = day_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+    day_end_utc = day_end_ist.astimezone(timezone.utc).replace(tzinfo=None)
+    
+    biz_filter_customers = "AND c.business_id = $3" if business_id else ""
+    biz_filter_convos = "AND conv.business_id = $3" if business_id else ""
+    biz_filter_orders = "AND o.business_id = $3" if business_id else ""
+    biz_filter_handoffs_join = "JOIN customers c ON h.customer_id = c.id" if business_id else ""
+    biz_filter_handoffs_where = "AND c.business_id = $1" if business_id else ""
+    
+    params_range_biz = [day_start_utc, day_end_utc, business_id] if business_id else [day_start_utc, day_end_utc]
+    params_biz = [business_id] if business_id else []
+    
+    # 1. New leads today (customers first seen today in IST)
+    new_leads = await conn.fetchval(f"""
+        SELECT COUNT(*) FROM customers c
+        WHERE c.created_at >= $1 AND c.created_at < $2 {biz_filter_customers}
+    """, *params_range_biz)
+    
+    # 2. Hot prospects count (current)
+    if business_id:
+        hot_prospects = await conn.fetchval("""
+            SELECT COUNT(*) FROM customers c
+            WHERE c.segment = 'HOT' AND c.business_id = $1
+        """, business_id)
+    else:
+        hot_prospects = await conn.fetchval(
+            "SELECT COUNT(*) FROM customers WHERE segment = 'HOT'"
+        )
+    
+    # 2b. Dormant customers count (current) — §18/§22
+    if business_id:
+        dormant_customers_count = await conn.fetchval("""
+            SELECT COUNT(*) FROM customers c
+            WHERE c.segment = 'DORMANT' AND c.business_id = $1
+        """, business_id)
+    else:
+        dormant_customers_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM customers WHERE segment = 'DORMANT'"
+        )
+    
+    # 3. Pending handoffs count
+    if business_id:
+        pending_handoffs = await conn.fetchval("""
+            SELECT COUNT(*) FROM handoffs h
+            JOIN customers c ON h.customer_id = c.id
+            WHERE h.status = 'pending' AND c.business_id = $1
+        """, business_id)
+    else:
+        pending_handoffs = await conn.fetchval(
+            "SELECT COUNT(*) FROM handoffs WHERE status = 'pending'"
+        )
+    
+    # 3b. Pending follow-ups — leads currently due for their next §17 cadence touch
+    pending_fu_sql = """
+        SELECT COUNT(*) FROM customers c
+        WHERE c.segment IN ('HOT', 'WARM', 'COLD')
+          AND c.opted_out = FALSE
+          {biz_clause}
+          AND (c.followed_up_at IS NULL OR c.followed_up_at < c.last_interaction)
+          AND c.follow_up_stage < (CASE c.segment WHEN 'HOT' THEN 4 ELSE 3 END)
+          AND c.last_interaction <= NOW() - (
+              CASE
+                WHEN c.segment = 'HOT'  AND c.follow_up_stage = 0 THEN INTERVAL '3 minutes'
+                WHEN c.segment = 'HOT'  AND c.follow_up_stage = 1 THEN INTERVAL '4 hours'
+                WHEN c.segment = 'HOT'  AND c.follow_up_stage = 2 THEN INTERVAL '24 hours'
+                WHEN c.segment = 'HOT'  AND c.follow_up_stage = 3 THEN INTERVAL '48 hours'
+                WHEN c.segment = 'WARM' AND c.follow_up_stage = 0 THEN INTERVAL '1 day'
+                WHEN c.segment = 'WARM' AND c.follow_up_stage = 1 THEN INTERVAL '3 days'
+                WHEN c.segment = 'WARM' AND c.follow_up_stage = 2 THEN INTERVAL '7 days'
+                WHEN c.segment = 'COLD' AND c.follow_up_stage = 0 THEN INTERVAL '7 days'
+                WHEN c.segment = 'COLD' AND c.follow_up_stage = 1 THEN INTERVAL '14 days'
+                WHEN c.segment = 'COLD' AND c.follow_up_stage = 2 THEN INTERVAL '30 days'
+              END
+          )
+    """
+    if business_id:
+        pending_followups_count = await conn.fetchval(
+            pending_fu_sql.format(biz_clause="AND c.business_id = $1"), business_id
+        )
+    else:
+        pending_followups_count = await conn.fetchval(
+            pending_fu_sql.format(biz_clause="")
+        )
+    
+    # 4. Total conversations today (IST)
+    total_convos = await conn.fetchval(f"""
+        SELECT COUNT(*) FROM conversations conv
+        WHERE conv.created_at >= $1 AND conv.created_at < $2 {biz_filter_convos}
+    """, *params_range_biz)
+    
+    # 5. Orders today — ONLY confirmed orders within today's IST range
+    order_row = await conn.fetchrow(f"""
+        SELECT COUNT(*) as cnt, COALESCE(SUM(o.amount), 0) as revenue
+        FROM orders o
+        WHERE o.status = 'confirmed' AND o.created_at >= $1 AND o.created_at < $2 {biz_filter_orders}
+    """, *params_range_biz)
+    orders_today = order_row['cnt'] if order_row else 0
+    revenue_today = float(order_row['revenue']) if order_row and order_row['revenue'] else 0.0
+    
+    # 6. Conversion rate
+    conversion_rate = 0.0
+    if total_convos and total_convos > 0:
+        conversion_rate = round((orders_today / total_convos) * 100, 1)
+    
+    # 7. Avg intent score today (IST)
+    avg_intent = await conn.fetchval(f"""
+        SELECT AVG(conv.intent_score) FROM conversations conv
+        WHERE conv.created_at >= $1 AND conv.created_at < $2 {biz_filter_convos}
+    """, *params_range_biz)
+    avg_intent_score = round(float(avg_intent), 1) if avg_intent else 0.0
+    
+    # 8. Segment breakdown
+    if business_id:
+        seg_rows = await conn.fetch("""
+            SELECT segment, COUNT(*) as cnt FROM customers
+            WHERE business_id = $1
+            GROUP BY segment ORDER BY cnt DESC
+        """, business_id)
+    else:
+        seg_rows = await conn.fetch(
+            "SELECT segment, COUNT(*) as cnt FROM customers GROUP BY segment ORDER BY cnt DESC"
+        )
+    segment_breakdown = {row['segment']: row['cnt'] for row in seg_rows}
+    
+    # 9. Top products today — ONLY from confirmed orders within today's IST range
+    top_products_rows = await conn.fetch(f"""
+        SELECT ci.name, COUNT(*) as cnt
+        FROM orders o
+        JOIN catalog_items ci ON o.product_id = ci.id
+        WHERE o.status = 'confirmed' AND o.created_at >= $1 AND o.created_at < $2 {biz_filter_orders}
+        GROUP BY ci.name
+        ORDER BY cnt DESC
+        LIMIT 3
+    """, *params_range_biz)
+    top_products = [{"name": row['name'], "count": row['cnt']} for row in top_products_rows]
+    
+    return {
+        "date": str(target_date),
+        "new_leads_count": new_leads or 0,
+        "hot_prospects_count": hot_prospects or 0,
+        "dormant_customers_count": dormant_customers_count or 0,
+        "pending_handoffs_count": pending_handoffs or 0,
+        "pending_followups_count": pending_followups_count or 0,
+        "total_conversations_today": total_convos or 0,
+        "orders_today": orders_today,
+        "revenue_today": revenue_today,
+        "conversion_rate_today": conversion_rate,
+        "avg_intent_score_today": avg_intent_score,
+        "segment_breakdown": segment_breakdown,
+        "top_products_today": top_products
+    }
+
 @app.get("/api/daily-report")
 async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = None, admin: dict = Depends(verify_admin)):
     """Daily Autonomous Report — Morning Snapshot style summary."""
@@ -2369,18 +2722,11 @@ async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = Non
     else:
         target_date = datetime.now(IST).date()
     
-    # Convert target_date to UTC range for precise filtering
-    day_start_ist = datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=IST)
-    day_end_ist = day_start_ist + timedelta(days=1)
-    day_start_utc = day_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
-    day_end_utc = day_end_ist.astimezone(timezone.utc).replace(tzinfo=None)
-    
     if not db_pool:
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
         async with db_pool.acquire() as conn:
-            # Determine business filter
             business_id = None
             if shop:
                 business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", shop)
@@ -2388,161 +2734,82 @@ async def get_daily_report(shop: Optional[str] = None, date: Optional[str] = Non
                     raise HTTPException(status_code=404, detail="Shop not found")
             elif admin.get("business_id"):
                 business_id = admin["business_id"]
-            
-            biz_filter_customers = "AND c.business_id = $3" if business_id else ""
-            biz_filter_convos = "AND conv.business_id = $3" if business_id else ""
-            biz_filter_orders = "AND o.business_id = $3" if business_id else ""
-            biz_filter_handoffs_join = "JOIN customers c ON h.customer_id = c.id" if business_id else ""
-            biz_filter_handoffs_where = "AND c.business_id = $1" if business_id else ""
-            
-            params_range_biz = [day_start_utc, day_end_utc, business_id] if business_id else [day_start_utc, day_end_utc]
-            params_biz = [business_id] if business_id else []
-            
-            # 1. New leads today (customers first seen today in IST)
-            new_leads = await conn.fetchval(f"""
-                SELECT COUNT(*) FROM customers c
-                WHERE c.created_at >= $1 AND c.created_at < $2 {biz_filter_customers}
-            """, *params_range_biz)
-            
-            # 2. Hot prospects count (current)
-            if business_id:
-                hot_prospects = await conn.fetchval("""
-                    SELECT COUNT(*) FROM customers c
-                    WHERE c.segment = 'HOT' AND c.business_id = $1
-                """, business_id)
-            else:
-                hot_prospects = await conn.fetchval(
-                    "SELECT COUNT(*) FROM customers WHERE segment = 'HOT'"
-                )
-            
-            # 2b. Dormant customers count (current) — §18/§22
-            if business_id:
-                dormant_customers_count = await conn.fetchval("""
-                    SELECT COUNT(*) FROM customers c
-                    WHERE c.segment = 'DORMANT' AND c.business_id = $1
-                """, business_id)
-            else:
-                dormant_customers_count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM customers WHERE segment = 'DORMANT'"
-                )
-            
-            # 3. Pending handoffs count
-            if business_id:
-                pending_handoffs = await conn.fetchval("""
-                    SELECT COUNT(*) FROM handoffs h
-                    JOIN customers c ON h.customer_id = c.id
-                    WHERE h.status = 'pending' AND c.business_id = $1
-                """, business_id)
-            else:
-                pending_handoffs = await conn.fetchval(
-                    "SELECT COUNT(*) FROM handoffs WHERE status = 'pending'"
-                )
-            
-            # 3b. Pending follow-ups — leads currently due for their next §17 cadence touch,
-            # using the same due-logic as follow_up_cadence_worker so the number is always accurate.
-            pending_fu_sql = """
-                SELECT COUNT(*) FROM customers c
-                WHERE c.segment IN ('HOT', 'WARM', 'COLD')
-                  AND c.opted_out = FALSE
-                  {biz_clause}
-                  AND (c.followed_up_at IS NULL OR c.followed_up_at < c.last_interaction)
-                  AND c.follow_up_stage < (CASE c.segment WHEN 'HOT' THEN 4 ELSE 3 END)
-                  AND c.last_interaction <= NOW() - (
-                      CASE
-                        WHEN c.segment = 'HOT'  AND c.follow_up_stage = 0 THEN INTERVAL '3 minutes'
-                        WHEN c.segment = 'HOT'  AND c.follow_up_stage = 1 THEN INTERVAL '4 hours'
-                        WHEN c.segment = 'HOT'  AND c.follow_up_stage = 2 THEN INTERVAL '24 hours'
-                        WHEN c.segment = 'HOT'  AND c.follow_up_stage = 3 THEN INTERVAL '48 hours'
-                        WHEN c.segment = 'WARM' AND c.follow_up_stage = 0 THEN INTERVAL '1 day'
-                        WHEN c.segment = 'WARM' AND c.follow_up_stage = 1 THEN INTERVAL '3 days'
-                        WHEN c.segment = 'WARM' AND c.follow_up_stage = 2 THEN INTERVAL '7 days'
-                        WHEN c.segment = 'COLD' AND c.follow_up_stage = 0 THEN INTERVAL '7 days'
-                        WHEN c.segment = 'COLD' AND c.follow_up_stage = 1 THEN INTERVAL '14 days'
-                        WHEN c.segment = 'COLD' AND c.follow_up_stage = 2 THEN INTERVAL '30 days'
-                      END
-                  )
-            """
-            if business_id:
-                pending_followups_count = await conn.fetchval(
-                    pending_fu_sql.format(biz_clause="AND c.business_id = $1"), business_id
-                )
-            else:
-                pending_followups_count = await conn.fetchval(
-                    pending_fu_sql.format(biz_clause="")
-                )
-            
-            # 4. Total conversations today (IST)
-            total_convos = await conn.fetchval(f"""
-                SELECT COUNT(*) FROM conversations conv
-                WHERE conv.created_at >= $1 AND conv.created_at < $2 {biz_filter_convos}
-            """, *params_range_biz)
-            
-            # 5. Orders today — ONLY confirmed orders within today's IST range
-            order_row = await conn.fetchrow(f"""
-                SELECT COUNT(*) as cnt, COALESCE(SUM(o.amount), 0) as revenue
-                FROM orders o
-                WHERE o.status = 'confirmed' AND o.created_at >= $1 AND o.created_at < $2 {biz_filter_orders}
-            """, *params_range_biz)
-            orders_today = order_row['cnt'] if order_row else 0
-            revenue_today = float(order_row['revenue']) if order_row and order_row['revenue'] else 0.0
-            
-            # 6. Conversion rate
-            conversion_rate = 0.0
-            if total_convos and total_convos > 0:
-                conversion_rate = round((orders_today / total_convos) * 100, 1)
-            
-            # 7. Avg intent score today (IST)
-            avg_intent = await conn.fetchval(f"""
-                SELECT AVG(conv.intent_score) FROM conversations conv
-                WHERE conv.created_at >= $1 AND conv.created_at < $2 {biz_filter_convos}
-            """, *params_range_biz)
-            avg_intent_score = round(float(avg_intent), 1) if avg_intent else 0.0
-            
-            # 8. Segment breakdown
-            if business_id:
-                seg_rows = await conn.fetch("""
-                    SELECT segment, COUNT(*) as cnt FROM customers
-                    WHERE business_id = $1
-                    GROUP BY segment ORDER BY cnt DESC
-                """, business_id)
-            else:
-                seg_rows = await conn.fetch(
-                    "SELECT segment, COUNT(*) as cnt FROM customers GROUP BY segment ORDER BY cnt DESC"
-                )
-            segment_breakdown = {row['segment']: row['cnt'] for row in seg_rows}
-            
-            # 9. Top products today — ONLY from confirmed orders within today's IST range
-            top_products_rows = await conn.fetch(f"""
-                SELECT ci.name, COUNT(*) as cnt
-                FROM orders o
-                JOIN catalog_items ci ON o.product_id = ci.id
-                WHERE o.status = 'confirmed' AND o.created_at >= $1 AND o.created_at < $2 {biz_filter_orders}
-                GROUP BY ci.name
-                ORDER BY cnt DESC
-                LIMIT 3
-            """, *params_range_biz)
-            top_products = [{"name": row['name'], "count": row['cnt']} for row in top_products_rows]
-            
-            return {
-                "date": str(target_date),
-                "new_leads_count": new_leads or 0,
-                "hot_prospects_count": hot_prospects or 0,
-                "dormant_customers_count": dormant_customers_count or 0,
-                "pending_handoffs_count": pending_handoffs or 0,
-                "pending_followups_count": pending_followups_count or 0,
-                "total_conversations_today": total_convos or 0,
-                "orders_today": orders_today,
-                "revenue_today": revenue_today,
-                "conversion_rate_today": conversion_rate,
-                "avg_intent_score_today": avg_intent_score,
-                "segment_breakdown": segment_breakdown,
-                "top_products_today": top_products
-            }
+                
+            return await compute_daily_report(business_id, conn, target_date)
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error generating daily report: {e}")
         raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
+
+@app.post("/api/daily-reports/generate-now")
+async def generate_daily_report_now(shop: str, report_type: str, admin: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    from datetime import datetime, timedelta, timezone
+    IST = timezone(timedelta(hours=5, minutes=30))
+    target_date = datetime.now(IST).date()
+    
+    if report_type not in ["morning", "evening"]:
+        raise HTTPException(status_code=400, detail="Invalid report_type. Use morning or evening.")
+        
+    try:
+        async with db_pool.acquire() as conn:
+            business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", shop)
+            if not business_id:
+                raise HTTPException(status_code=404, detail="Shop not found")
+                
+            report_data = await compute_daily_report(business_id, conn, target_date)
+            
+            # Check for duplicate
+            exists = await conn.fetchval(
+                "SELECT id FROM daily_reports WHERE business_id=$1 AND report_date=$2 AND report_type=$3",
+                business_id, target_date, report_type
+            )
+            
+            if not exists:
+                import json
+                await conn.execute(
+                    "INSERT INTO daily_reports (business_id, report_date, report_type, data) VALUES ($1, $2, $3, $4::jsonb)",
+                    business_id, target_date, report_type, json.dumps(report_data)
+                )
+                return {"status": "success", "message": f"Generated and saved {report_type} report for {target_date}", "data": report_data}
+            else:
+                return {"status": "skipped", "message": f"Report already exists for {report_type} on {target_date}", "data": report_data}
+    except Exception as e:
+        print(f"Error generating report now: {e}")
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+@app.get("/api/daily-reports/history")
+async def get_daily_reports_history(shop: str, admin: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    try:
+        async with db_pool.acquire() as conn:
+            business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", shop)
+            if not business_id:
+                raise HTTPException(status_code=404, detail="Shop not found")
+                
+            rows = await conn.fetch(
+                "SELECT id, report_date, report_type, data FROM daily_reports WHERE business_id=$1 ORDER BY report_date DESC, report_type DESC LIMIT 50",
+                business_id
+            )
+            
+            history = []
+            import json
+            for r in rows:
+                data = json.loads(r['data']) if isinstance(r['data'], str) else r['data']
+                history.append({
+                    "id": r['id'],
+                    "report_date": str(r['report_date']),
+                    "report_type": r['report_type'],
+                    "data": data
+                })
+            return history
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
 
 @app.get("/api/conversations/{customer_id}/latest")
 async def get_latest_conversation(customer_id: str):
@@ -3019,12 +3286,44 @@ async def generate_content_ideas(req: ContentIdeaRequest, admin: dict = Depends(
         raise HTTPException(status_code=500, detail="Database or LLM API not configured")
         
     async with db_pool.acquire() as conn:
-        business = await conn.fetchrow("SELECT brand_name, language FROM businesses WHERE slug = $1", req.business_slug)
+        business = await conn.fetchrow("SELECT id, brand_name, language, policies FROM businesses WHERE slug = $1", req.business_slug)
         if not business:
             raise HTTPException(status_code=404, detail="Business not found")
             
         brand_name = business['brand_name']
         lang = business['language'] or 'Hinglish'
+        business_id = business['id']
+        policies = business['policies'] or 'No specific policies recorded.'
+        
+        # a. Top 3 best-selling products
+        best_sellers_rows = await conn.fetch("""
+            SELECT ci.name, COUNT(*) as cnt FROM orders o 
+            JOIN catalog_items ci ON ci.id = o.product_id
+            WHERE o.status = 'confirmed' AND ci.business_id = $1 
+            GROUP BY ci.name ORDER BY cnt DESC LIMIT 3
+        """, business_id)
+        best_sellers = ", ".join([r['name'] for r in best_sellers_rows]) if best_sellers_rows else "no data yet"
+        
+        # b. 2-3 recent genuine review texts
+        reviews_rows = await conn.fetch("""
+            SELECT review_text FROM reviews 
+            WHERE business_id = $1 ORDER BY created_at DESC LIMIT 3
+        """, business_id)
+        reviews = " | ".join([r['review_text'] for r in reviews_rows]) if reviews_rows else "no reviews yet"
+        
+        # c. 2-3 recent customer objections
+        objections_rows = await conn.fetch("""
+            SELECT DISTINCT objection FROM handoffs h 
+            JOIN customers c ON c.id = h.customer_id
+            WHERE c.business_id = $1 AND objection IS NOT NULL 
+            ORDER BY objection DESC LIMIT 3
+        """, business_id)
+        objections = " | ".join([r['objection'] for r in objections_rows]) if objections_rows else "none recorded"
+
+    # d. Upcoming festival
+    festival_context = get_upcoming_festivals()
+    if not festival_context or festival_context.strip() == "":
+        festival_context = "no major festival in next 14 days"
         
     product_target = req.product_name if req.product_name and req.product_name != 'All Products' else "their catalog in general"
     content_target = req.content_type if req.content_type and req.content_type != 'Mix' else "a mix of Instagram Reel, Post, Story, Offer, or Festival content"
@@ -3033,12 +3332,31 @@ async def generate_content_ideas(req: ContentIdeaRequest, admin: dict = Depends(
 You are a social media content strategist for an Indian B2C brand called {brand_name}.
 Generate 4 short, ready-to-use content ideas for {product_target} targeting Indian consumers.
 Format required: {content_target}.
+
+🚫 ABSOLUTE RULE: NEVER invent delivery timelines, discounts, offers, or promises that aren't explicitly in this store's policies: {policies}. If no delivery timeline is given in policies, do NOT mention any specific delivery speed (no '2 days', no 'tomorrow', no 'express') — speak generally instead (e.g. 'fast delivery' only if policy says so, else omit delivery claims entirely). NEVER invent a discount percentage or offer that isn't in the policies. If addressing an objection like 'delivery time', address it using the ACTUAL policy text, or acknowledge it without fabricating a solution.
+
+Real context to inspire ideas (use ONLY what's genuinely relevant, don't force all of it):
+- Best-selling products: {best_sellers}
+- Recent customer reviews: {reviews}
+- Common customer objections/hesitations: {objections}
+- Upcoming festivals/events: {festival_context}
+
+Base your 4 ideas strictly on this REAL data. 
+CRITICAL RULE: You MUST explicitly include the exact name of at least one best-selling product (e.g. if best-sellers are "Formal Shirt", mention "Formal Shirt") in your captions or why_it_works. Do NOT make up generic seasons like Monsoon or Holi unless they are in the upcoming festivals list. If an objection like "delivery time" is in the data, address it!
+
 For each idea include:
 - format: the content format (e.g. Instagram Reel, Post, Story, Offer)
 - caption: a short catchy caption/hook (in {lang})
-- why_it_works: one line on why it would work (can be in English or {lang}). Tie to upcoming Indian festivals/seasons if relevant.
+- why_it_works: one line on why it would work (can be in English or {lang}). Tie to upcoming Indian festivals/seasons or customer feedback if relevant.
 
-Return ONLY a valid JSON array of objects with fields: format, caption, why_it_works. Do not include markdown blocks like ```json.
+EXAMPLE of a good idea incorporating a best-seller and a real policy:
+{{
+  "format": "Instagram Reel",
+  "caption": "Pehno hamari stylish Formal Shirt! [insert ONLY what this store's actual policies say about delivery/exchange/payment — e.g. 'free delivery above ₹X' or '7-day exchange' — NEVER a specific day-count unless that exact text appears in policies].",
+  "why_it_works": "Directly features the popular Formal Shirt and references actual store delivery times instead of making up a fake promise."
+}}
+
+Return ONLY a valid JSON array of 4 objects with fields: format, caption, why_it_works. Do not include markdown blocks like ```json.
 """
 
     messages = [{"role": "user", "content": system_prompt}]

@@ -1,0 +1,17 @@
+[
+  {
+    "language": "English",
+    "detected": "English",
+    "reply": "Sure! Here’s a great option under ₹30000:\n\n📺 **Samsung 43-inch Smart TV** — 24999\n4K UHD, Android TV with voice remote.\n![Product Image](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/samsung_tv.jpg)\n\nIt also includes free installation support. Would you like more details or to place an order? You might also enjoy the Amazon Echo Dot for a smarter home experience."
+  },
+  {
+    "language": "Hindi",
+    "detected": "Hindi",
+    "reply": "बिल्कुल! 30,000 रुपये के अंदर एक बेहतरीन विकल्प है **Samsung 43‑इंच Smart TV**, जिसकी कीमत ₹24,999 है। इसमें 4K UHD, Android TV और वॉयस रिमोट जैसी सुविधाएँ हैं। क्या आप इसके बारे में और जानकारी चाहते हैं या इसे कार्ट में जोड़ना चाहेंगे?"
+  },
+  {
+    "language": "Hinglish",
+    "detected": "Hinglish",
+    "reply": "Here’s a great option that fits your budget:\n\n📺 **Samsung 43-inch Smart TV** — ₹24999\n4K UHD, Android TV, voice remote, perfect for the monsoon evenings.\n\n![Samsung TV](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/samsung_tv.jpg)\n\nWould you like to know more about this TV or proceed to checkout?"
+  }
+]

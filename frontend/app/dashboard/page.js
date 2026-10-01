@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import toast from 'react-hot-toast';
 
-const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
 const API_BASE = rawApi.replace(/\/+$/, '');
 
 const authFetch = async (url, options = {}) => {
@@ -1207,7 +1207,7 @@ export default function Dashboard() {
                     onChange={e => { setDailyReportDate(e.target.value); fetchDailyReport(e.target.value, selectedShop); }}
                     style={{ background: c.panel, border: `1px solid ${c.line}`, color: c.ivory, padding: '10px 16px', borderRadius: '12px', fontSize: '14px', outline: 'none', cursor: 'pointer' }}
                   />
-                  <button onClick={() => { window.location.hash = ''; }} style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${c.line}`, color: c.muted, padding: '10px 16px', borderRadius: '12px', fontSize: '13px', cursor: 'pointer', fontWeight: 600 }}>← Back</button>
+
                 </div>
               </div>
 

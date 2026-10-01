@@ -1356,3 +1356,65 @@ input[type="number"] {
 .mk-icon-orange { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
 .mk-btn-orange { background: #f59e0b; }
 .mk-btn-orange:hover { background: #d97706; box-shadow: 0 0 15px rgba(245, 158, 11, 0.4); }
+
+/* Perfect Responsiveness for New Elements (Phones, Tablets) */
+@media (max-width: 768px) {
+  /* Store grid mobile adjustments */
+  .store-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    padding: 0 12px 80px;
+  }
+  
+  /* Ensure the "Add to Cart" and "Wishlist" buttons scale nicely on small phones */
+  .add-to-cart-btn {
+    font-size: 11px !important;
+    padding: 8px 4px !important;
+    letter-spacing: 0 !important;
+    flex: 1;
+    text-align: center;
+  }
+  
+  .store-product-info {
+    padding: 10px !important;
+  }
+  
+  .store-product-name {
+    font-size: 13px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .store-product-price {
+    font-size: 16px !important;
+  }
+  
+  /* Make sure the flex container holding Add to Cart and Wishlist does not overflow */
+  .store-product-info > div:last-child {
+    gap: 6px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  /* For very small devices like iPhone SE */
+  .store-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .store-product-img {
+    height: 220px !important;
+  }
+  .add-to-cart-btn {
+    font-size: 13px !important;
+    padding: 12px 0 !important;
+  }
+}
+
+/* Dashboard Report Tabs Extra Responsiveness */
+@media (max-width: 600px) {
+  .responsive-grid-3 {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+}

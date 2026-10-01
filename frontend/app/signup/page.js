@@ -9,7 +9,7 @@ const sora = Sora({ subsets: ['latin'], weight: ['400', '600', '800'] });
 const inter = Inter({ subsets: ['latin'], weight: ['400', '500', '600'] });
 const jetbrains = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'] });
 
-const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
 const API_BASE = rawApi.replace(/\/+$/, '');
 
 export default function Signup() {

@@ -7,7 +7,7 @@ export default function MarketplaceHome() {
   const [stores, setStores] = useState([]);
   
   useEffect(() => {
-    const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
     const API_BASE = rawApi.replace(/\/+$/, '');
     fetch(`${API_BASE}/api/public/businesses`)
       .then(res => res.json())

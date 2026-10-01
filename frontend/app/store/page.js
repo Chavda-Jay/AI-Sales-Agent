@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import toast, { Toaster } from 'react-hot-toast';
 import remarkGfm from 'remark-gfm';
 
-const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const rawApi = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3001";
 const API_BASE = rawApi.replace(/\/+$/, '');
 const BACKEND_URL = `${API_BASE}/api/chat`;
 const HEALTH_URL = `${API_BASE}/api/health`;
@@ -68,9 +68,30 @@ export default function Home() {
   const [refParam, setRefParam] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [cart, setCart] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
   const [toastMsg, setToastMsg] = useState(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isWishlistOpen, setIsWishlistOpen] = useState(false);
   const isSendingRef = useRef(false);
+
+  const toggleWishlist = async (product) => {
+    const isWishlisted = wishlist.includes(product.id);
+    if (isWishlisted) {
+      setWishlist(prev => prev.filter(id => id !== product.id));
+      await fetch(`${API_BASE}/api/wishlist/${product.id}?customerId=${customerId}`, { method: 'DELETE' });
+      setToastMsg(`Removed ${product.name} from wishlist`);
+    } else {
+      setWishlist(prev => [...prev, product.id]);
+      await fetch(`${API_BASE}/api/wishlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId, catalogItemId: product.id })
+      });
+      setToastMsg(`Added ${product.name} to wishlist! ❤️`);
+    }
+    setTimeout(() => setToastMsg(null), 2500);
+  };
+
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -139,9 +160,18 @@ export default function Home() {
           }
         ]);
       }
+      try {
+        const wRes = await fetch(`${API_BASE}/api/wishlist/${customerId}`);
+        if (wRes.ok) {
+          const wData = await wRes.json();
+          setWishlist(wData.map(i => i.id));
+        }
+      } catch (e) {
+        console.error("Wishlist load error", e);
+      }
     };
     loadBrandAndGreet();
-  }, []);
+  }, [customerId]);
 
   useEffect(() => {
     if (!customerId) return;
@@ -204,55 +234,76 @@ export default function Home() {
     setMessages(prev => [...prev, { text, who: 'user' }]);
     setIsTyping(true);
 
-    try {
-      const res = await fetch(BACKEND_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, message: text, shop: shopParam, ref: refParam })
-      });
-      const data = await res.json();
-      setIsTyping(false);
-      
-      if (data.walletBalance !== undefined) {
-        setWalletBalance(data.walletBalance);
-      }
+    const MAX_RETRIES = 2;
+    let lastError = null;
 
-      if (!res.ok) {
-        let errorMsg = data.detail || data.error || 'Server error occurred.';
-        if (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('rate limit')) {
-          errorMsg = "I am experiencing high traffic right now. Please wait a moment and try again. ⏳";
-        }
-        setMessages(prev => [...prev, { text: '❌ ' + errorMsg, who: 'sys' }]);
-      } else if (data.error) {
-        let errorMsg = data.error;
-        if (typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('rate limit')) {
-          errorMsg = "I am experiencing high traffic right now. Please wait a moment and try again. ⏳";
-        }
-        setMessages(prev => [...prev, { text: '❌ ' + errorMsg, who: 'sys' }]);
-      } else {
-        setMessages(prev => {
-          const newMsgs = [...prev, { text: data.reply, who: 'agent', requiresDetails: data.requires_details, crossSellProduct: data.cross_sell_product || null }];
-          if (data.order_ready) {
-            newMsgs.push({
-              isOrder: true,
-              orderId: data.order_id || 'ORD-' + Math.floor(1000 + Math.random() * 9000),
-              product: data.order_product,
-              amount: data.order_amount,
-              walletDiscount: data.wallet_discount_applied || 0,
-              referralCode: data.referral_code,
-              who: 'agent'
-            });
-          }
-          return newMsgs;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const res = await fetch(BACKEND_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId, message: text, shop: shopParam, ref: refParam })
         });
+        const data = await res.json();
+
+        // Check if this is a rate-limit / traffic error that we should silently retry
+        const replyText = (data.reply || '').toLowerCase();
+        const isTrafficError = !res.ok || data.error ||
+          replyText.includes('technical issue') || replyText.includes('high traffic') ||
+          replyText.includes('phir bhejiye') || replyText.includes('wait a moment');
+
+        if (isTrafficError && attempt < MAX_RETRIES) {
+          const waitTime = (attempt + 1) * 3000; // 3s, 6s
+          console.log(`[Auto-retry] Attempt ${attempt + 1} failed (traffic/rate-limit), retrying in ${waitTime / 1000}s...`);
+          await new Promise(r => setTimeout(r, waitTime));
+          continue;
+        }
+
+        setIsTyping(false);
+        
+        if (data.walletBalance !== undefined) {
+          setWalletBalance(data.walletBalance);
+        }
+
+        if (!res.ok) {
+          let errorMsg = data.detail || data.error || 'Server error occurred.';
+          setMessages(prev => [...prev, { text: '❌ ' + errorMsg, who: 'sys' }]);
+        } else if (data.error) {
+          setMessages(prev => [...prev, { text: '❌ ' + data.error, who: 'sys' }]);
+        } else {
+          setMessages(prev => {
+            const newMsgs = [...prev, { text: data.reply, who: 'agent', requiresDetails: data.requires_details, crossSellProduct: data.cross_sell_product || null }];
+            if (data.order_ready) {
+              newMsgs.push({
+                isOrder: true,
+                orderId: data.order_id || 'ORD-' + Math.floor(1000 + Math.random() * 9000),
+                product: data.order_product,
+                amount: data.order_amount,
+                walletDiscount: data.wallet_discount_applied || 0,
+                referralCode: data.referral_code,
+                who: 'agent'
+              });
+            }
+            return newMsgs;
+          });
+        }
+        // Success or final error shown — break out of retry loop
+        break;
+      } catch (e) {
+        lastError = e;
+        if (attempt < MAX_RETRIES) {
+          const waitTime = (attempt + 1) * 3000;
+          console.log(`[Auto-retry] Network error, retrying in ${waitTime / 1000}s...`);
+          await new Promise(r => setTimeout(r, waitTime));
+          continue;
+        }
+        setIsTyping(false);
+        setMessages(prev => [...prev, { text: '⚠️ Could not reach backend.', who: 'sys' }]);
       }
-    } catch (e) {
-      setIsTyping(false);
-      setMessages(prev => [...prev, { text: '⚠️ Could not reach backend.', who: 'sys' }]);
-    } finally {
-      // Wait 3 seconds before allowing polling again to prevent duplicate from polling
-      setTimeout(() => { isSendingRef.current = false; }, 3000);
     }
+
+    // Wait 3 seconds before allowing polling again to prevent duplicate from polling
+    setTimeout(() => { isSendingRef.current = false; }, 3000);
   };
 
   const handleClearChat = async () => {
@@ -393,7 +444,17 @@ export default function Home() {
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
           <button 
             className="nav-cart-btn"
+            onClick={() => setIsWishlistOpen(true)}
+            title="Wishlist"
+            style={{ position: 'relative' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill={wishlist.length > 0 ? "#ef4444" : "none"} stroke={wishlist.length > 0 ? "#ef4444" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            {wishlist.length > 0 && <span className="cart-badge">{wishlist.length}</span>}
+          </button>
+          <button 
+            className="nav-cart-btn"
             onClick={() => setIsCartOpen(true)}
+            style={{ position: 'relative' }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
             {cart.length > 0 && <span className="cart-badge">{cart.length}</span>}
@@ -468,13 +529,29 @@ export default function Home() {
             <div className="store-product-info">
               <div className="store-product-name">{p.name}</div>
               <div className="store-product-price">₹{Number(p.price).toLocaleString('en-IN')}</div>
-              <button className="add-to-cart-btn" onClick={() => {
-                setCart(prev => [...prev, { ...p, selected: true }]);
-                setToastMsg(`Added ${p.name} to cart!`);
-                setTimeout(() => setToastMsg(null), 2500);
-              }}>
-                Add to Cart
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="add-to-cart-btn" style={{ flex: 1 }} onClick={() => {
+                  setCart(prev => [...prev, { ...p, selected: true }]);
+                  setToastMsg(`Added ${p.name} to cart!`);
+                  setTimeout(() => setToastMsg(null), 2500);
+                }}>
+                  Add to Cart
+                </button>
+                <button 
+                  onClick={() => toggleWishlist(p)}
+                  style={{ 
+                    background: wishlist.includes(p.id) ? 'rgba(239, 68, 68, 0.1)' : 'var(--border-color)', 
+                    border: wishlist.includes(p.id) ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid transparent', 
+                    borderRadius: '8px',
+                    width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', color: wishlist.includes(p.id) ? '#ef4444' : 'var(--muted)',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={wishlist.includes(p.id) ? "Remove from wishlist" : "Add to wishlist"}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill={wishlist.includes(p.id) ? "#ef4444" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -592,6 +669,49 @@ export default function Home() {
             </button>
           </div>
         )}
+      </div>
+
+      <div className={`cart-drawer-overlay ${isWishlistOpen ? 'open' : ''}`} onClick={() => setIsWishlistOpen(false)}></div>
+      <div className={`cart-drawer ${isWishlistOpen ? 'open' : ''}`}>
+        <div className="cart-drawer-header">
+          <h2>Your Wishlist</h2>
+          <button className="close-cart-btn" onClick={() => setIsWishlistOpen(false)}>✕</button>
+        </div>
+        <div className="cart-drawer-body">
+          {wishlist.length === 0 ? (
+            <div className="empty-cart">
+              <p>Your wishlist is empty.</p>
+            </div>
+          ) : (
+            <div className="cart-items-list">
+              {(config?.catalog?.filter(p => wishlist.includes(p.id)) || []).map((item, idx) => (
+                <div className="cart-item" key={idx}>
+                  <div className="cart-item-img">
+                    {item.image_url ? <img src={item.image_url} alt={item.name} /> : iconFor(item.name)}
+                  </div>
+                  <div className="cart-item-info">
+                    <div className="cart-item-name">{item.name}</div>
+                    <div className="cart-item-price">₹{Number(item.price).toLocaleString('en-IN')}</div>
+                    <button 
+                      className="add-to-cart-btn" 
+                      style={{ padding: '6px 12px', fontSize: '12px', marginTop: '6px', width: 'fit-content' }}
+                      onClick={() => {
+                        setCart(prev => [...prev, { ...item, selected: true }]);
+                        setToastMsg(`Added ${item.name} to cart!`);
+                        setIsWishlistOpen(false);
+                        setTimeout(() => setToastMsg(null), 2500);
+                      }}>
+                      Move to Cart
+                    </button>
+                  </div>
+                  <button className="cart-item-remove" onClick={() => toggleWishlist(item)} title="Remove">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="chat-widget-container">
