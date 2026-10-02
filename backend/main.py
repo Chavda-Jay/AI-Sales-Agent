@@ -1214,7 +1214,7 @@ NEVER use a customer's religion, caste, political view, or health condition to t
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - **COUPON 'FIRST10'**: If mentioned, get excited! Apply 10% discount. Show original → discounted price. Set order_amount to discounted price.
 - **ORDER DETAILS FORM**: Set `requires_details` to true when customer is ready to checkout (preferences finalized). In your text reply, naturally ask for their name and city together (e.g. "Order ke liye apna naam aur city bata dijiye" or "Could you please share your name and city for the order?"). Do NOT ask as two separate awkward questions.
-- **HUMAN HANDOFF**: Set `needs_human` to true + `handoff_reason` if: customer is angry, asks for human/manager, mentions legal/fraud/payment disputes, or asks something completely outside your knowledge.
+- **HUMAN HANDOFF**: Set `needs_human` to true + `handoff_reason` if: customer is angry, asks for human/manager, mentions legal/fraud/payment disputes, customer mentions a serious personal situation (health emergency, bereavement, major life event) or expresses they may escalate publicly (social media complaint threat), or asks something completely outside your knowledge.
 - **ORDER CONFIRMATION**: ONLY set `order_ready` to true EXACTLY ONCE when the order is first confirmed. If the order was already confirmed in previous messages (e.g. user just saying thanks), MUST set `order_ready` to false. DO NOT set `order_ready` to true if you do not have their details yet. If they say "yes place order" but you don't have details, set `requires_details` to true to show the form first.
 - **DPDP CONSENT**: When showing high purchase intent (setting requires_details or order_ready to true), naturally ask: "Would you like to receive future offers and updates via WhatsApp or email?" in the detected language. Set consent fields ONLY when customer explicitly responds.
 - **CRITICAL PRIVACY RULE (DO NOT GUESS)**: NEVER infer sensitive personal characteristics unnecessarily. Age, gender, occupation, life stage, and purchasing power MUST ONLY be saved if the customer explicitly mentions them (e.g. "I am 25", "I am a student"). **NEVER guess gender from name. NEVER guess age from chatting style.** If not told explicitly, keep these fields null.
@@ -1681,11 +1681,28 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         final_amount = max(0, final_amount - wallet_discount)
                         await conn.execute("UPDATE customers SET wallet_balance = GREATEST(0, wallet_balance - $1) WHERE id = $2", wallet_discount, customer_id)
                     
+                    threshold = await conn.fetchval("SELECT high_value_order_threshold FROM businesses WHERE id = $1", business_id)
+                    order_status = 'confirmed'
+                    if threshold is not None and final_amount > float(threshold):
+                        order_status = 'pending_approval'
+
                     order_db_id = await conn.fetchval(
                         "INSERT INTO orders (customer_id, business_id, product_id, status, amount) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-                        customer_id, business_id, prod_id, 'confirmed', final_amount
+                        customer_id, business_id, prod_id, order_status, final_amount
                     )
-                    await conn.execute("INSERT INTO retention_stages (order_id, customer_id, current_stage) VALUES ($1, $2, 'confirmed')", order_db_id, customer_id)
+                    
+                    if order_status == 'confirmed':
+                        await conn.execute("INSERT INTO retention_stages (order_id, customer_id, current_stage) VALUES ($1, $2, 'confirmed')", order_db_id, customer_id)
+                    else:
+                        await conn.execute(
+                            """
+                            INSERT INTO handoffs (customer_id, business_id, reason, context_summary, urgency)
+                            VALUES ($1, $2, $3, $4, 'High')
+                            """,
+                            customer_id, business_id, f"High-value order (₹{final_amount}) awaiting approval",
+                            "Order requires manual review based on business threshold."
+                        )
+
                     parsed["order_id"] = order_id
                     parsed["order_amount"] = final_amount
                     parsed["wallet_discount_applied"] = wallet_discount
@@ -1749,16 +1766,16 @@ def health():
 
 # --- Image Upload Endpoint ---
 @app.post("/api/upload")
-async def upload_image(file: UploadFile = File(...)):
-    if not supabase_client:
-        raise HTTPException(status_code=500, detail="Supabase Storage not configured.")
-        
+async def upload_image(request: Request, file: UploadFile = File(...)):
     try:
         file_extension = file.filename.split('.')[-1]
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
         
         contents = await file.read()
         
+        if not supabase_client:
+            raise Exception("Supabase Storage not configured.")
+            
         supabase_client.storage.from_("product-images").upload(
             unique_filename,
             contents,
@@ -1773,8 +1790,24 @@ async def upload_image(file: UploadFile = File(...)):
             raise ValueError(f"Unexpected return type from get_public_url: {type(public_url)}")
             
     except Exception as e:
-        print(f"Error during file upload: {e}")
-        raise HTTPException(status_code=500, detail="Failed to upload image.")
+        print(f"Error during Supabase file upload: {e}")
+        print("Falling back to local file upload...")
+        
+        try:
+            upload_dir = os.path.join(BASE_DIR, "uploads")
+            os.makedirs(upload_dir, exist_ok=True)
+            local_path = os.path.join(upload_dir, unique_filename)
+            
+            with open(local_path, "wb") as f:
+                f.write(contents)
+                
+            base_url = str(request.base_url).rstrip('/')
+            public_url = f"{base_url}/uploads/{unique_filename}"
+            
+            return {"url": public_url}
+        except Exception as local_err:
+            print(f"Error during local file upload fallback: {local_err}")
+            raise HTTPException(status_code=500, detail="Failed to upload image.")
 
 @app.get("/api/analytics/segments")
 async def get_analytics_segments(shop: Optional[str] = None, _ = Depends(verify_admin)):
@@ -1935,6 +1968,27 @@ async def get_customer_orders(customer_id: int):
             print(f"Warning: Database error fetching orders: {e}")
             raise HTTPException(status_code=500, detail="Database error")
     return []
+
+@app.post("/api/orders/{order_id}/approve")
+async def approve_order(order_id: int):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        async with db_pool.acquire() as conn:
+            # 1. Update status to confirmed
+            result = await conn.execute("UPDATE orders SET status = 'confirmed' WHERE id = $1 AND status = 'pending_approval'", order_id)
+            if result == "UPDATE 0":
+                raise HTTPException(status_code=400, detail="Order not found or not in pending_approval status")
+            
+            # 2. Insert into retention_stages as 'confirmed'
+            order_record = await conn.fetchrow("SELECT customer_id FROM orders WHERE id = $1", order_id)
+            if order_record:
+                await conn.execute("INSERT INTO retention_stages (order_id, customer_id, current_stage) VALUES ($1, $2, 'confirmed')", order_id, order_record["customer_id"])
+                
+            return {"status": "success", "message": "Order approved and moved to confirmed status."}
+    except Exception as e:
+        print(f"Error approving order: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 @app.get("/api/orders/{order_id}/retention-stage")
 async def get_retention_stage(order_id: int):
@@ -2840,8 +2894,10 @@ async def delete_customer(customer_id: int):
                 await conn.execute("DELETE FROM conversations WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM retention_stages WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM referrals WHERE referrer_customer_id = $1 OR referred_customer_id = $1", customer_id)
+                await conn.execute("DELETE FROM reviews WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM orders WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM handoffs WHERE customer_id = $1", customer_id)
+                await conn.execute("DELETE FROM wishlist_items WHERE customer_id = $1", customer_id)
                 await conn.execute("DELETE FROM customers WHERE id = $1", customer_id)
                 return {"status": "success", "message": "Customer deleted"}
         except Exception as e:
@@ -3007,13 +3063,17 @@ async def get_business_context(slug: str, admin: dict = Depends(verify_admin)):
                 if admin['business_id'] != biz_id:
                     raise HTTPException(status_code=403, detail="Not authorized for this business")
                     
-            context = await conn.fetchval("SELECT business_context FROM businesses WHERE slug = $1", slug)
-            if context is None:
+            row = await conn.fetchrow("SELECT business_context, high_value_order_threshold FROM businesses WHERE slug = $1", slug)
+            if row is None:
                 raise HTTPException(status_code=404, detail="Business not found")
             try:
+                context = row['business_context']
                 if isinstance(context, str):
-                    return json.loads(context)
-                return context or {}
+                    context = json.loads(context)
+                context = context or {}
+                if row['high_value_order_threshold'] is not None:
+                    context['high_value_order_threshold'] = float(row['high_value_order_threshold'])
+                return context
             except Exception:
                 return {}
     except HTTPException:
@@ -3038,23 +3098,30 @@ async def update_business_context(slug: str, request: Request, admin: dict = Dep
                 if admin['business_id'] != biz_id:
                     raise HTTPException(status_code=403, detail="Not authorized for this business")
                     
-            existing_str = await conn.fetchval("SELECT business_context FROM businesses WHERE slug = $1", slug)
-            if existing_str is None:
+            existing_row = await conn.fetchrow("SELECT business_context, high_value_order_threshold FROM businesses WHERE slug = $1", slug)
+            if existing_row is None:
                 raise HTTPException(status_code=404, detail="Business not found")
                 
             existing_context = {}
+            existing_str = existing_row['business_context']
             if existing_str:
                 if isinstance(existing_str, str):
                     existing_context = json.loads(existing_str)
                 else:
                     existing_context = existing_str
                     
+            threshold = body.pop('high_value_order_threshold', None)
+            if threshold == "": threshold = None
+            if threshold is not None:
+                threshold = float(threshold)
+
             for k, v in body.items():
                 existing_context[k] = v
                 
             new_context_json = json.dumps(existing_context)
-            await conn.execute("UPDATE businesses SET business_context = $1::jsonb WHERE slug = $2", new_context_json, slug)
+            await conn.execute("UPDATE businesses SET business_context = $1::jsonb, high_value_order_threshold = $2 WHERE slug = $3", new_context_json, threshold, slug)
             
+            existing_context['high_value_order_threshold'] = threshold
             return {"message": "Context updated successfully", "context": existing_context}
     except HTTPException:
         raise

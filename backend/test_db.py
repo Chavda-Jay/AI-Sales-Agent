@@ -1,30 +1,31 @@
 import asyncio
-import asyncpg
 import os
+import sys
+import asyncpg
 from dotenv import load_dotenv
 
-load_dotenv()
+sys.stdout.reconfigure(encoding="utf-8")
+CUST_1 = "CUST-VAL-11"
+CUST_2 = "CUST-VAL-21"
+CUST_3 = "CUST-VAL-31"
 
-async def main():
+async def run():
+    load_dotenv()
     db_url = os.getenv("DATABASE_URL")
     conn = await asyncpg.connect(db_url, statement_cache_size=0)
     
-    # Get user with >= 2 orders
-    row = await conn.fetchrow("""
-        SELECT c.ext_id, c.name, COUNT(o.id) as orders 
-        FROM customers c 
-        JOIN orders o ON c.id = o.customer_id 
-        WHERE o.status = 'confirmed' 
-        GROUP BY c.id 
-        HAVING COUNT(o.id) >= 2 
-        LIMIT 1;
-    """)
-    if row:
-        print(f"Repeat Buyer: {row['name']} (Ext ID: {row['ext_id']}), Orders: {row['orders']}")
-    else:
-        print("No repeat buyers found.")
-        
+    # Check CUST-VAL-21
+    db_cust2_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", CUST_2)
+    small_order_row = await conn.fetchrow("SELECT id, status, amount FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1", db_cust2_id) if db_cust2_id else None
+    print("TEST 4 SMALL ORDER:")
+    print(dict(small_order_row) if small_order_row else "None")
+    
+    # Check CUST-VAL-31
+    db_cust3_id = await conn.fetchval("SELECT id FROM customers WHERE ext_id = $1", CUST_3)
+    last_conv = await conn.fetchrow("SELECT message, reply FROM conversations WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1", db_cust3_id) if db_cust3_id else None
+    print("TEST 5 SENSITIVE CONV:")
+    print(dict(last_conv) if last_conv else "None")
+    
     await conn.close()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(run())
