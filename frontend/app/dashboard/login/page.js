@@ -258,6 +258,7 @@ export default function AdminLogin() {
         }
         
         @media (max-width: 480px) {
+          .login-page { padding: 12px; }
           .login-container {
           transition: all 0.3s ease;
             padding: 32px 24px;
@@ -272,3 +273,4 @@ export default function AdminLogin() {
     </div>
   );
 }
+

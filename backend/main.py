@@ -1,4 +1,7 @@
 import os
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 import asyncio
 import json
 import re
@@ -3473,3 +3476,4 @@ Return ONLY a valid JSON array of 4 objects with fields: format, caption, why_it
     except json.JSONDecodeError:
         print(f"Failed to parse Groq response: {raw}")
         raise HTTPException(status_code=500, detail="Failed to parse LLM response")
+
