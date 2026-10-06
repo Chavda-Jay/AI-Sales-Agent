@@ -56,8 +56,7 @@ GROQ_MODEL = "openai/gpt-oss-120b"
 FALLBACK_MODELS = [
     GROQ_MODEL,
     "openai/gpt-oss-20b",
-    "qwen/qwen3.8-27b",
-    "allam-2-7b"
+    "qwen/qwen3.8-27b"
 ]
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super-secret-default-key-for-demo")
@@ -162,7 +161,7 @@ async def follow_up_cadence_worker():
                     stage_instruction = {
                         0: "This is a helpful, no-pressure check-in — gently ask if they need help deciding.",
                         1: "Gently address a likely hesitation (price, trust, delivery) without being asked, and reassure them.",
-                        2: "You can mention a relevant existing incentive (e.g. the FIRST10 coupon) once if genuinely relevant. Do not invent any discount not in the catalog/policies.",
+                        2: "You can highlight genuine value or quality if they seem hesitant. Do not invent any discount or coupon not in the catalog/policies.",
                         3: "This is the final follow-up in this sequence. Keep it brief and low-pressure.",
                     }.get(stage, "Gently re-engage the customer.")
 
@@ -971,7 +970,7 @@ async def chat(req: ChatRequest):
         business_id = config['business_id']
         
         catalog_items = []
-        for p in config.get("catalog", []):
+        for p in config.get("catalog", [])[:10]:  # Limit to top 10 items to prevent huge system prompt
             text = f"{p['name']} - ₹{p['price']} - {p['note']}"
             if "image_url" in p and p["image_url"]:
                 text += f" (Image Link: {p['image_url']})"
@@ -1215,7 +1214,6 @@ NEVER use a customer's religion, caste, political view, or health condition to t
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔧 SPECIAL FEATURES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- **COUPON 'FIRST10'**: If mentioned, get excited! Apply 10% discount. Show original → discounted price. Set order_amount to discounted price.
 - **ORDER DETAILS FORM**: Set `requires_details` to true when customer is ready to checkout (preferences finalized). In your text reply, naturally ask for their name and city together (e.g. "Order ke liye apna naam aur city bata dijiye" or "Could you please share your name and city for the order?"). Do NOT ask as two separate awkward questions.
 - **HUMAN HANDOFF**: Set `needs_human` to true + `handoff_reason` if: customer is angry, asks for human/manager, mentions legal/fraud/payment disputes, customer mentions a serious personal situation (health emergency, bereavement, major life event) or expresses they may escalate publicly (social media complaint threat), or asks something completely outside your knowledge.
 - **ORDER CONFIRMATION**: ONLY set `order_ready` to true EXACTLY ONCE when the order is first confirmed. If the order was already confirmed in previous messages (e.g. user just saying thanks), MUST set `order_ready` to false. DO NOT set `order_ready` to true if you do not have their details yet. If they say "yes place order" but you don't have details, set `requires_details` to true to show the form first.
@@ -1304,7 +1302,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         json={
                             "model": current_model,
                             "messages": messages,
-                            "max_tokens": 4000,
+                            "max_tokens": 1024,
                             "temperature": 0.4,
                             "response_format": {"type": "json_object"}
                         },
@@ -1342,7 +1340,10 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                             print(f"⚠️ Rate limit (body) on {current_model} (retry {retry+1}/4), waiting {wait_time}s...")
                             await asyncio.sleep(wait_time)
                             continue
-                        elif "not found" in error_msg or "does not exist" in error_msg or "invalid" in error_msg:
+                        elif "invalid api key" in error_msg or "invalid_api_key" in error_msg:
+                            print("❌ Invalid API Key detected!")
+                            break  # Fatal error, no point in trying other models
+                        elif "not found" in error_msg or "does not exist" in error_msg or "model_decommissioned" in error_msg:
                             print(f"❌ Model {current_model} not found/invalid, skipping to next model...")
                             break  # This model doesn't exist, try next
                         else:
@@ -3477,3 +3478,5 @@ Return ONLY a valid JSON array of 4 objects with fields: format, caption, why_it
         print(f"Failed to parse Groq response: {raw}")
         raise HTTPException(status_code=500, detail="Failed to parse LLM response")
 
+
+# Trigger reload
