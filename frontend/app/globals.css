@@ -1418,5 +1418,17 @@ input[type="number"] {
   }
 }
 
-
+@media (max-width: 768px) {
+  .floating-chat-window {
+    width: 100% !important;
+    border-radius: 0 !important;
+    height: 100dvh !important;
+    bottom: 0 !important;
+    right: 0 !important;
+  }
+  .chat-widget-container {
+    bottom: 16px !important;
+    right: 16px !important;
+  }
+}
 

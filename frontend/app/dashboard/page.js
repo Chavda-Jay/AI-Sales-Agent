@@ -225,6 +225,7 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [segments, setSegments] = useState(null);
   const [customerFilter, setCustomerFilter] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [deleteCustomerId, setDeleteCustomerId] = useState(null);
   const [selectedProfile, setSelectedProfile] = useState(null);
@@ -233,6 +234,7 @@ export default function Dashboard() {
   const [weeklyData, setWeeklyData] = useState([]);
   const [stores, setStores] = useState([]);
   const [selectedConvo, setSelectedConvo] = useState(null);
+  const [selectedOrders, setSelectedOrders] = useState([]);
   const [selectedCustName, setSelectedCustName] = useState('');
   const [showConvoModal, setShowConvoModal] = useState(false);
   const [storeToDelete, setStoreToDelete] = useState(null);
@@ -1957,6 +1959,9 @@ export default function Dashboard() {
                     return true;
                   })
                   : customers;
+                const PAGE_SIZE = 10;
+                const totalPages = Math.ceil(filteredCustomers.length / PAGE_SIZE);
+                const paginatedCustomers = filteredCustomers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
                 return (
                   <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', overflow: 'hidden', marginBottom: '40px' }}>
@@ -1966,7 +1971,7 @@ export default function Dashboard() {
                         {customerFilter && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '20px', fontSize: '11px', fontWeight: '600', color: '#38bdf8' }}>
                             <span>{customerFilter.type === 'tag' ? `#${customerFilter.value}` : customerFilter.value}</span>
-                            <button onClick={() => setCustomerFilter(null)} style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}>
+                            <button onClick={() => { setCustomerFilter(null); setCurrentPage(1); }} style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             </button>
                           </div>
@@ -1997,7 +2002,7 @@ export default function Dashboard() {
                               </td>
                             </tr>
                           ) : (
-                            filteredCustomers.slice(0, 15).map(cust => (
+                            paginatedCustomers.map(cust => (
                               <tr
                                 key={cust.id}
                                 style={{ borderBottom: '1px solid var(--line)', transition: 'background 0.2s', cursor: 'pointer' }}
@@ -2069,6 +2074,53 @@ export default function Dashboard() {
                         </tbody>
                       </table>
                     </div>
+                    {totalPages > 1 && (
+                      <div style={{ padding: '16px 24px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                        <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
+                          Showing {(currentPage - 1) * PAGE_SIZE + 1} to {Math.min(currentPage * PAGE_SIZE, filteredCustomers.length)} of {filteredCustomers.length}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            style={{ padding: '6px 12px', background: currentPage === 1 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.1)', color: currentPage === 1 ? 'var(--muted)' : '#fff', border: 'none', borderRadius: '6px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontSize: '13px' }}
+                          >
+                            Prev
+                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {Array.from({ length: totalPages }).map((_, i) => {
+                              // Show only limited page numbers if there are too many (simple logic for now)
+                              if (totalPages > 7 && (i !== 0 && i !== totalPages - 1 && Math.abs(currentPage - 1 - i) > 1)) {
+                                if (i === 1 || i === totalPages - 2) return <span key={i} style={{color: 'var(--muted)'}}>...</span>;
+                                return null;
+                              }
+                              return (
+                                <button
+                                  key={i}
+                                  onClick={() => setCurrentPage(i + 1)}
+                                  style={{
+                                    width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: currentPage === i + 1 ? 'var(--primary)' : 'transparent',
+                                    color: currentPage === i + 1 ? '#fff' : 'var(--muted)',
+                                    border: currentPage === i + 1 ? 'none' : '1px solid var(--line)',
+                                    borderRadius: '6px', fontSize: '13px', cursor: 'pointer'
+                                  }}
+                                >
+                                  {i + 1}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            style={{ padding: '6px 12px', background: currentPage === totalPages ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.1)', color: currentPage === totalPages ? 'var(--muted)' : '#fff', border: 'none', borderRadius: '6px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontSize: '13px' }}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}

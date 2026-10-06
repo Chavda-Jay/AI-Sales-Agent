@@ -338,41 +338,89 @@ export default function Home() {
     } catch(e) {}
   };
 
+  const streamRef = useRef(null);
+
   const startListening = async () => {
     if (isListening) {
+      // User tapped mic again while recording — stop and send
       mediaRecorderRef.current?.stop();
       return;
     }
     try {
-      playBeep(600, 'sine', 0.15); // Start beep
+      playBeep(600, 'sine', 0.15);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      streamRef.current = stream;
+
+      // Pick a supported MIME type (Safari doesn't support webm)
+      let mimeType = 'audio/webm';
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+          mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeType = 'audio/ogg';
+        } else {
+          mimeType = ''; // Let browser decide
+        }
+      }
+
+      const recorderOptions = mimeType ? { mimeType } : {};
+      const mediaRecorder = new MediaRecorder(stream, recorderOptions);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
       // Set up AudioContext for silence detection
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      // CRITICAL: Mobile browsers suspend AudioContext until user gesture
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
       const analyser = audioContext.createAnalyser();
       const microphone = audioContext.createMediaStreamSource(stream);
       microphone.connect(analyser);
-      analyser.fftSize = 512;
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      let silenceStart = Date.now() + 2500; // Give 2.5s grace period before silence detection kicks in
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      // Use time-domain data (waveform) — works better on low-gain mobile mics
+      let silenceStart = null; // null means we haven't started checking yet
+      const GRACE_PERIOD = 3000; // 3 seconds before we start looking for silence
+      const SILENCE_DURATION = 1800; // 1.8 seconds of silence to auto-stop
+      const recordingStartTime = Date.now();
 
       const checkSilence = () => {
         if (mediaRecorder.state !== 'recording') return;
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        let average = sum / dataArray.length;
+
+        // Use time-domain data — it measures actual waveform amplitude
+        analyser.getByteTimeDomainData(dataArray);
+        let maxAmplitude = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const amplitude = Math.abs(dataArray[i] - 128); // Center is 128
+          if (amplitude > maxAmplitude) maxAmplitude = amplitude;
+        }
+
+        const elapsed = Date.now() - recordingStartTime;
         
-        if (average > 25) { 
-           silenceStart = Date.now(); // Voice detected, reset silence timer
+        // Don't check for silence during grace period
+        if (elapsed < GRACE_PERIOD) {
+          silenceTimerRef.current = requestAnimationFrame(checkSilence);
+          return;
+        }
+
+        // After grace period, detect voice vs silence
+        // Amplitude > 5 means some voice detected (very sensitive for mobile)
+        if (maxAmplitude > 5) {
+          silenceStart = null; // Voice detected, reset silence timer
         } else {
-           if (Date.now() - silenceStart > 2000) { // 2 seconds of silence = stop
-               mediaRecorder.stop();
-               return;
-           }
+          if (silenceStart === null) {
+            silenceStart = Date.now();
+          }
+          if (Date.now() - silenceStart > SILENCE_DURATION) {
+            // Silence detected for long enough — auto-stop and send
+            mediaRecorder.stop();
+            return;
+          }
         }
         silenceTimerRef.current = requestAnimationFrame(checkSilence);
       };
@@ -384,24 +432,32 @@ export default function Home() {
       };
 
       mediaRecorder.onstop = async () => {
-        playBeep(400, 'sine', 0.15); // Stop beep
+        playBeep(400, 'sine', 0.15);
         cancelAnimationFrame(silenceTimerRef.current);
-        if (audioContext.state !== 'closed') audioContext.close();
+        try { if (audioContext.state !== 'closed') audioContext.close(); } catch(e) {}
         
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const actualMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: actualMime });
         
         // Don't send if audio is too small (just noise/click)
-        if (audioBlob.size < 5000) {
+        if (audioBlob.size < 3000) {
           setIsListening(false);
           stream.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
           return;
         }
         
         setIsListening(false);
         setIsTyping(true); 
         
+        // Map correct extension for Whisper API
+        let ext = 'webm';
+        if (actualMime.includes('mp4')) ext = 'm4a';
+        else if (actualMime.includes('wav')) ext = 'wav';
+        else if (actualMime.includes('ogg')) ext = 'ogg';
+
         const formData = new FormData();
-        formData.append('file', audioBlob, 'voice.webm');
+        formData.append('file', audioBlob, `voice.${ext}`);
         
         try {
           const res = await fetch(`${API_BASE}/api/voice-to-text`, {
@@ -422,6 +478,7 @@ export default function Home() {
         }
         
         stream.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
       };
 
       mediaRecorder.start();
