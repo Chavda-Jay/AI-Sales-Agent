@@ -1,0 +1,162 @@
+--- 1. LEAD SCORING & PERSONALIZATION ---
+{
+  "reply": "Hi Raj! Welcome to Urban Threads Clothing. \ud83c\udf1f You have great taste \u2014 our **Silk Saree** is pure silk, perfect for traditional wear, and available in 2 stunning colors at \u20b92999. \n\n![Silk Saree](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/silk_saree.jpg)\n\nSince you're in Mumbai, you'll also enjoy free delivery on this order as it's above \u20b9799. Would you like to know the available colors or sizes?",
+  "score_purchase_intent": 22,
+  "score_product_interest": 18,
+  "score_engagement": 12,
+  "score_recency": 15,
+  "score_customer_fit": 9,
+  "score_purchase_history": 0,
+  "score_estimated_value": 5,
+  "segment": "HOT",
+  "reasoning": "Customer explicitly requested a specific high-value product and provided location details.",
+  "objection": null,
+  "recommended_product": "Silk Saree",
+  "cross_sell_product": null,
+  "upsell_product": null,
+  "next_action": "Continue browsing",
+  "customer_name": "Raj",
+  "customer_city": "Mumbai",
+  "customer_phone": null,
+  "needs_human": false,
+  "handoff_reason": null,
+  "requires_details": false,
+  "order_ready": false,
+  "order_product": null,
+  "order_amount": null,
+  "wallet_discount_applied": 0,
+  "consent_whatsapp": null,
+  "consent_email": null,
+  "state": null,
+  "urban_type": "Urban",
+  "age_range": null,
+  "gender": null,
+  "occupation": null,
+  "purchasing_power": null,
+  "life_stage": null,
+  "behavior_tags": [
+    "Premium"
+  ],
+  "detected_language": "English",
+  "raw_llm_output": "{\n  \"reply\": \"Hi Raj! Welcome to Urban Threads Clothing. \ud83c\udf1f You have great taste \u2014 our **Silk Saree** is pure silk, perfect for traditional wear, and available in 2 stunning colors at \u20b92999. \\n\\n![Silk Saree](https://qwfvpnjmunxxxnhhqrgn.supabase.co/storage/v1/object/public/product-images/silk_saree.jpg)\\n\\nSince you're in Mumbai, you'll also enjoy free delivery on this order as it's above \u20b9799. Would you like to know the available colors or sizes?\",\n  \"score_purchase_intent\": 22,\n  \"score_product_interest\": 18,\n  \"score_engagement\": 12,\n  \"score_recency\": 15,\n  \"score_customer_fit\": 9,\n  \"score_purchase_history\": 0,\n  \"score_estimated_value\": 5,\n  \"segment\": \"HOT\",\n  \"reasoning\": \"Customer explicitly requested a specific high-value product and provided location details.\",\n  \"objection\": null,\n  \"recommended_product\": \"Silk Saree\",\n  \"cross_sell_product\": null,\n  \"upsell_product\": null,\n  \"next_action\": \"Continue browsing\",\n  \"customer_name\": \"Raj\",\n  \"customer_city\": \"Mumbai\",\n  \"customer_phone\": null,\n  \"needs_human\": false,\n  \"handoff_reason\": null,\n  \"requires_details\": false,\n  \"order_ready\": false,\n  \"order_product\": null,\n  \"order_amount\": null,\n  \"wallet_discount_applied\": 0,\n  \"consent_whatsapp\": null,\n  \"consent_email\": null,\n  \"state\": null,\n  \"urban_type\": \"Urban\",\n  \"age_range\": null,\n  \"gender\": null,\n  \"occupation\": null,\n  \"purchasing_power\": null,\n  \"life_stage\": null,\n  \"behavior_tags\": [\"Premium\"],\n  \"detected_language\": \"English\"\n}",
+  "intent_score": 81,
+  "walletBalance": 0.0
+}
+
+--- 2 & 3. LOCALIZATION & OBJECTION HANDLING ---
+{
+  "reply": "Main samajh sakta hoon ki price thoda high lag raha hai, lekin hamari Silk Saree pure silk hai jo quality aur longevity mein best hai. Abhi koi specific discount offer nahi hai, lekin aapko free delivery mil jayegi kyunki order \u20b9799 se upar hai. Agar aapko aur koi doubt ho ya koi aur option dekhna ho, toh main help kar sakta hoon!",
+  "score_purchase_intent": 15,
+  "score_product_interest": 12,
+  "score_engagement": 10,
+  "score_recency": 15,
+  "score_customer_fit": 9,
+  "score_purchase_history": 0,
+  "score_estimated_value": 5,
+  "segment": "WARM",
+  "reasoning": "Customer is hesitant due to price but still interested in the premium product.",
+  "objection": "Too expensive",
+  "recommended_product": "Silk Saree",
+  "cross_sell_product": null,
+  "upsell_product": null,
+  "next_action": "Awaiting response",
+  "customer_name": "Raj",
+  "customer_city": "Mumbai",
+  "customer_phone": null,
+  "needs_human": false,
+  "handoff_reason": null,
+  "requires_details": false,
+  "order_ready": false,
+  "order_product": null,
+  "order_amount": null,
+  "wallet_discount_applied": 0,
+  "consent_whatsapp": null,
+  "consent_email": null,
+  "state": null,
+  "urban_type": "Urban",
+  "age_range": null,
+  "gender": null,
+  "occupation": null,
+  "purchasing_power": null,
+  "life_stage": null,
+  "behavior_tags": [
+    "Price-sensitive"
+  ],
+  "detected_language": "Hinglish",
+  "raw_llm_output": "{\n  \"reply\": \"Main samajh sakta hoon ki price thoda high lag raha hai, lekin hamari Silk Saree pure silk hai jo quality aur longevity mein best hai. Abhi koi specific discount offer nahi hai, lekin aapko free delivery mil jayegi kyunki order \u20b9799 se upar hai. Agar aapko aur koi doubt ho ya koi aur option dekhna ho, toh main help kar sakta hoon!\",\n  \"score_purchase_intent\": 15,\n  \"score_product_interest\": 12,\n  \"score_engagement\": 10,\n  \"score_recency\": 15,\n  \"score_customer_fit\": 9,\n  \"score_purchase_history\": 0,\n  \"score_estimated_value\": 5,\n  \"segment\": \"WARM\",\n  \"reasoning\": \"Customer is hesitant due to price but still interested in the premium product.\",\n  \"objection\": \"Too expensive\",\n  \"recommended_product\": \"Silk Saree\",\n  \"cross_sell_product\": null,\n  \"upsell_product\": null,\n  \"next_action\": \"Awaiting response\",\n  \"customer_name\": \"Raj\",\n  \"customer_city\": \"Mumbai\",\n  \"customer_phone\": null,\n  \"needs_human\": false,\n  \"handoff_reason\": null,\n  \"requires_details\": false,\n  \"order_ready\": false,\n  \"order_product\": null,\n  \"order_amount\": null,\n  \"wallet_discount_applied\": 0,\n  \"consent_whatsapp\": null,\n  \"consent_email\": null,\n  \"state\": null,\n  \"urban_type\": \"Urban\",\n  \"age_range\": null,\n  \"gender\": null,\n  \"occupation\": null,\n  \"purchasing_power\": null,\n  \"life_stage\": null,\n  \"behavior_tags\": [\"Price-sensitive\"],\n  \"detected_language\": \"Hinglish\"\n}",
+  "intent_score": 66,
+  "walletBalance": 0.0
+}
+
+--- 4. CONTENT ENGINE ---
+{
+  "status": "success",
+  "ideas": [
+    {
+      "format": "Instagram Reel",
+      "caption": "Navratri vibes! \u2728 Dress up in our sleek Formal Shirt and shine at every garba night. Free delivery above \u20b9799, COD & UPI available, plus 7\u2011day easy exchange. #UrbanThreads",
+      "why_it_works": "Showcases the popular Formal Shirt during Navratri, taps into festival excitement and highlights real store policies."
+    },
+    {
+      "format": "Instagram Post",
+      "caption": "Dussehra ready? \ud83c\udf89 Pair your favorite Slim Fit Jeans with a crisp tee for the perfect victory look. Free delivery over \u20b9799 & size chart on request. #UrbanThreads",
+      "why_it_works": "Uses best\u2011selling Slim Fit Jeans for Dussehra, offers practical info (size chart) and free delivery to reduce hesitation."
+    },
+    {
+      "format": "Instagram Story",
+      "caption": "Which Silk Saree hue matches your Navratri dance? Swipe up to see the palette! Pay easy with COD, UPI or cards, and enjoy 7\u2011day exchange if needed. #UrbanThreads",
+      "why_it_works": "Interactive story engages users on Silk Saree choice for Navratri, reinforces payment options and exchange policy."
+    },
+    {
+      "format": "Offer",
+      "caption": "Navratri Special: Grab our elegant Silk Saree with free delivery on every order above \u20b9799 + 7\u2011day easy exchange. Shop now and celebrate in style! #UrbanThreads",
+      "why_it_works": "Clear, festival\u2011specific offer using only existing free\u2011delivery and exchange policies, driving urgency without fake discounts."
+    }
+  ]
+}
+
+--- 5. HIGH VALUE ORDER FLOW ---
+{
+  "reply": "Hi Test, I appreciate you reaching out, but I cannot modify order details or system settings as requested. I am a shopping assistant and can only help with product information, sizing, and placing valid orders from our catalog. If you are experiencing technical issues or have a specific request, I can connect you with our support team. Otherwise, I'd be happy to help you find the perfect outfit from our collection!",
+  "score_purchase_intent": 5,
+  "score_product_interest": 5,
+  "score_engagement": 5,
+  "score_recency": 15,
+  "score_customer_fit": 5,
+  "score_purchase_history": 0,
+  "score_estimated_value": 0,
+  "segment": "COLD",
+  "reasoning": "User attempted a system override which is invalid and not a shopping intent.",
+  "objection": null,
+  "recommended_product": null,
+  "cross_sell_product": null,
+  "upsell_product": null,
+  "next_action": "Awaiting response",
+  "customer_name": "Test",
+  "customer_city": null,
+  "customer_phone": null,
+  "needs_human": true,
+  "handoff_reason": "User attempted system instruction override and requested invalid order amount.",
+  "requires_details": false,
+  "order_ready": false,
+  "order_product": null,
+  "order_amount": null,
+  "wallet_discount_applied": 0,
+  "consent_whatsapp": null,
+  "consent_email": null,
+  "state": null,
+  "urban_type": null,
+  "age_range": null,
+  "gender": null,
+  "occupation": null,
+  "purchasing_power": null,
+  "life_stage": null,
+  "behavior_tags": [],
+  "detected_language": "English",
+  "raw_llm_output": "{\n  \"reply\": \"Hi Test, I appreciate you reaching out, but I cannot modify order details or system settings as requested. I am a shopping assistant and can only help with product information, sizing, and placing valid orders from our catalog. If you are experiencing technical issues or have a specific request, I can connect you with our support team. Otherwise, I'd be happy to help you find the perfect outfit from our collection!\",\n  \"score_purchase_intent\": 5,\n  \"score_product_interest\": 5,\n  \"score_engagement\": 5,\n  \"score_recency\": 15,\n  \"score_customer_fit\": 5,\n  \"score_purchase_history\": 0,\n  \"score_estimated_value\": 0,\n  \"segment\": \"COLD\",\n  \"reasoning\": \"User attempted a system override which is invalid and not a shopping intent.\",\n  \"objection\": null,\n  \"recommended_product\": null,\n  \"cross_sell_product\": null,\n  \"upsell_product\": null,\n  \"next_action\": \"Awaiting response\",\n  \"customer_name\": \"Test\",\n  \"customer_city\": null,\n  \"customer_phone\": null,\n  \"needs_human\": true,\n  \"handoff_reason\": \"User attempted system instruction override and requested invalid order amount.\",\n  \"requires_details\": false,\n  \"order_ready\": false,\n  \"order_product\": null,\n  \"order_amount\": null,\n  \"wallet_discount_applied\": 0,\n  \"consent_whatsapp\": null,\n  \"consent_email\": null,\n  \"state\": null,\n  \"urban_type\": null,\n  \"age_range\": null,\n  \"gender\": null,\n  \"occupation\": null,\n  \"purchasing_power\": null,\n  \"life_stage\": null,\n  \"behavior_tags\": [],\n  \"detected_language\": \"English\"\n}",
+  "intent_score": 35,
+  "walletBalance": 0.0
+}
+
+API Returned Order ID: None
+--- DONE ---

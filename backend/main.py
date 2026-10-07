@@ -2187,19 +2187,36 @@ async def manager_reply(handoff_id: int, req: ManagerReply, _ = Depends(verify_a
     return {"status": "error"}
 
 @app.get("/api/handoffs")
-async def get_handoffs(_ = Depends(verify_admin)):
+async def get_handoffs(shop: Optional[str] = None, admin: dict = Depends(verify_admin)):
     if db_pool:
         try:
             async with db_pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT h.id, h.reason, h.status, h.created_at,
-                           h.context_summary, h.product_interest, h.objection, h.intent_score, h.estimated_value, h.urgency,
-                           c.name, c.phone,
-                           (SELECT message FROM conversations WHERE customer_id = h.customer_id AND message IS NOT NULL ORDER BY created_at DESC LIMIT 1) as latest_message
-                    FROM handoffs h
-                    JOIN customers c ON h.customer_id = c.id
-                    ORDER BY h.created_at DESC
-                """)
+                admin_biz_id = admin.get("business_id")
+                business_id = admin_biz_id
+                if not business_id and shop and shop != 'master':
+                    business_id = await conn.fetchval("SELECT id FROM businesses WHERE slug = $1", shop)
+                
+                if business_id:
+                    rows = await conn.fetch("""
+                        SELECT h.id, h.reason, h.status, h.created_at,
+                               h.context_summary, h.product_interest, h.objection, h.intent_score, h.estimated_value, h.urgency,
+                               c.name, c.phone,
+                               (SELECT message FROM conversations WHERE customer_id = h.customer_id AND message IS NOT NULL ORDER BY created_at DESC LIMIT 1) as latest_message
+                        FROM handoffs h
+                        JOIN customers c ON h.customer_id = c.id
+                        WHERE c.business_id = $1
+                        ORDER BY h.created_at DESC
+                    """, business_id)
+                else:
+                    rows = await conn.fetch("""
+                        SELECT h.id, h.reason, h.status, h.created_at,
+                               h.context_summary, h.product_interest, h.objection, h.intent_score, h.estimated_value, h.urgency,
+                               c.name, c.phone,
+                               (SELECT message FROM conversations WHERE customer_id = h.customer_id AND message IS NOT NULL ORDER BY created_at DESC LIMIT 1) as latest_message
+                        FROM handoffs h
+                        JOIN customers c ON h.customer_id = c.id
+                        ORDER BY h.created_at DESC
+                    """)
                 return [dict(r) for r in rows]
         except Exception as e:
             print(f"Warning: Database error fetching handoffs: {e}")

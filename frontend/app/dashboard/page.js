@@ -1465,9 +1465,33 @@ export default function Dashboard() {
                               <div style={{ color: 'var(--cust)', fontWeight: 700, fontSize: '14px' }}>₹{order.amount}</div>
                             </td>
                             <td style={{ padding: '16px 24px' }}>
-                              <span style={styles.badge(order.status === 'confirmed' ? 'var(--cust)' : 'var(--muted)', '#fff')}>
-                                {order.status === 'confirmed' ? 'Paid' : order.status}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={styles.badge(order.status === 'confirmed' ? 'var(--cust)' : order.status === 'pending_approval' ? '#f59e0b' : 'var(--muted)', '#fff')}>
+                                  {order.status === 'confirmed' ? 'Paid' : order.status === 'pending_approval' ? 'Pending Approval' : order.status}
+                                </span>
+                                {order.status === 'pending_approval' && (
+                                  <button 
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      try {
+                                        const res = await authFetch(`${API_BASE}/api/orders/${order.id}/approve`, { method: 'POST' });
+                                        if (res.ok) {
+                                          toast.success('Order approved!');
+                                          setOrdersList(prev => prev.map(o => o.id === order.id ? { ...o, status: 'confirmed' } : o));
+                                        } else {
+                                          toast.error('Failed to approve order');
+                                        }
+                                      } catch (err) {
+                                        console.error(err);
+                                        toast.error('Error approving order');
+                                      }
+                                    }}
+                                    style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                                  >
+                                    Approve
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td style={{ padding: '16px 24px', color: 'var(--muted)', fontSize: '13px' }}>
                               {new Date(order.created_at + (order.created_at.endsWith('Z') ? '' : 'Z')).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
