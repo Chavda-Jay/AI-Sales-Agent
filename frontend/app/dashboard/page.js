@@ -232,6 +232,7 @@ export default function Dashboard() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [replyTexts, setReplyTexts] = useState({});
   const [weeklyData, setWeeklyData] = useState([]);
+  const [priorityQueue, setPriorityQueue] = useState([]);
   const [stores, setStores] = useState([]);
   const [selectedConvo, setSelectedConvo] = useState(null);
   const [selectedOrders, setSelectedOrders] = useState([]);
@@ -441,6 +442,7 @@ export default function Dashboard() {
       setWeeklyData([]);
       setReferrals([]);
       setOrdersList([]);
+      setPriorityQueue([]);
     }
     try {
       const qs = shopId ? `?shop=${shopId}` : '';
@@ -476,6 +478,14 @@ export default function Dashboard() {
       const refRes = await authFetch(`${REFERRALS_URL}${qs}`);
       if (refRes.ok) {
         setReferrals(await refRes.json());
+      }
+      
+      if (shopId) {
+        const pqRes = await authFetch(`${API_BASE}/api/priority-queue?shop=${shopId}`);
+        if (pqRes.ok) {
+          const pqData = await pqRes.json();
+          setPriorityQueue(pqData.opportunities || []);
+        }
       }
 
       const aRes = await authFetch(`${ANALYTICS_URL}${qs}`);
@@ -1969,6 +1979,63 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+
+                            {/* Row 3.5: Top Opportunities */}
+              <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                  <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Top Opportunities</h2>
+                  {priorityQueue.length > 0 && (
+                    <span style={{ background: 'var(--hot)', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '12px' }}>
+                      {priorityQueue.length} Active
+                    </span>
+                  )}
+                </div>
+
+                {priorityQueue.length === 0 ? (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: '14px', padding: '40px 0' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    No open opportunities right now.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>Rank</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>Name</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>Segment</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', textAlign: 'right' }}>Score</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>Next Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {priorityQueue.map((opp, idx) => (
+                          <tr key={opp.customer_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }} onClick={() => { setSelectedProfile(opp.customer_id); setShowProfileModal(true); }}>
+                            <td style={{ padding: '16px', fontSize: '14px', color: '#fff', fontWeight: '600' }}>#{idx + 1}</td>
+                            <td style={{ padding: '16px', fontSize: '14px', color: '#fff' }}>{opp.name}</td>
+                            <td style={{ padding: '16px' }}>
+                              <span style={{ 
+                                display: 'inline-block', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700',
+                                background: opp.segment === 'HOT' ? 'rgba(239,68,68,0.1)' : opp.segment === 'WARM' ? 'rgba(245,158,11,0.1)' : 'rgba(14,165,233,0.1)',
+                                color: opp.segment === 'HOT' ? '#ef4444' : opp.segment === 'WARM' ? '#f59e0b' : '#0ea5e9'
+                              }}>
+                                {opp.segment}
+                              </span>
+                            </td>
+                            <td style={{ padding: '16px', fontSize: '15px', color: 'var(--primary)', fontWeight: '700', textAlign: 'right' }}>
+                              {Number(opp.priority_score).toLocaleString()}
+                            </td>
+                            <td style={{ padding: '16px', fontSize: '13px', color: 'var(--muted)' }}>
+                              {opp.next_action}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
 
               {/* Row 4: Recent Customers */}
               {(() => {
