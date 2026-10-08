@@ -97,12 +97,14 @@ export default function Home() {
   const inputRef = useRef(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 150);
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping, isChatOpen]);
+  }, [messages, isTyping, isChatOpen, isListening]);
 
   useEffect(() => {
     if (!isTyping && isChatOpen) {
@@ -923,6 +925,7 @@ export default function Home() {
                 <input
                   id="input"
                   ref={inputRef}
+                  onFocus={scrollToBottom}
                   placeholder={isListening ? "🔴 Listening... speak now" : "Ask a question..."}
                   value={inputValue}
                   onChange={e => setInputValue(e.target.value)}

@@ -930,7 +930,7 @@ async def voice_to_text(file: UploadFile = File(...)):
             files = {'file': (file.filename, content, file.content_type)}
             data = {
                 'model': 'whisper-large-v3-turbo',
-                'prompt': 'This is a customer speaking to a shopping assistant in India. They may speak in English, Hindi, Hinglish, Gujarati, Marathi, Tamil, Telugu, Kannada, Malayalam, Bengali, or Punjabi. Transcribe exactly what they say in their original language. Do NOT add commentary. Do NOT translate to English.'
+                'prompt': 'This is a customer speaking to an Indian shopping assistant. They may speak in Hinglish, Hindi, or English. Transcribe exactly what they say. If they speak Hindi/Urdu, ALWAYS use English (Latin) script (Hinglish) or Devnagari. NEVER use Arabic/Urdu script. Do NOT translate to English.'
             }
             response = await client.post(
                 "https://api.groq.com/openai/v1/audio/transcriptions",
@@ -3294,7 +3294,9 @@ async def get_all_businesses(_ = Depends(verify_admin)):
             SELECT 
                 b.slug as id, b.brand_name as name,
                 (SELECT count(*) FROM customers WHERE business_id = b.id) as customers_count,
-                (SELECT count(*) FROM conversations WHERE business_id = b.id) as chats_count
+                (SELECT count(*) FROM conversations WHERE business_id = b.id) as chats_count,
+                (SELECT count(*) FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.business_id = b.id) as orders_count,
+                (SELECT count(*) FROM customers WHERE business_id = b.id AND segment = 'HOT') as hot_leads_count
             FROM businesses b
             ORDER BY b.created_at ASC
         """)

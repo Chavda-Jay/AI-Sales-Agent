@@ -1393,13 +1393,13 @@ export default function Dashboard() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
                           💰 Sales
                         </div>
-                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#22c55e' }}>{s.id === 'urban-threads' ? 45 : (s.id === 'sharma-electronics' ? 12 : 0)}</div>
+                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#22c55e' }}>{s.orders_count || 0}</div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
                           🔥 Hot Leads
                         </div>
-                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>{s.id === 'urban-threads' ? 14 : (s.id === 'sharma-electronics' ? 8 : 0)}</div>
+                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>{s.hot_leads_count || 0}</div>
                       </div>
                     </div>
 
