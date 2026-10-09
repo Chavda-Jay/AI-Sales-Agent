@@ -355,6 +355,7 @@ async def dormant_customer_worker():
                       AND EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
                       AND (SELECT MAX(o.created_at) FROM orders o WHERE o.customer_id = c.id)
                           < NOW() - make_interval(days => COALESCE(b.dormant_after_days, 30))
+                      AND COALESCE(c.last_interaction, c.created_at) < NOW() - make_interval(days => COALESCE(b.dormant_after_days, 30))
                     RETURNING c.id, c.ext_id, c.name, c.business_id, b.slug AS shop_slug
                 """)
 
@@ -1569,13 +1570,15 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                 if parsed.get("order_ready"):
                     prior_orders = 0
                     if customer_id:
-                        prior_orders = await conn.fetchval("SELECT COUNT(*) FROM orders WHERE customer_id = $1", customer_id) or 0
+                        prior_orders = await conn.fetchval("SELECT COUNT(*) FROM orders WHERE customer_id = $1 AND status = 'confirmed'", customer_id) or 0
                     parsed["segment"] = "REPEAT CUSTOMER" if prior_orders > 0 else "CUSTOMER"
 
                 if customer_id:
-                    total_orders = await conn.fetchval("SELECT COUNT(*) FROM orders WHERE customer_id = $1", customer_id) or 0
-                    if total_orders >= 2 and parsed.get("segment") != "DORMANT":
+                    total_confirmed_orders = await conn.fetchval("SELECT COUNT(*) FROM orders WHERE customer_id = $1 AND status = 'confirmed'", customer_id) or 0
+                    if total_confirmed_orders >= 2:
                         parsed["segment"] = "REPEAT CUSTOMER"
+                    elif total_confirmed_orders == 1 and parsed.get("segment") != "REPEAT CUSTOMER":
+                        parsed["segment"] = "CUSTOMER"
 
                 if not customer_id:
                     ref_code = None
