@@ -115,6 +115,151 @@ def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
 
 FOLLOW_UP_MAX_STAGE = {'HOT': 4, 'WARM': 3, 'COLD': 3}  # §17: HOT has 4 touches, WARM/COLD have 3
 
+async def run_follow_up_cycle(conn, only_customer_ids: Optional[List[int]] = None):
+    # Try to fetch active 'followup_style' experiment details
+    ab_exp = None
+    ab_variants_map = {}
+    ab_winners_map = {}
+    try:
+        exp_row = await conn.fetchrow("SELECT id, status FROM ab_experiments WHERE name = 'followup_style'")
+        if exp_row:
+            ab_exp = dict(exp_row)
+            var_rows = await conn.fetch("SELECT variant_key, style_instruction FROM ab_variants WHERE experiment_id = $1", ab_exp["id"])
+            ab_variants_map = {vr["variant_key"]: vr["style_instruction"] for vr in var_rows}
+            win_rows = await conn.fetch("SELECT business_id, variant_key FROM ab_business_winner WHERE experiment_id = $1", ab_exp["id"])
+            ab_winners_map = {wr["business_id"]: wr["variant_key"] for wr in win_rows}
+    except Exception as e:
+        ab_exp = None
+
+    rows = await conn.fetch("""
+        SELECT c.id, c.ext_id, c.segment, c.follow_up_stage, b.slug as shop_slug, c.business_id
+        FROM customers c
+        JOIN businesses b ON c.business_id = b.id
+        WHERE c.segment IN ('HOT', 'WARM', 'COLD')
+          AND c.opted_out = FALSE
+          AND (c.followed_up_at IS NULL OR c.followed_up_at < c.last_interaction)
+          AND c.follow_up_stage < (CASE c.segment WHEN 'HOT' THEN 4 ELSE 3 END)
+          AND c.last_interaction <= NOW() - (
+              CASE
+                WHEN c.segment = 'HOT'  AND c.follow_up_stage = 0 THEN INTERVAL '3 minutes'
+                WHEN c.segment = 'HOT'  AND c.follow_up_stage = 1 THEN INTERVAL '4 hours'
+                WHEN c.segment = 'HOT'  AND c.follow_up_stage = 2 THEN INTERVAL '24 hours'
+                WHEN c.segment = 'HOT'  AND c.follow_up_stage = 3 THEN INTERVAL '48 hours'
+                WHEN c.segment = 'WARM' AND c.follow_up_stage = 0 THEN INTERVAL '1 day'
+                WHEN c.segment = 'WARM' AND c.follow_up_stage = 1 THEN INTERVAL '3 days'
+                WHEN c.segment = 'WARM' AND c.follow_up_stage = 2 THEN INTERVAL '7 days'
+                WHEN c.segment = 'COLD' AND c.follow_up_stage = 0 THEN INTERVAL '7 days'
+                WHEN c.segment = 'COLD' AND c.follow_up_stage = 1 THEN INTERVAL '14 days'
+                WHEN c.segment = 'COLD' AND c.follow_up_stage = 2 THEN INTERVAL '30 days'
+              END
+          )
+          AND ($1::int[] IS NULL OR c.id = ANY($1))
+    """, only_customer_ids)
+
+    for row in rows:
+        segment = row['segment']
+        stage = row['follow_up_stage'] or 0
+        customer_id = row['id']
+        ext_id = row['ext_id']
+        business_id = row['business_id']
+
+        try:
+            config = await load_config_from_db(row['shop_slug'], conn)
+        except Exception:
+            continue
+
+        stage_instruction = {
+            0: "This is a helpful, no-pressure check-in — gently ask if they need help deciding.",
+            1: "Gently address a likely hesitation (price, trust, delivery) without being asked, and reassure them.",
+            2: "You can highlight genuine value or quality if they seem hesitant. Do not invent any discount or coupon not in the catalog/policies.",
+            3: "This is the final follow-up in this sequence. Keep it brief and low-pressure.",
+        }.get(stage, "Gently re-engage the customer.")
+
+        # A/B assignment
+        ab_info = None
+        try:
+            if ab_exp:
+                winner_var = ab_winners_map.get(business_id)
+                if winner_var:
+                    chosen_var = winner_var
+                elif ab_exp.get("status") == "running":
+                    chosen_var = "A" if customer_id % 2 == 0 else "B"
+                else:
+                    chosen_var = None
+
+                if chosen_var and chosen_var in ab_variants_map:
+                    ab_info = {
+                        "experiment_id": ab_exp["id"],
+                        "variant_key": chosen_var,
+                        "style_instruction": ab_variants_map[chosen_var]
+                    }
+        except Exception:
+            ab_info = None
+
+        style_extra = f"\n{ab_info['style_instruction']}" if (ab_info and ab_info.get("style_instruction")) else ""
+
+        system_prompt = f"""You are the AI sales agent for {config.get('brandName')}.
+Language: {config.get('language')}
+Store policies: {config.get('policies')}
+The customer (segment: {segment}) showed interest but has gone quiet.
+{stage_instruction}{style_extra}
+Write a very short, natural follow-up message.
+Return ONLY raw JSON: {{"reply": "your message"}}
+"""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "Generate the next follow-up message in the sequence."}
+        ]
+
+        reply = None
+        async with httpx.AsyncClient() as client:
+            for current_model in FALLBACK_MODELS:
+                try:
+                    groq_response = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
+                        json={"model": current_model, "messages": messages, "max_tokens": 120, "temperature": 0.7},
+                        timeout=10.0
+                    )
+                    data = groq_response.json()
+                    if "error" in data:
+                        continue
+                    raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    raw = re.sub(r'^```json', '', raw)
+                    raw = re.sub(r'^```', '', raw)
+                    raw = re.sub(r'```$', '', raw).strip()
+                    parsed = json.loads(raw)
+                    reply = parsed.get("reply")
+                    break
+                except Exception:
+                    continue
+
+        if not reply:
+            continue
+
+        await conn.execute(
+            "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
+            customer_id, business_id, None, reply, 0, segment
+        )
+        await conn.execute(
+            "UPDATE customers SET followed_up_at = NOW(), follow_up_stage = $1 WHERE id = $2",
+            stage + 1, customer_id
+        )
+
+        if ab_info:
+            try:
+                await conn.execute("""
+                    INSERT INTO ab_sends (experiment_id, variant_key, customer_id, business_id, stage)
+                    VALUES ($1, $2, $3, $4, $5)
+                """, ab_info["experiment_id"], ab_info["variant_key"], customer_id, business_id, stage)
+            except Exception as e:
+                print(f"Error recording ab_send: {e}")
+
+        if ext_id not in conversations:
+            conversations[ext_id] = []
+        conversations[ext_id].append({"role": "assistant", "content": json.dumps({"reply": reply, "follow_up_stage": stage + 1})})
+        print(f"Sent follow-up (stage {stage+1}/{FOLLOW_UP_MAX_STAGE[segment]}) to {ext_id} [{segment}] (AB: {ab_info['variant_key'] if ab_info else 'none'})")
+
 async def follow_up_cadence_worker():
     # §17 follow-up engine: nurtures HOT/WARM/COLD leads on a segment-specific cadence,
     # independent of cart abandonment. Replaces the old single-touch abandoned_chat_worker.
@@ -124,101 +269,7 @@ async def follow_up_cadence_worker():
             continue
         try:
             async with db_pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT c.id, c.ext_id, c.segment, c.follow_up_stage, b.slug as shop_slug, c.business_id
-                    FROM customers c
-                    JOIN businesses b ON c.business_id = b.id
-                    WHERE c.segment IN ('HOT', 'WARM', 'COLD')
-                      AND c.opted_out = FALSE
-                      AND (c.followed_up_at IS NULL OR c.followed_up_at < c.last_interaction)
-                      AND c.follow_up_stage < (CASE c.segment WHEN 'HOT' THEN 4 ELSE 3 END)
-                      AND c.last_interaction <= NOW() - (
-                          CASE
-                            WHEN c.segment = 'HOT'  AND c.follow_up_stage = 0 THEN INTERVAL '3 minutes'
-                            WHEN c.segment = 'HOT'  AND c.follow_up_stage = 1 THEN INTERVAL '4 hours'
-                            WHEN c.segment = 'HOT'  AND c.follow_up_stage = 2 THEN INTERVAL '24 hours'
-                            WHEN c.segment = 'HOT'  AND c.follow_up_stage = 3 THEN INTERVAL '48 hours'
-                            WHEN c.segment = 'WARM' AND c.follow_up_stage = 0 THEN INTERVAL '1 day'
-                            WHEN c.segment = 'WARM' AND c.follow_up_stage = 1 THEN INTERVAL '3 days'
-                            WHEN c.segment = 'WARM' AND c.follow_up_stage = 2 THEN INTERVAL '7 days'
-                            WHEN c.segment = 'COLD' AND c.follow_up_stage = 0 THEN INTERVAL '7 days'
-                            WHEN c.segment = 'COLD' AND c.follow_up_stage = 1 THEN INTERVAL '14 days'
-                            WHEN c.segment = 'COLD' AND c.follow_up_stage = 2 THEN INTERVAL '30 days'
-                          END
-                      )
-                """)
-
-                for row in rows:
-                    segment = row['segment']
-                    stage = row['follow_up_stage'] or 0
-                    customer_id = row['id']
-                    ext_id = row['ext_id']
-                    business_id = row['business_id']
-
-                    try:
-                        config = await load_config_from_db(row['shop_slug'], conn)
-                    except Exception:
-                        continue
-
-                    stage_instruction = {
-                        0: "This is a helpful, no-pressure check-in — gently ask if they need help deciding.",
-                        1: "Gently address a likely hesitation (price, trust, delivery) without being asked, and reassure them.",
-                        2: "You can highlight genuine value or quality if they seem hesitant. Do not invent any discount or coupon not in the catalog/policies.",
-                        3: "This is the final follow-up in this sequence. Keep it brief and low-pressure.",
-                    }.get(stage, "Gently re-engage the customer.")
-
-                    system_prompt = f"""You are the AI sales agent for {config.get('brandName')}.
-Language: {config.get('language')}
-Store policies: {config.get('policies')}
-The customer (segment: {segment}) showed interest but has gone quiet.
-{stage_instruction}
-Write a very short, natural follow-up message.
-Return ONLY raw JSON: {{"reply": "your message"}}
-"""
-                    messages = [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": "Generate the next follow-up message in the sequence."}
-                    ]
-
-                    reply = None
-                    async with httpx.AsyncClient() as client:
-                        for current_model in FALLBACK_MODELS:
-                            try:
-                                groq_response = await client.post(
-                                    "https://api.groq.com/openai/v1/chat/completions",
-                                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {GROQ_API_KEY}"},
-                                    json={"model": current_model, "messages": messages, "max_tokens": 120, "temperature": 0.7},
-                                    timeout=10.0
-                                )
-                                data = groq_response.json()
-                                if "error" in data:
-                                    continue
-                                raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                                raw = re.sub(r'^```json', '', raw)
-                                raw = re.sub(r'^```', '', raw)
-                                raw = re.sub(r'```$', '', raw).strip()
-                                parsed = json.loads(raw)
-                                reply = parsed.get("reply")
-                                break
-                            except Exception:
-                                continue
-
-                    if not reply:
-                        continue
-
-                    await conn.execute(
-                        "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
-                        customer_id, business_id, None, reply, 0, segment
-                    )
-                    await conn.execute(
-                        "UPDATE customers SET followed_up_at = NOW(), follow_up_stage = $1 WHERE id = $2",
-                        stage + 1, customer_id
-                    )
-                    if ext_id not in conversations:
-                        conversations[ext_id] = []
-                    conversations[ext_id].append({"role": "assistant", "content": json.dumps({"reply": reply, "follow_up_stage": stage + 1})})
-                    print(f"Sent follow-up (stage {stage+1}/{FOLLOW_UP_MAX_STAGE[segment]}) to {ext_id} [{segment}]")
-
+                await run_follow_up_cycle(conn)
         except Exception as e:
             print(f"Follow-up cadence worker error: {e}")
 
@@ -616,6 +667,63 @@ async def lifespan(app: FastAPI):
                         UNIQUE(business_id, report_date, report_type)
                     )
                 """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ab_experiments (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT UNIQUE NOT NULL,
+                        description TEXT,
+                        status TEXT DEFAULT 'running',
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ab_variants (
+                        id SERIAL PRIMARY KEY,
+                        experiment_id INT REFERENCES ab_experiments(id),
+                        variant_key TEXT,
+                        label TEXT,
+                        style_instruction TEXT,
+                        UNIQUE(experiment_id, variant_key)
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ab_sends (
+                        id SERIAL PRIMARY KEY,
+                        experiment_id INT,
+                        variant_key TEXT,
+                        customer_id INT REFERENCES customers(id),
+                        business_id INT,
+                        stage INT,
+                        sent_at TIMESTAMP DEFAULT NOW()
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ab_business_winner (
+                        experiment_id INT,
+                        business_id INT,
+                        variant_key TEXT,
+                        promoted_at TIMESTAMP DEFAULT NOW(),
+                        PRIMARY KEY(experiment_id, business_id)
+                    )
+                """)
+                await conn.execute("""
+                    INSERT INTO ab_experiments (name, description, status)
+                    VALUES ('followup_style', 'Testing short friendly reminder vs detailed helpful follow-up', 'running')
+                    ON CONFLICT (name) DO NOTHING
+                """)
+                await conn.execute("""
+                    INSERT INTO ab_variants (experiment_id, variant_key, label, style_instruction)
+                    SELECT id, 'A', 'Short & Friendly', 'Style: 1-2 short, friendly sentences. A gentle reminder, no pressure. Do not invent discounts, offers, delivery times or policies that are not in the catalog/policies.'
+                    FROM ab_experiments WHERE name = 'followup_style'
+                    ON CONFLICT (experiment_id, variant_key) DO NOTHING
+                """)
+                await conn.execute("""
+                    INSERT INTO ab_variants (experiment_id, variant_key, label, style_instruction)
+                    SELECT id, 'B', 'Detailed & Actionable', 'Style: up to 3 sentences. Acknowledge their interest, add ONE genuinely useful detail that is in the catalog/policies, end with ONE clear question or next step. Do not invent discounts, offers, delivery times or policies that are not in the catalog/policies.'
+                    FROM ab_experiments WHERE name = 'followup_style'
+                    ON CONFLICT (experiment_id, variant_key) DO NOTHING
+                """)
+
             print("Database connected and history loaded.")
         except Exception as e:
             print(f"Warning: Could not connect to database or load history. Using in-memory fallback. Error: {e}")
@@ -3616,4 +3724,232 @@ Return ONLY a valid JSON array of 4 objects with fields: format, caption, why_it
         raise HTTPException(status_code=500, detail="Failed to parse LLM response")
 
 
-# Trigger reload
+import math
+
+# §28 Experimentation (A/B Testing)
+AB_MIN_CUSTOMERS = 30
+AB_WINDOW_DAYS = 7
+
+def ab_decision(variants: list) -> dict:
+    if len(variants) < 2:
+        return {
+            "winner": None,
+            "message": "Not enough data yet (need at least 2 variants)",
+            "p_value": None
+        }
+
+    vA = next((v for v in variants if v.get("variant_key") == "A"), variants[0])
+    vB = next((v for v in variants if v.get("variant_key") == "B"), variants[1])
+
+    nA = vA.get("matured_customers", 0)
+    nB = vB.get("matured_customers", 0)
+    xA = vA.get("matured_ordered", 0)
+    xB = vB.get("matured_ordered", 0)
+
+    if nA < AB_MIN_CUSTOMERS or nB < AB_MIN_CUSTOMERS:
+        return {
+            "winner": None,
+            "message": f"Not enough data yet (need 30 customers per variant with a full 7-day outcome window; now A: {nA}, B: {nB})",
+            "p_value": None
+        }
+
+    rateA = xA / nA
+    rateB = xB / nB
+    p_pool = (xA + xB) / (nA + nB)
+
+    if p_pool == 0 or p_pool == 1:
+        return {
+            "winner": None,
+            "message": "No clear winner yet",
+            "p_value": None
+        }
+
+    se = math.sqrt(p_pool * (1 - p_pool) * (1 / nA + 1 / nB))
+    if se == 0:
+        return {
+            "winner": None,
+            "message": "No clear winner yet",
+            "p_value": None
+        }
+
+    z = (rateA - rateB) / se
+    p_value = math.erfc(abs(z) / math.sqrt(2))
+
+    if p_value < 0.05:
+        winner = "A" if rateA > rateB else "B"
+        return {
+            "winner": winner,
+            "message": f"Variant {winner} is winning",
+            "p_value": round(p_value, 4)
+        }
+    else:
+        return {
+            "winner": None,
+            "message": "No clear winner yet",
+            "p_value": round(p_value, 4)
+        }
+
+class PromoteVariantRequest(BaseModel):
+    variant_key: str
+
+@app.get("/api/ab-experiments")
+async def get_ab_experiments(shop: str, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+
+        exp = await conn.fetchrow("SELECT id, name, description, status FROM ab_experiments WHERE name = 'followup_style'")
+        if not exp:
+            return {
+                "experiment": None,
+                "promoted_variant": None,
+                "promoted_at": None,
+                "variants": [],
+                "decision": {
+                    "winner": None,
+                    "message": "No experiments found",
+                    "p_value": None
+                }
+            }
+        exp_id = exp["id"]
+
+        winner_row = await conn.fetchrow(
+            "SELECT variant_key, promoted_at FROM ab_business_winner WHERE experiment_id = $1 AND business_id = $2",
+            exp_id, biz_id
+        )
+        promoted_variant = winner_row["variant_key"] if winner_row else None
+        promoted_at = winner_row["promoted_at"] if winner_row else None
+
+        rows = await conn.fetch("""
+            WITH winner_info AS (
+                SELECT promoted_at FROM ab_business_winner WHERE experiment_id = $1 AND business_id = $2
+            ),
+            eligible_sends AS (
+                SELECT s.customer_id, s.variant_key, MIN(s.sent_at) as first_sent_at
+                FROM ab_sends s
+                LEFT JOIN winner_info w ON TRUE
+                WHERE s.experiment_id = $1 AND s.business_id = $2
+                  AND (w.promoted_at IS NULL OR s.sent_at < w.promoted_at)
+                GROUP BY s.customer_id, s.variant_key
+            ),
+            customer_outcomes AS (
+                SELECT 
+                    es.variant_key,
+                    es.customer_id,
+                    es.first_sent_at,
+                    (es.first_sent_at <= NOW() - INTERVAL '7 days') as is_matured,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM conversations c
+                        WHERE c.customer_id = es.customer_id
+                          AND c.message IS NOT NULL
+                          AND c.created_at > es.first_sent_at
+                          AND c.created_at <= es.first_sent_at + INTERVAL '7 days'
+                    ) THEN 1 ELSE 0 END AS replied,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM orders o
+                        WHERE o.customer_id = es.customer_id
+                          AND o.status = 'confirmed'
+                          AND o.created_at > es.first_sent_at
+                          AND o.created_at <= es.first_sent_at + INTERVAL '7 days'
+                    ) THEN 1 ELSE 0 END AS ordered,
+                    COALESCE((
+                        SELECT SUM(o.amount) FROM orders o
+                        WHERE o.customer_id = es.customer_id
+                          AND o.status = 'confirmed'
+                          AND o.created_at > es.first_sent_at
+                          AND o.created_at <= es.first_sent_at + INTERVAL '7 days'
+                    ), 0) AS revenue
+                FROM eligible_sends es
+            )
+            SELECT 
+                v.variant_key,
+                v.label,
+                v.style_instruction,
+                COUNT(co.customer_id)::int AS customers,
+                COALESCE(SUM(co.replied), 0)::int AS replied,
+                COALESCE(SUM(co.ordered), 0)::int AS ordered,
+                COALESCE(SUM(co.revenue), 0)::numeric AS total_revenue,
+                COALESCE(SUM(CASE WHEN co.is_matured THEN 1 ELSE 0 END), 0)::int AS matured_customers,
+                COALESCE(SUM(CASE WHEN co.is_matured AND co.ordered = 1 THEN 1 ELSE 0 END), 0)::int AS matured_ordered
+            FROM ab_variants v
+            LEFT JOIN customer_outcomes co ON v.variant_key = co.variant_key
+            WHERE v.experiment_id = $1
+            GROUP BY v.id, v.variant_key, v.label, v.style_instruction
+            ORDER BY v.variant_key ASC
+        """, exp_id, biz_id)
+
+        variants_result = []
+        for r in rows:
+            cust_count = r["customers"]
+            replied_count = r["replied"]
+            ordered_count = r["ordered"]
+            revenue_total = float(r["total_revenue"] or 0)
+
+            variants_result.append({
+                "variant_key": r["variant_key"],
+                "label": r["label"],
+                "style_instruction": r["style_instruction"],
+                "customers": cust_count,
+                "replied": replied_count,
+                "ordered": ordered_count,
+                "total_revenue": revenue_total,
+                "reply_rate": round(replied_count / cust_count, 4) if cust_count > 0 else 0.0,
+                "conversion_rate": round(ordered_count / cust_count, 4) if cust_count > 0 else 0.0,
+                "revenue_per_customer": round(revenue_total / cust_count, 2) if cust_count > 0 else 0.0,
+                "matured_customers": r["matured_customers"],
+                "matured_ordered": r["matured_ordered"]
+            })
+
+        decision = ab_decision(variants_result)
+
+        return {
+            "experiment": {
+                "id": exp["id"],
+                "name": exp["name"],
+                "description": exp["description"],
+                "status": exp["status"]
+            },
+            "promoted_variant": promoted_variant,
+            "promoted_at": promoted_at.isoformat() if promoted_at else None,
+            "variants": variants_result,
+            "decision": decision
+        }
+
+@app.post("/api/ab-experiments/{id}/promote")
+async def promote_ab_variant(id: int, shop: str, req: PromoteVariantRequest, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    async with db_pool.acquire() as conn:
+        exp = await conn.fetchrow("SELECT id FROM ab_experiments WHERE id = $1", id)
+        if not exp:
+            raise HTTPException(status_code=404, detail="Experiment not found")
+
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+
+        var = await conn.fetchrow("SELECT id FROM ab_variants WHERE experiment_id = $1 AND variant_key = $2", id, req.variant_key)
+        if not var:
+            raise HTTPException(status_code=400, detail="Invalid variant_key for this experiment")
+
+        await conn.execute("""
+            INSERT INTO ab_business_winner (experiment_id, business_id, variant_key, promoted_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (experiment_id, business_id)
+            DO UPDATE SET variant_key = EXCLUDED.variant_key, promoted_at = NOW()
+        """, id, biz_id, req.variant_key)
+
+        return {
+            "status": "success",
+            "experiment_id": id,
+            "business_id": biz_id,
+            "promoted_variant": req.variant_key,
+            "message": f"Variant {req.variant_key} promoted as default for {shop}"
+        }

@@ -240,6 +240,35 @@ export default function Dashboard() {
   const [showConvoModal, setShowConvoModal] = useState(false);
   const [storeToDelete, setStoreToDelete] = useState(null);
   const [storeDeleteInput, setStoreDeleteInput] = useState('');
+  const [abExperiments, setAbExperiments] = useState(null);
+  const [promotingVariant, setPromotingVariant] = useState(false);
+
+  const handlePromoteVariant = async (expId, variantKey) => {
+    if (!confirm(`Are you sure you want to promote Variant ${variantKey} as the default follow-up style?`)) {
+      return;
+    }
+    setPromotingVariant(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/ab-experiments/${expId}/promote?shop=${shopId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant_key: variantKey })
+      });
+      if (res.ok) {
+        const abRes = await authFetch(`${API_BASE}/api/ab-experiments?shop=${shopId}`);
+        if (abRes.ok) {
+          setAbExperiments(await abRes.json());
+        }
+      } else {
+        const errData = await res.json();
+        alert(errData.detail || 'Failed to promote variant');
+      }
+    } catch (err) {
+      console.error('Error promoting variant:', err);
+    } finally {
+      setPromotingVariant(false);
+    }
+  };
 
 
   // Daily Report state
@@ -443,6 +472,7 @@ export default function Dashboard() {
       setReferrals([]);
       setOrdersList([]);
       setPriorityQueue([]);
+      setAbExperiments(null);
     }
     try {
       const qs = shopId ? `?shop=${shopId}` : '';
@@ -485,6 +515,12 @@ export default function Dashboard() {
         if (pqRes.ok) {
           const pqData = await pqRes.json();
           setPriorityQueue(pqData.opportunities || []);
+        }
+
+        const abRes = await authFetch(`${API_BASE}/api/ab-experiments?shop=${shopId}`);
+        if (abRes.ok) {
+          const abData = await abRes.json();
+          setAbExperiments(abData);
         }
       }
 
@@ -2035,6 +2071,137 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
+
+
+              {/* Row 3.6: A/B Experiments */}
+              <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>A/B Experiments</h2>
+                    {abExperiments?.promoted_variant && (
+                      <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '12px' }}>
+                        Promoted: {abExperiments.promoted_variant}
+                      </span>
+                    )}
+                  </div>
+                  {abExperiments?.experiment && (
+                    <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                      Status: <strong style={{ color: abExperiments.experiment.status === 'running' ? '#10b981' : '#f59e0b' }}>{abExperiments.experiment.status}</strong>
+                    </span>
+                  )}
+                </div>
+
+                {/* Decision Banner */}
+                {abExperiments?.decision?.message && (
+                  <div style={{ 
+                    padding: '12px 16px', 
+                    borderRadius: '8px', 
+                    background: abExperiments.decision.winner ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)', 
+                    border: abExperiments.decision.winner ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--line)',
+                    marginBottom: '20px',
+                    fontSize: '13px',
+                    color: abExperiments.decision.winner ? '#10b981' : 'var(--muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '10px'
+                  }}>
+                    <span><strong>Decision:</strong> {abExperiments.decision.message}</span>
+                    {abExperiments.decision.p_value !== null && abExperiments.decision.p_value !== undefined && (
+                      <span style={{ fontSize: '11px', color: 'var(--muted)' }}>p-value: {abExperiments.decision.p_value}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Empty State or Table */}
+                {(!abExperiments || !abExperiments.variants || abExperiments.variants.every(v => v.customers === 0)) ? (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: '14px', padding: '36px 0', textAlign: 'center' }}>
+                    No follow-ups sent yet. Results will appear as follow-ups run.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table style={{ width: '100%', minWidth: '550px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase' }}>Variant</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', textAlign: 'right' }}>Customers</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', textAlign: 'right' }}>Replied</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', textAlign: 'right' }}>Ordered</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', textAlign: 'right' }}>Conversion %</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', textAlign: 'right' }}>Rev / Customer</th>
+                          <th style={{ padding: '12px 16px', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', textAlign: 'center' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {abExperiments.variants.map((v) => {
+                          const isWinner = abExperiments?.decision?.winner === v.variant_key;
+                          const isPromoted = abExperiments?.promoted_variant === v.variant_key;
+                          return (
+                            <tr key={v.variant_key} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                              <td style={{ padding: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ 
+                                    width: '24px', height: '24px', borderRadius: '6px', 
+                                    background: v.variant_key === 'A' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                                    color: v.variant_key === 'A' ? '#38bdf8' : '#a855f7',
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    fontWeight: '800', fontSize: '12px'
+                                  }}>
+                                    {v.variant_key}
+                                  </span>
+                                  <div>
+                                    <div style={{ color: '#fff', fontSize: '13px', fontWeight: '600' }}>{v.label}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td style={{ padding: '16px', fontSize: '14px', color: '#fff', textAlign: 'right', fontWeight: '600' }}>
+                                {v.customers}
+                              </td>
+                              <td style={{ padding: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'right' }}>
+                                {v.replied} <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>({(v.reply_rate * 100).toFixed(1)}%)</span>
+                              </td>
+                              <td style={{ padding: '16px', fontSize: '14px', color: '#fff', textAlign: 'right', fontWeight: '600' }}>
+                                {v.ordered}
+                              </td>
+                              <td style={{ padding: '16px', fontSize: '14px', color: 'var(--primary)', textAlign: 'right', fontWeight: '700' }}>
+                                {(v.conversion_rate * 100).toFixed(1)}%
+                              </td>
+                              <td style={{ padding: '16px', fontSize: '14px', color: '#10b981', textAlign: 'right', fontWeight: '600' }}>
+                                ₹{Number(v.revenue_per_customer).toLocaleString()}
+                              </td>
+                              <td style={{ padding: '16px', textAlign: 'center' }}>
+                                {isPromoted ? (
+                                  <span style={{ fontSize: '11px', color: '#10b981', fontWeight: '700' }}>Current Default</span>
+                                ) : (
+                                  <button
+                                    disabled={!isWinner || promotingVariant}
+                                    onClick={() => handlePromoteVariant(abExperiments.experiment.id, v.variant_key)}
+                                    style={{
+                                      padding: '6px 12px',
+                                      fontSize: '11px',
+                                      fontWeight: '600',
+                                      borderRadius: '6px',
+                                      border: 'none',
+                                      cursor: isWinner ? 'pointer' : 'not-allowed',
+                                      background: isWinner ? 'var(--primary)' : 'rgba(255,255,255,0.08)',
+                                      color: isWinner ? '#000' : 'rgba(255,255,255,0.3)',
+                                      transition: 'all 0.2s'
+                                    }}
+                                  >
+                                    Make {v.variant_key} default
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
 
 
               {/* Row 4: Recent Customers */}
