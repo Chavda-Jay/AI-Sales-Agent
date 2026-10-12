@@ -9,4 +9,4 @@ if (Test-Path ".\.venv\Scripts\Activate.ps1") {
 }
 
 Write-Host "Starting Uvicorn server strictly inside venv..." -ForegroundColor Green
-uvicorn main:app --reload --port 3001
+& "$PSScriptRoot\.venv\Scripts\python.exe" -m uvicorn main:app --reload --port 3001
