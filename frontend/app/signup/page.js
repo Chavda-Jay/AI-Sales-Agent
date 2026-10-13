@@ -231,31 +231,6 @@ export default function Signup() {
               </div>
 
               <div className="input-group">
-                <label className={jetbrains.className}>Store Banner Image <span style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: 'normal' }}>(Appears on your store page hero)</span></label>
-                {formData.banner_url ? (
-                  <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(248,250,252,0.1)' }}>
-                    <img src={formData.banner_url} alt="Banner" style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }} />
-                    <div style={{ position: 'absolute', top: '8px', right: '8px', display: 'flex', gap: '6px' }}>
-                      <label style={{ background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}>
-                        Change
-                        <input type="file" accept="image/*" onChange={handleBannerUpload} style={{ display: 'none' }} />
-                      </label>
-                      <button type="button" onClick={() => setFormData(prev => ({ ...prev, banner_url: '' }))} style={{ background: 'rgba(239,68,68,0.8)', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}>Remove</button>
-                    </div>
-                  </div>
-                ) : (
-                  <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', border: '2px dashed rgba(248,250,252,0.15)', borderRadius: '12px', padding: '24px', cursor: 'pointer', transition: 'all 0.2s', background: 'rgba(248,250,252,0.02)' }}>
-                    <div style={{ fontSize: '28px' }}>{bannerUploading ? '⏳' : '🖼️'}</div>
-                    <div style={{ fontSize: '13px', color: 'var(--muted)', textAlign: 'center' }}>
-                      {bannerUploading ? 'Uploading...' : 'Click to upload your store banner'}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'rgba(248,250,252,0.3)' }}>Recommended: 1200×400px, JPG/PNG</div>
-                    <input type="file" accept="image/*" onChange={handleBannerUpload} style={{ display: 'none' }} disabled={bannerUploading} />
-                  </label>
-                )}
-              </div>
-
-              <div className="input-group">
                 <label className={jetbrains.className}>Owner Email</label>
                 <input
                   type="email"

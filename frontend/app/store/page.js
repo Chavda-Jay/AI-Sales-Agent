@@ -11,37 +11,56 @@ const BACKEND_URL = `${API_BASE}/api/chat`;
 const HEALTH_URL = `${API_BASE}/api/health`;
 
 function iconFor(name) {
-  const n = name.toLowerCase();
+  const n = (name || '').toLowerCase();
   let imgSrc = '';
-  if (n.includes('jean')) imgSrc = '/images/slim_jeans.jpg';
-  else if (n.includes('t-shirt') || n.includes('tshirt') || n.includes('cotton shirt')) imgSrc = '/images/mens_tshirt.jpg';
-  else if (n.includes('shirt')) imgSrc = '/images/formal_shirt.jpg';
-  else if (n.includes('sneaker') || n.includes('shoe')) imgSrc = '/images/casual_sneakers.jpg';
+  // Electronics
+  if (n.includes('ac') || n.includes('air conditioner') || n.includes('split ac')) imgSrc = '/images/split_ac.jpg';
+  else if (n.includes('washing') || n.includes('machine')) imgSrc = '/images/washing_machine.jpg';
+  else if (n.includes('microwave') || n.includes('oven')) imgSrc = '/images/microwave_oven.jpg';
+  else if (n.includes('purifier') || n.includes('water')) imgSrc = '/images/water_purifier.jpg';
+  else if (n.includes('soundbar') || n.includes('speaker') || n.includes('dolby')) imgSrc = '/images/soundbar.jpg';
+  else if (n.includes('watch') || n.includes('series 9')) imgSrc = '/images/apple_watch.jpg';
+  else if (n.includes('induction') || n.includes('cooktop')) imgSrc = '/images/induction_cooktop.jpg';
+  else if (n.includes('drone') || n.includes('dji')) imgSrc = '/images/camera_drone.jpg';
   else if (n.includes('macbook')) imgSrc = '/images/macbook_pro.jpg';
-  else if (n.includes('playstation') || n.includes('ps5')) imgSrc = '/images/playstation5.jpg';
+  else if (n.includes('playstation') || n.includes('ps5')) imgSrc = '/images/ps5_console.jpg';
   else if (n.includes('dyson') || n.includes('airwrap')) imgSrc = '/images/dyson_airwrap.jpg';
-  else if (n.includes('gopro') || n.includes('hero')) imgSrc = '/images/gopro.jpg';
+  else if (n.includes('gopro') || n.includes('hero')) imgSrc = '/images/gopro_hero12.jpg';
   else if (n.includes('ipad')) imgSrc = '/images/ipad_air.jpg';
   else if (n.includes('air fryer') || n.includes('fryer')) imgSrc = '/images/air_fryer.jpg';
   else if (n.includes('logitech') || n.includes('mouse')) imgSrc = '/images/logitech_mouse.jpg';
   else if (n.includes('echo') || n.includes('alexa')) imgSrc = '/images/echo_dot.jpg';
-  else if (n.includes('tv') || n.includes('smart')) imgSrc = '/images/smart_tv.jpg';
-  else if (n.includes('refrigerator')) imgSrc = '/images/refrigerator.jpg';
+  else if (n.includes('tv') || n.includes('smart')) imgSrc = '/images/samsung_tv.jpg';
+  else if (n.includes('refrigerator') || n.includes('fridge')) imgSrc = '/images/lg_fridge.jpg';
   else if (n.includes('mixer') || n.includes('grinder')) imgSrc = '/images/mixer.jpg';
-  else if (n.includes('earphone') || n.includes('bluetooth')) imgSrc = '/images/earphones.jpg';
+  else if (n.includes('earphone') || n.includes('bluetooth') || n.includes('boat')) imgSrc = '/images/earphones.jpg';
+  // Apparel
+  else if (n.includes('polo')) imgSrc = '/images/polo_tshirt.jpg';
+  else if (n.includes('leather jacket') || n.includes('biker')) imgSrc = '/images/leather_jacket.jpg';
+  else if (n.includes('running') || n.includes('sports shoes')) imgSrc = '/images/running_shoes.jpg';
+  else if (n.includes('track')) imgSrc = '/images/track_pants.jpg';
+  else if (n.includes('linen')) imgSrc = '/images/linen_shirt.jpg';
+  else if (n.includes('blazer')) imgSrc = '/images/blazer.jpg';
+  else if (n.includes('cargo')) imgSrc = '/images/cargo_pants.jpg';
+  else if (n.includes('scarf')) imgSrc = '/images/winter_scarf.jpg';
+  else if (n.includes('cap')) imgSrc = '/images/baseball_cap.jpg';
+  else if (n.includes('jean')) imgSrc = '/images/slim_jeans.jpg';
+  else if (n.includes('t-shirt') || n.includes('tshirt') || n.includes('cotton shirt')) imgSrc = '/images/cotton_tshirt.jpg';
+  else if (n.includes('formal shirt') || n.includes('shirt')) imgSrc = '/images/formal_shirt.jpg';
+  else if (n.includes('sneaker') || n.includes('shoe')) imgSrc = '/images/casual_sneakers.jpg';
   else if (n.includes('hoodie')) imgSrc = '/images/winter_hoodie.jpg';
-  else if (n.includes('kurta')) imgSrc = '/images/kurta_set.jpg';
-  else if (n.includes('jacket')) imgSrc = '/images/denim_jacket.jpg';
+  else if (n.includes('kurta')) imgSrc = '/images/mens_kurta.jpg';
+  else if (n.includes('denim') || n.includes('jacket')) imgSrc = '/images/denim_jacket.jpg';
   else if (n.includes('belt')) imgSrc = '/images/leather_belt.jpg';
   else if (n.includes('chino') || n.includes('pants')) imgSrc = '/images/chino_pants.jpg';
   else if (n.includes('aviator') || n.includes('sunglass')) imgSrc = '/images/aviator_sunglasses.jpg';
   else if (n.includes('saree') || n.includes('silk')) imgSrc = '/images/silk_saree.jpg';
+
   if (imgSrc) {
     return <img src={imgSrc} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
   }
   
-  // Dynamic fallback using UI Avatars for a beautiful, colorful letter placeholder
-  const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=256&font-size=0.4`;
+  const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1e293b&color=fff&size=256&font-size=0.4`;
   return <img src={fallbackUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
 }
 
@@ -565,48 +584,29 @@ export default function Home() {
         </div>
       )}
 
-      {/* Hero Banner */}
+      {/* Sleek Modern Store Header (Clean, Premium & Product-Focused) */}
       {(() => {
         const brandNameLower = (config?.brandName || shopParam || '').toLowerCase();
-        let category = 'generic';
-        if (brandNameLower.includes('electronic') || brandNameLower.includes('tech') || brandNameLower.includes('mobile')) category = 'electronics';
-        else if (brandNameLower.includes('grocery') || brandNameLower.includes('mart') || brandNameLower.includes('food') || brandNameLower.includes('fresh')) category = 'grocery';
-        else if (brandNameLower.includes('cloth') || brandNameLower.includes('thread') || brandNameLower.includes('fashion') || brandNameLower.includes('wear')) category = 'apparel';
-
-        let heroBg, heroTag, heroTitle;
-        
-        // Priority 1: Owner uploaded banner
-        if (config?.bannerUrl) {
-          heroBg = { backgroundImage: `url('${config.bannerUrl}')` };
-        }
-        
-        if (category === 'electronics') {
-          if (!config?.bannerUrl) heroBg = { backgroundImage: `url('/images/electronics_banner.jpg')` };
-          heroTag = '✨ New Arrivals'; heroTitle = 'Latest Tech\nGadgets';
-        } else if (category === 'grocery') {
-          if (!config?.bannerUrl) heroBg = { background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' };
-          heroTag = '🛒 Fresh Stock'; heroTitle = 'Daily\nEssentials';
-        } else if (category === 'apparel') {
-          if (!config?.bannerUrl) heroBg = { backgroundImage: `url('/images/clothing_banner.jpg')` };
-          heroTag = '✦ New Season'; heroTitle = 'Spring\nCollection';
-        } else {
-          if (!config?.bannerUrl) heroBg = { background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' };
-          heroTag = '🏪 Top Picks'; heroTitle = 'Exclusive\nOffers';
-        }
+        const isElectronics = brandNameLower.includes('electronic') || brandNameLower.includes('tech') || brandNameLower.includes('mobile');
+        const defaultName = shopParam === 'urban-threads' ? 'Urban Threads Clothing' : 'Sharma Electronics';
+        const brandDisplayName = config?.brandName || defaultName;
 
         return (
-          <div className="store-hero" style={heroBg}>
-            <div className="hero-overlay" />
-            <div className="hero-content">
-              <span className="hero-tag">{heroTag}</span>
-              <h1 style={{ whiteSpace: 'pre-line' }}>{heroTitle}</h1>
-              <p>{config ? `Discover premium products at ${config.brandName}` : 'Premium quality products'}</p>
-              <button className="hero-btn" onClick={() => {
-                const grid = document.querySelector('.store-grid');
-                if (grid) grid.scrollIntoView({ behavior: 'smooth' });
-              }}>EXPLORE COLLECTION</button>
+          <header className="store-header-banner">
+            <div className="store-header-inner">
+              <div className="store-header-badge">
+                <span className="live-pulse-dot"></span>
+                <span className="store-badge-text">{isElectronics ? 'Official Electronics Store' : 'Official Fashion Boutique'}</span>
+                <span className="verified-check">✓ Verified AI Store</span>
+              </div>
+              <h1 className="store-header-title">{brandDisplayName}</h1>
+              <p className="store-header-subtitle">
+                {isElectronics 
+                  ? 'Explore 20 authentic high-end electronics, smart appliances & gadgets with instant 24/7 AI shopping assistance.'
+                  : 'Explore 20 curated trendiest fashion apparel, footwear & accessories tailored for your lifestyle.'}
+              </p>
             </div>
-          </div>
+          </header>
         );
       })()}
 
@@ -723,7 +723,14 @@ export default function Home() {
                       <div className="store-product-img">
                         <span className="product-badge-chip">{meta.badge}</span>
                         {p.image_url ? (
-                          <img src={p.image_url} alt={p.name} loading="lazy" />
+                          <img 
+                            src={p.image_url} 
+                            alt={p.name}
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1e293b&color=fff&size=256&font-size=0.4`;
+                            }}
+                          />
                         ) : (
                           iconFor(p.name)
                         )}
