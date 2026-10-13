@@ -1108,7 +1108,7 @@ async def chat(req: ChatRequest):
         business_id = config['business_id']
         
         catalog_items = []
-        for p in config.get("catalog", [])[:10]:  # Limit to top 10 items to prevent huge system prompt
+        for p in config.get("catalog", [])[:25]:  # Include up to 25 catalog items in system prompt
             text = f"{p['name']} - ₹{p['price']} - {p['note']}"
             if "image_url" in p and p["image_url"]:
                 text += f" (Image Link: {p['image_url']})"
