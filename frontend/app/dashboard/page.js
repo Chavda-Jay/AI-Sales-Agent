@@ -1012,7 +1012,7 @@ export default function Dashboard() {
       {/* Force Reset Modal (Superadmin only) */}
       {forceResetOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)' }}>
+          <div className="dash-modal-card" style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ ...sora.style, fontSize: '20px', color: c.ivory, margin: 0 }}>Reset Password</h2>
               <button onClick={() => setForceResetOpen(null)} style={{ background: 'transparent', border: 'none', color: c.muted, cursor: 'pointer', fontSize: '20px' }}>×</button>
@@ -1048,7 +1048,7 @@ export default function Dashboard() {
       {/* Settings Modal */}
       {settingsOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: settingsTab === 'context' ? '800px' : '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', transition: 'max-width 0.3s ease' }}>
+          <div className="dash-modal-card" style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: settingsTab === 'context' ? '800px' : '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', transition: 'max-width 0.3s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h2 style={{ ...sora.style, fontSize: '20px', color: c.ivory, margin: 0 }}>Store Settings</h2>
               <button onClick={() => setSettingsOpen(false)} style={{ background: 'transparent', border: 'none', color: c.muted, cursor: 'pointer', fontSize: '20px' }}>×</button>
@@ -1179,7 +1179,7 @@ export default function Dashboard() {
                       { key: 'target_repeat_purchase_rate', label: 'Target Repeat Purchase Rate (%)', placeholder: 'e.g. 25', type: 'number' },
                       { key: 'high_value_order_threshold', label: 'High-Value Order Threshold (₹)', placeholder: 'e.g. 50000', type: 'number' },
                     ].map(field => (
-                      <div key={field.key} style={{ flex: '1 1 calc(50% - 16px)', minWidth: '200px' }}>
+                      <div key={field.key} className="dash-context-field" style={{ flex: '1 1 calc(50% - 16px)', minWidth: '200px' }}>
                         <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>{field.label}</label>
                         <input
                           type={field.type || "text"}
@@ -1207,25 +1207,48 @@ export default function Dashboard() {
 
       {/* Mobile Overlay */}
       {sidebarOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 190 }} onClick={() => setSidebarOpen(false)} />
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 240 }} onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* Sidebar */}
       <aside className={`dash-sidebar ${sidebarOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg)', borderRight: '1px solid var(--line)', padding: '24px 0' }}>
-        <div style={{ padding: '0 24px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ background: 'var(--primary)', borderRadius: '8px', padding: '6px', flexShrink: 0 }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+        <div style={{ padding: '0 24px', marginBottom: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            <div style={{ background: 'var(--primary)', borderRadius: '8px', padding: '6px', flexShrink: 0 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            </div>
+            <span style={{ fontSize: '18px', fontWeight: '800', color: 'var(--ivory)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {selectedShop ? shopBrandName : 'AI Sales Agent'}
+              {!selectedShop && <span style={{ fontSize: '10px', background: 'rgba(59,130,246,0.2)', color: 'var(--primary)', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '4px' }}>B2C</span>}
+            </span>
           </div>
-          <span style={{ fontSize: '18px', fontWeight: '800', color: 'var(--ivory)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {selectedShop ? shopBrandName : 'AI Sales Agent'}
-            {!selectedShop && <span style={{ fontSize: '10px', background: 'rgba(59,130,246,0.2)', color: 'var(--primary)', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle', marginLeft: '4px' }}>B2C</span>}
-          </span>
+          <button
+            className="dash-sidebar-close-btn"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close sidebar"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid var(--line)',
+              color: 'var(--muted)',
+              borderRadius: '8px',
+              width: '32px',
+              height: '32px',
+              cursor: 'pointer',
+              display: 'none',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '14px',
+              flexShrink: 0
+            }}
+          >
+            ✕
+          </button>
         </div>
 
         <div style={{ padding: '0 12px' }}>
           {isSuperAdmin && (
             <div style={{ padding: '12px', color: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
-              onClick={() => { setSelectedShop(null); setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); }}
+              onClick={() => { setSelectedShop(null); setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setSidebarOpen(false); }}
               onMouseEnter={e => { if (selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
               onMouseLeave={e => { if (selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = c.muted; }}
             >
@@ -1242,12 +1265,12 @@ export default function Dashboard() {
           )}
 
           <div style={{ padding: '12px', color: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
-            onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = ''; }}>
+            onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = ''; setSidebarOpen(false); }}>
             <span>🏠</span> Store Dashboard
           </div>
 
           <div style={{ padding: '12px', color: ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(true); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'orders'; } }}
+            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(true); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'orders'; setSidebarOpen(false); } }}
             onMouseEnter={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = c.muted; }}
           >
@@ -1255,7 +1278,7 @@ export default function Dashboard() {
           </div>
 
           <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s' }}
-            onClick={() => { if (selectedShop) window.location.href = `/dashboard/catalog?shop=${selectedShop}`; }}
+            onClick={() => { if (selectedShop) { setSidebarOpen(false); window.location.href = `/dashboard/catalog?shop=${selectedShop}`; } }}
             onMouseEnter={e => { if (selectedShop) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop) e.currentTarget.style.color = c.muted; }}
           >
@@ -1263,14 +1286,14 @@ export default function Dashboard() {
           </div>
 
           <div style={{ padding: '12px', color: c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: 'pointer', marginTop: '8px', opacity: 1, transition: 'all 0.2s' }}
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => { setSettingsOpen(true); setSidebarOpen(false); }}
             onMouseEnter={e => e.currentTarget.style.color = '#fff'}
             onMouseLeave={e => e.currentTarget.style.color = c.muted}
           >
             <span>⚙️</span> Settings
           </div>
           <div style={{ padding: '12px', color: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(true); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); } }}
+            onClick={() => { if (selectedShop) { setDailyReportOpen(true); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); setSidebarOpen(false); } }}
             onMouseEnter={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen)) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen)) e.currentTarget.style.color = c.muted; }}
           >
@@ -1278,7 +1301,7 @@ export default function Dashboard() {
           </div>
 
           <div style={{ padding: '12px', color: contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: contentIdeasOpen ? 'rgba(234,179,8,0.1)' : 'transparent', border: contentIdeasOpen ? '1px solid rgba(234,179,8,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(true); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'content-ideas'; } }}
+            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(true); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'content-ideas'; setSidebarOpen(false); } }}
             onMouseEnter={e => { if (selectedShop && !contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
           >
@@ -1286,7 +1309,7 @@ export default function Dashboard() {
           </div>
 
           <div style={{ padding: '12px', color: competitorIntelOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: competitorIntelOpen ? 'rgba(139,92,246,0.15)' : 'transparent', border: competitorIntelOpen ? '1px solid rgba(139,92,246,0.3)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(true); setComingSoonPage(null); window.location.hash = 'competitor-intel'; fetchCompetitorData(selectedShop); } }}
+            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(true); setComingSoonPage(null); window.location.hash = 'competitor-intel'; fetchCompetitorData(selectedShop); setSidebarOpen(false); } }}
             onMouseEnter={e => { if (selectedShop && !competitorIntelOpen) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !competitorIntelOpen) e.currentTarget.style.color = c.muted; }}
           >
@@ -1303,7 +1326,7 @@ export default function Dashboard() {
               ].map(item => (
                 <div key={item.key}
                   style={{ padding: '10px 12px', color: comingSoonPage === item.key ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', alignItems: 'center', cursor: 'pointer', marginTop: '4px', transition: 'all 0.2s', background: comingSoonPage === item.key ? 'rgba(14,165,233,0.1)' : 'transparent', border: comingSoonPage === item.key ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-                  onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(item.key); window.location.hash = item.key; }}
+                  onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(item.key); window.location.hash = item.key; setSidebarOpen(false); }}
                   onMouseEnter={e => { if (comingSoonPage !== item.key) e.currentTarget.style.color = '#fff'; }}
                   onMouseLeave={e => { if (comingSoonPage !== item.key) e.currentTarget.style.color = c.muted; }}
                 >
@@ -1340,25 +1363,26 @@ export default function Dashboard() {
 
       {/* Main Content Area */}
       <div className="dash-main">
-        <header style={{ padding: '24px 32px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <header className="dash-main-header" style={{ padding: '24px 32px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, position: 'relative' }}>
             <button
               className="dash-hamburger"
               style={{ background: 'transparent', border: 'none', color: 'var(--ivory)', cursor: 'pointer', marginRight: '8px', display: 'none' }}
               onClick={() => setSidebarOpen(true)}
+              aria-label="Open sidebar"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
             </button>
             {selectedShop && (
               <div>
-                <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: 'var(--ivory)', letterSpacing: '-0.02em' }}>{shopBrandName} Dashboard</h1>
-                <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--muted)' }}>Overview and analytics for your AI Sales Agent</p>
+                <h1 className="dash-header-title" style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: 'var(--ivory)', letterSpacing: '-0.02em' }}>{shopBrandName} Dashboard</h1>
+                <p className="dash-header-sub" style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--muted)' }}>Overview and analytics for your AI Sales Agent</p>
               </div>
             )}
             {!selectedShop && (
               <div>
-                <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: 'var(--ivory)', letterSpacing: '-0.02em' }}>Admin Control Panel</h1>
-                <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--muted)' }}>Select a store to view analytics and manage catalog</p>
+                <h1 className="dash-header-title" style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: 'var(--ivory)', letterSpacing: '-0.02em' }}>Admin Control Panel</h1>
+                <p className="dash-header-sub" style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--muted)' }}>Select a store to view analytics and manage catalog</p>
               </div>
             )}
           </div>
@@ -1467,7 +1491,7 @@ export default function Dashboard() {
                   <p>AI is brainstorming creative ideas...</p>
                 </div>
               ) : generatedIdeas.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '24px' }}>
                   {generatedIdeas.map((idea, idx) => (
                     <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
                       <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: 'linear-gradient(90deg, #eab308, transparent)' }}></div>
@@ -1560,7 +1584,7 @@ export default function Dashboard() {
               </div>
 
               {/* KPI Cards Row */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+              <div className="dash-comp-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
                   <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Competitors Monitored</div>
                   <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: '#fff' }}>{competitorIntel?.competitors_count || competitorsList.length || 0}</div>
@@ -1639,7 +1663,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div style={{ overflowX: 'auto' }}>
+                <div className="dash-table-wrap">
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '650px' }}>
                     <thead>
                       <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
@@ -1701,7 +1725,7 @@ export default function Dashboard() {
               </div>
 
               {/* Two Column Layout: Add Competitor & Add Intel Entry */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px', marginBottom: '32px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '24px', marginBottom: '32px' }}>
                 
                 {/* Form 1: Add Competitor */}
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)' }}>
@@ -2055,7 +2079,7 @@ export default function Dashboard() {
               ) : dailyReport ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                   {/* Stats Grid - 4 columns */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                  <div className="dash-daily-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                     {[
                       { label: 'New Leads', value: dailyReport.new_leads_count, icon: '🆕', color: '#0ea5e9' },
                       { label: 'Hot Prospects', value: dailyReport.hot_prospects_count, icon: '🔥', color: '#f85149' },
@@ -2181,7 +2205,7 @@ export default function Dashboard() {
                     onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.boxShadow = 'none'; }}>
 
                     {/* Header Row */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                         <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(59,130,246,0.05))', border: '1px solid rgba(14,165,233,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800, color: '#0ea5e9', boxShadow: 'inset 0 0 20px rgba(14,165,233,0.05)' }}>
                           {s.icon || (s.name ? s.name.charAt(0).toUpperCase() : 'S')}
@@ -2263,7 +2287,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', overflow: 'hidden' }}>
-                <div style={{ overflowX: 'auto' }}>
+                <div className="dash-table-wrap">
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead>
                       <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--line)' }}>
@@ -2342,7 +2366,7 @@ export default function Dashboard() {
             <div>
 
               {/* Top Row: Stat Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+              <div className="dash-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '24px' }}>
                 {[
                   {
                     label: 'Total Customers',
@@ -2437,7 +2461,7 @@ export default function Dashboard() {
               </div>
 
               {/* Sales Pipeline Tracker */}
-              <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', marginBottom: '24px', overflowX: 'auto' }}>
+              <div className="dash-pipeline-card dash-table-wrap" style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', marginBottom: '24px', overflowX: 'auto' }}>
                 <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Sales Pipeline Tracker</h2>
                 <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '24px' }}>Horizontal breakdown of all leads & customers across lifecycle stages.</p>
 
@@ -2472,7 +2496,7 @@ export default function Dashboard() {
               {/* Row 2: Sales Performance & Lead Funnel */}
               <div className="dash-main-grid">
                 {/* Left: Sales Performance */}
-                <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', minHeight: '360px' }}>
+                <div className="dash-chart-card" style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', minHeight: '360px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                     <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#fff', margin: 0 }}>Sales Performance</h2>
                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -2480,7 +2504,7 @@ export default function Dashboard() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--muted)' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--line)' }}></span> Last Week</div>
                     </div>
                   </div>
-                  <div style={{ flex: 1, position: 'relative' }}>
+                  <div className="dash-chart-box" style={{ flex: 1, position: 'relative' }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={weeklyData.length > 0 ? weeklyData : [
                         { name: 'Mon', leads: 0, hot: 0, orders: 0 },
@@ -2820,7 +2844,7 @@ export default function Dashboard() {
                     No open opportunities right now.
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div className="dash-table-wrap">
                     <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left' }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--line)' }}>
@@ -2907,7 +2931,7 @@ export default function Dashboard() {
                     No follow-ups sent yet. Results will appear as follow-ups run.
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <div className="dash-table-wrap">
                     <table style={{ width: '100%', minWidth: '550px', borderCollapse: 'collapse', textAlign: 'left' }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--line)' }}>
@@ -3027,7 +3051,7 @@ export default function Dashboard() {
                         Live Sync
                       </div>
                     </div>
-                    <div style={{ overflowX: 'auto' }}>
+                    <div className="dash-table-wrap">
                       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--muted)', fontSize: '12px', fontWeight: '600', letterSpacing: '0.05em' }}>
