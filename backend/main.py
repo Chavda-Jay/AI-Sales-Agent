@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 import asyncio
 # pyrefly: ignore [missing-import]
 import jwt
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 # pyrefly: ignore [missing-import]
 from passlib.context import CryptContext
 # pyrefly: ignore [missing-import]s
@@ -722,6 +722,33 @@ async def lifespan(app: FastAPI):
                     SELECT id, 'B', 'Detailed & Actionable', 'Style: up to 3 sentences. Acknowledge their interest, add ONE genuinely useful detail that is in the catalog/policies, end with ONE clear question or next step. Do not invent discounts, offers, delivery times or policies that are not in the catalog/policies.'
                     FROM ab_experiments WHERE name = 'followup_style'
                     ON CONFLICT (experiment_id, variant_key) DO NOTHING
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS competitors (
+                        id SERIAL PRIMARY KEY,
+                        business_id INT REFERENCES businesses(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        website TEXT,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE(business_id, name)
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS competitor_entries (
+                        id SERIAL PRIMARY KEY,
+                        competitor_id INT REFERENCES competitors(id) ON DELETE CASCADE,
+                        business_id INT REFERENCES businesses(id) ON DELETE CASCADE,
+                        category TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        product_name TEXT,
+                        our_catalog_item_id INT REFERENCES catalog_items(id) ON DELETE SET NULL,
+                        price NUMERIC,
+                        source_url TEXT,
+                        source_note TEXT,
+                        observed_on DATE NOT NULL,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
                 """)
 
             print("Database connected and history loaded.")
@@ -3953,3 +3980,593 @@ async def promote_ab_variant(id: int, shop: str, req: PromoteVariantRequest, adm
             "promoted_variant": req.variant_key,
             "message": f"Variant {req.variant_key} promoted as default for {shop}"
         }
+
+
+# ==============================================================================
+# §27 Competitor Intelligence (Manual-entry only, Scoped, Deterministic comparisons)
+# ==============================================================================
+
+COMPETITOR_CATEGORIES = [
+    "pricing", "offer", "product", "positioning", "review",
+    "content", "complaint", "promotion", "website", "social"
+]
+
+class CreateCompetitorRequest(BaseModel):
+    name: str
+    website: Optional[str] = None
+    notes: Optional[str] = None
+
+class CreateCompetitorEntryRequest(BaseModel):
+    category: str
+    summary: str
+    product_name: Optional[str] = None
+    our_catalog_item_id: Optional[int] = None
+    price: Optional[float] = None
+    source_url: Optional[str] = None
+    source_note: Optional[str] = None
+    observed_on: date
+
+
+def validate_competitor_insights(raw_insights: list, entries: list, price_comparisons: list, policies: str) -> list:
+    """
+    Post-validates LLM-generated competitor insights:
+    (a) based_on must be a non-empty list of IDs, and every ID in based_on must exist in entries. Otherwise DROP insight.
+    (b) Any numbers (digits, ₹, %) in title + suggestion must be present in the input data (prices, diffs, dates, etc.). Otherwise DROP insight.
+    """
+    if not isinstance(raw_insights, list):
+        return []
+
+    input_entry_ids = {e["id"] for e in entries if isinstance(e, dict) and "id" in e}
+
+    # Collect all valid numeric tokens from the input data
+    allowed_numbers = set()
+    allowed_numbers.update([60.0, 60])  # Stale threshold
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        if "id" in e:
+            allowed_numbers.add(float(e["id"]))
+        if e.get("price") is not None:
+            allowed_numbers.add(float(e["price"]))
+        obs = e.get("observed_on")
+        if obs:
+            if isinstance(obs, str):
+                try:
+                    obs_dt = date.fromisoformat(obs)
+                    allowed_numbers.update([float(obs_dt.year), float(obs_dt.month), float(obs_dt.day)])
+                except Exception:
+                    pass
+            elif hasattr(obs, "year"):
+                allowed_numbers.update([float(obs.year), float(obs.month), float(obs.day)])
+        for n in re.findall(r'\b\d+(?:\.\d+)?\b', e.get("summary") or ""):
+            try:
+                allowed_numbers.add(float(n))
+            except ValueError:
+                pass
+
+    for pc in price_comparisons:
+        if not isinstance(pc, dict):
+            continue
+        if pc.get("our_price") is not None:
+            allowed_numbers.add(float(pc["our_price"]))
+        if pc.get("competitor_price") is not None:
+            allowed_numbers.add(float(pc["competitor_price"]))
+        if pc.get("diff_amount") is not None:
+            allowed_numbers.add(abs(float(pc["diff_amount"])))
+            allowed_numbers.add(float(pc["diff_amount"]))
+        if pc.get("diff_percent") is not None:
+            val = float(pc["diff_percent"])
+            allowed_numbers.add(val)
+            allowed_numbers.add(abs(val))
+            allowed_numbers.add(float(round(abs(val))))
+            allowed_numbers.add(float(int(abs(val))))
+
+    for n in re.findall(r'\b\d+(?:\.\d+)?\b', policies or ""):
+        try:
+            allowed_numbers.add(float(n))
+        except ValueError:
+            pass
+
+    valid_insights = []
+    for item in raw_insights:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        suggestion = str(item.get("suggestion", "")).strip()
+        based_on = item.get("based_on")
+        caution = item.get("caution")
+
+        if not title or not suggestion:
+            continue
+
+        # Condition (a): based_on must be non-empty list of IDs, all present in input_entry_ids
+        if not isinstance(based_on, list) or len(based_on) == 0:
+            continue
+        if not all(isinstance(bid, int) and bid in input_entry_ids for bid in based_on):
+            continue
+
+        # Condition (b): All numbers in title + suggestion must exist in allowed_numbers
+        text_to_check = f"{title} {suggestion}"
+        found_nums = re.findall(r'\b\d+(?:\.\d+)?\b', text_to_check)
+        has_invalid_num = False
+        for num_str in found_nums:
+            try:
+                num_val = float(num_str)
+                if num_val not in allowed_numbers and round(num_val) not in allowed_numbers:
+                    has_invalid_num = True
+                    break
+            except ValueError:
+                continue
+
+        if has_invalid_num:
+            continue
+
+        valid_insights.append({
+            "title": title,
+            "suggestion": suggestion,
+            "based_on": based_on,
+            "caution": str(caution).strip() if caution else None
+        })
+
+    return valid_insights
+
+
+@app.get("/api/competitors")
+async def get_competitors(shop: str, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+
+        comps = await conn.fetch("""
+            SELECT id, business_id, name, website, notes, created_at
+            FROM competitors
+            WHERE business_id = $1
+            ORDER BY id DESC
+        """, biz_id)
+
+        entries = await conn.fetch("""
+            SELECT ce.id, ce.competitor_id, ce.business_id, ce.category, ce.summary,
+                   ce.product_name, ce.our_catalog_item_id, ci.name as our_catalog_item_name,
+                   ce.price, ce.source_url, ce.source_note, ce.observed_on, ce.created_at
+            FROM competitor_entries ce
+            LEFT JOIN catalog_items ci ON ci.id = ce.our_catalog_item_id
+            WHERE ce.business_id = $1
+            ORDER BY ce.observed_on DESC, ce.id DESC
+        """, biz_id)
+
+        entries_by_comp = {}
+        for e in entries:
+            c_id = e["competitor_id"]
+            if c_id not in entries_by_comp:
+                entries_by_comp[c_id] = []
+            entries_by_comp[c_id].append({
+                "id": e["id"],
+                "competitor_id": e["competitor_id"],
+                "category": e["category"],
+                "summary": e["summary"],
+                "product_name": e["product_name"],
+                "our_catalog_item_id": e["our_catalog_item_id"],
+                "our_catalog_item_name": e["our_catalog_item_name"],
+                "price": float(e["price"]) if e["price"] is not None else None,
+                "source_url": e["source_url"],
+                "source_note": e["source_note"],
+                "observed_on": e["observed_on"].isoformat(),
+                "created_at": e["created_at"].isoformat() if e["created_at"] else None
+            })
+
+        result = []
+        for c in comps:
+            result.append({
+                "id": c["id"],
+                "business_id": c["business_id"],
+                "name": c["name"],
+                "website": c["website"],
+                "notes": c["notes"],
+                "created_at": c["created_at"].isoformat() if c["created_at"] else None,
+                "entries": entries_by_comp.get(c["id"], [])
+            })
+        return result
+
+
+@app.post("/api/competitors")
+async def create_competitor(shop: str, req: CreateCompetitorRequest, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    name = (req.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Competitor name is required")
+
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+
+        existing = await conn.fetchrow("SELECT id FROM competitors WHERE business_id = $1 AND LOWER(name) = LOWER($2)", biz_id, name)
+        if existing:
+            raise HTTPException(status_code=409, detail="Competitor with this name already exists")
+
+        row = await conn.fetchrow("""
+            INSERT INTO competitors (business_id, name, website, notes)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, business_id, name, website, notes, created_at
+        """, biz_id, name, req.website.strip() if req.website else None, req.notes.strip() if req.notes else None)
+
+        return {
+            "id": row["id"],
+            "business_id": row["business_id"],
+            "name": row["name"],
+            "website": row["website"],
+            "notes": row["notes"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "entries": []
+        }
+
+
+@app.delete("/api/competitors/{id}")
+async def delete_competitor(id: int, shop: str, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+
+        comp = await conn.fetchrow("SELECT id FROM competitors WHERE id = $1 AND business_id = $2", id, biz_id)
+        if not comp:
+            raise HTTPException(status_code=404, detail="Competitor not found")
+
+        await conn.execute("DELETE FROM competitors WHERE id = $1 AND business_id = $2", id, biz_id)
+        return {"status": "success", "message": "Competitor deleted"}
+
+
+@app.post("/api/competitors/{id}/entries")
+async def create_competitor_entry(id: int, shop: str, req: CreateCompetitorEntryRequest, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    category = (req.category or "").strip().lower()
+    if category not in COMPETITOR_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category '{req.category}'. Allowed: {', '.join(COMPETITOR_CATEGORIES)}")
+
+    summary = (req.summary or "").strip()
+    if not summary:
+        raise HTTPException(status_code=400, detail="Summary is required")
+    if len(summary) > 500:
+        raise HTTPException(status_code=400, detail="Summary cannot exceed 500 characters")
+
+    source_url = (req.source_url or "").strip() if req.source_url else None
+    source_note = (req.source_note or "").strip() if req.source_note else None
+    if not source_url and not source_note:
+        raise HTTPException(status_code=400, detail="At least one of source_url or source_note must be provided")
+
+    today = date.today()
+    if req.observed_on > today:
+        raise HTTPException(status_code=400, detail="observed_on cannot be in the future")
+
+    if req.price is not None and req.price < 0:
+        raise HTTPException(status_code=400, detail="Price cannot be negative")
+
+    if category == "pricing":
+        if req.price is None or req.price < 0:
+            raise HTTPException(status_code=400, detail="Price is required and must be non-negative for 'pricing' category")
+
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+
+        comp = await conn.fetchrow("SELECT id FROM competitors WHERE id = $1 AND business_id = $2", id, biz_id)
+        if not comp:
+            raise HTTPException(status_code=404, detail="Competitor not found")
+
+        if req.our_catalog_item_id is not None:
+            cat_item = await conn.fetchrow("SELECT id FROM catalog_items WHERE id = $1 AND business_id = $2", req.our_catalog_item_id, biz_id)
+            if not cat_item:
+                raise HTTPException(status_code=400, detail="our_catalog_item_id not found for this business")
+
+        row = await conn.fetchrow("""
+            INSERT INTO competitor_entries (
+                competitor_id, business_id, category, summary, product_name,
+                our_catalog_item_id, price, source_url, source_note, observed_on
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id, competitor_id, business_id, category, summary, product_name,
+                      our_catalog_item_id, price, source_url, source_note, observed_on, created_at
+        """, id, biz_id, category, summary, req.product_name.strip() if req.product_name else None,
+            req.our_catalog_item_id, req.price, source_url, source_note, req.observed_on)
+
+        return {
+            "id": row["id"],
+            "competitor_id": row["competitor_id"],
+            "business_id": row["business_id"],
+            "category": row["category"],
+            "summary": row["summary"],
+            "product_name": row["product_name"],
+            "our_catalog_item_id": row["our_catalog_item_id"],
+            "price": float(row["price"]) if row["price"] is not None else None,
+            "source_url": row["source_url"],
+            "source_note": row["source_note"],
+            "observed_on": row["observed_on"].isoformat(),
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None
+        }
+
+
+@app.delete("/api/competitor-entries/{id}")
+async def delete_competitor_entry(id: int, shop: str, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+
+        entry = await conn.fetchrow("SELECT id FROM competitor_entries WHERE id = $1 AND business_id = $2", id, biz_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found")
+
+        await conn.execute("DELETE FROM competitor_entries WHERE id = $1 AND business_id = $2", id, biz_id)
+        return {"status": "success", "message": "Entry deleted"}
+
+
+@app.get("/api/competitor-intel")
+async def get_competitor_intel(shop: str, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+
+        today = date.today()
+        stale_cutoff = today - timedelta(days=60)
+
+        total_entries = await conn.fetchval("SELECT COUNT(*) FROM competitor_entries WHERE business_id = $1", biz_id) or 0
+        competitors_count = await conn.fetchval("SELECT COUNT(*) FROM competitors WHERE business_id = $1", biz_id) or 0
+        stale_entries_count = await conn.fetchval("SELECT COUNT(*) FROM competitor_entries WHERE business_id = $1 AND observed_on < $2", biz_id, stale_cutoff) or 0
+
+        cat_rows = await conn.fetch("SELECT category, COUNT(*) as cnt FROM competitor_entries WHERE business_id = $1 GROUP BY category", biz_id)
+        counts_by_category = {r["category"]: r["cnt"] for r in cat_rows}
+
+        pricing_rows = await conn.fetch("""
+            SELECT ce.id, ce.competitor_id, c.name as competitor_name, ce.our_catalog_item_id,
+                   ci.name as product_name, ci.price as our_price, ce.price as competitor_price,
+                   ce.observed_on
+            FROM competitor_entries ce
+            JOIN competitors c ON c.id = ce.competitor_id
+            JOIN catalog_items ci ON ci.id = ce.our_catalog_item_id
+            WHERE ce.business_id = $1 AND ce.category = 'pricing' AND ce.our_catalog_item_id IS NOT NULL
+            ORDER BY ce.observed_on DESC, ce.id DESC
+        """, biz_id)
+
+        seen_pairs = set()
+        price_comparisons = []
+        for r in pricing_rows:
+            pair = (r["competitor_id"], r["our_catalog_item_id"])
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+
+            our_p = float(r["our_price"] or 0)
+            comp_p = float(r["competitor_price"] or 0)
+            diff_amt = round(our_p - comp_p, 2)
+            diff_pct = round(((our_p - comp_p) / comp_p) * 100, 2) if comp_p > 0 else None
+
+            if our_p < comp_p:
+                pos = "cheaper"
+            elif our_p > comp_p:
+                pos = "costlier"
+            else:
+                pos = "same"
+
+            is_stale = bool(r["observed_on"] < stale_cutoff)
+
+            price_comparisons.append({
+                "competitor": r["competitor_name"],
+                "product": r["product_name"],
+                "our_price": our_p,
+                "competitor_price": comp_p,
+                "diff_amount": diff_amt,
+                "diff_percent": diff_pct,
+                "position": pos,
+                "observed_on": r["observed_on"].isoformat(),
+                "stale": is_stale
+            })
+
+        return {
+            "price_comparisons": price_comparisons,
+            "counts_by_category": counts_by_category,
+            "total_entries": total_entries,
+            "stale_entries_count": stale_entries_count,
+            "competitors_count": competitors_count
+        }
+
+
+@app.post("/api/competitor-intel/insights")
+async def generate_competitor_insights(shop: str, admin_payload: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id, brand_name, policies FROM businesses WHERE slug = $1", shop)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+        biz_id = biz["id"]
+        brand_name = biz["brand_name"] or "Store"
+        policies = biz["policies"] or ""
+
+        today = date.today()
+        stale_cutoff = today - timedelta(days=60)
+
+        total_entries = await conn.fetchval("SELECT COUNT(*) FROM competitor_entries WHERE business_id = $1", biz_id) or 0
+        if total_entries == 0:
+            return {
+                "insights": [],
+                "message": "Add competitor entries first.",
+                "data_as_of": None,
+                "stale_entries_count": 0
+            }
+
+        entry_rows = await conn.fetch("""
+            SELECT ce.id, c.name as competitor, ce.category, ce.summary, ce.product_name,
+                   ce.price, ce.observed_on
+            FROM competitor_entries ce
+            JOIN competitors c ON c.id = ce.competitor_id
+            WHERE ce.business_id = $1
+            ORDER BY ce.observed_on DESC, ce.id DESC
+        """, biz_id)
+
+        entries = []
+        for r in entry_rows:
+            entries.append({
+                "id": r["id"],
+                "competitor": r["competitor"],
+                "category": r["category"],
+                "summary": r["summary"],
+                "product_name": r["product_name"],
+                "price": float(r["price"]) if r["price"] is not None else None,
+                "observed_on": r["observed_on"],
+                "stale": bool(r["observed_on"] < stale_cutoff)
+            })
+
+        data_as_of = max(e["observed_on"] for e in entries).isoformat() if entries else None
+        stale_entries_count = sum(1 for e in entries if e["stale"])
+
+        pricing_rows = await conn.fetch("""
+            SELECT ce.id, ce.competitor_id, c.name as competitor_name, ce.our_catalog_item_id,
+                   ci.name as product_name, ci.price as our_price, ce.price as competitor_price,
+                   ce.observed_on
+            FROM competitor_entries ce
+            JOIN competitors c ON c.id = ce.competitor_id
+            JOIN catalog_items ci ON ci.id = ce.our_catalog_item_id
+            WHERE ce.business_id = $1 AND ce.category = 'pricing' AND ce.our_catalog_item_id IS NOT NULL
+            ORDER BY ce.observed_on DESC, ce.id DESC
+        """, biz_id)
+
+        seen_pairs = set()
+        price_comparisons = []
+        for r in pricing_rows:
+            pair = (r["competitor_id"], r["our_catalog_item_id"])
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+
+            our_p = float(r["our_price"] or 0)
+            comp_p = float(r["competitor_price"] or 0)
+            diff_amt = round(our_p - comp_p, 2)
+            diff_pct = round(((our_p - comp_p) / comp_p) * 100, 2) if comp_p > 0 else None
+            pos = "cheaper" if our_p < comp_p else ("costlier" if our_p > comp_p else "same")
+            is_stale = bool(r["observed_on"] < stale_cutoff)
+
+            price_comparisons.append({
+                "competitor": r["competitor_name"],
+                "product": r["product_name"],
+                "our_price": our_p,
+                "competitor_price": comp_p,
+                "diff_amount": diff_amt,
+                "diff_percent": diff_pct,
+                "position": pos,
+                "observed_on": r["observed_on"].isoformat(),
+                "stale": is_stale
+            })
+
+    if not GROQ_API_KEY:
+        return {
+            "insights": [],
+            "message": "Groq API key not configured.",
+            "data_as_of": data_as_of,
+            "stale_entries_count": stale_entries_count
+        }
+
+    entries_payload = [
+        {
+            "id": e["id"],
+            "competitor": e["competitor"],
+            "category": e["category"],
+            "summary": e["summary"],
+            "price": e["price"],
+            "observed_on": e["observed_on"].isoformat(),
+            "stale": e["stale"]
+        }
+        for e in entries
+    ]
+
+    system_prompt = (
+        "Use ONLY the data given. Never state anything about a competitor that is not in the entries. "
+        "Do not guess prices, offers or reviews. Do not suggest copying or disparaging a competitor. "
+        "If data is stale (older than 60 days) say it needs re-checking. "
+        "Each insight must have: title, suggestion, based_on (list of entry ids from the input), caution (optional). "
+        "Do not invent discounts, offers, delivery times or policies for OUR business that are not in our policies. "
+        "Respond ONLY with a valid JSON object in this format:\n"
+        '{"insights": [{"title": "...", "suggestion": "...", "based_on": [1, 2], "caution": "..."}]}\n'
+        "Maximum 3-4 insights."
+    )
+
+    user_content = (
+        f"Our Business: {brand_name}\n"
+        f"Our Policies: {policies}\n\n"
+        f"Competitor Entries:\n{json.dumps(entries_payload, indent=2)}\n\n"
+        f"Price Comparisons:\n{json.dumps(price_comparisons, indent=2)}"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content}
+    ]
+
+    raw_insights = []
+    async with httpx.AsyncClient() as client:
+        for current_model in FALLBACK_MODELS:
+            try:
+                res = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {GROQ_API_KEY}"
+                    },
+                    json={
+                        "model": current_model,
+                        "messages": messages,
+                        "max_tokens": 800,
+                        "temperature": 0.3
+                    },
+                    timeout=30.0
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    content = re.sub(r'^```(?:json)?\s*', '', content, flags=re.MULTILINE)
+                    content = re.sub(r'\s*```\s*$', '', content, flags=re.MULTILINE).strip()
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict) and "insights" in parsed:
+                        raw_insights = parsed["insights"]
+                    elif isinstance(parsed, list):
+                        raw_insights = parsed
+                    break
+            except Exception:
+                continue
+
+    valid_insights = validate_competitor_insights(raw_insights, entries, price_comparisons, policies)
+
+    if not valid_insights:
+        return {
+            "insights": [],
+            "message": "Could not generate reliable insights. Review the data.",
+            "data_as_of": data_as_of,
+            "stale_entries_count": stale_entries_count
+        }
+
+    return {
+        "insights": valid_insights,
+        "message": "Insights generated successfully.",
+        "data_as_of": data_as_of,
+        "stale_entries_count": stale_entries_count
+    }
+

@@ -288,6 +288,225 @@ export default function Dashboard() {
   const [shopCatalog, setShopCatalog] = useState([]);
   const [shopBrandName, setShopBrandName] = useState('Store');
 
+  // Competitor Intel State (§27)
+  const [competitorIntelOpen, setCompetitorIntelOpen] = useState(false);
+  const [competitorsList, setCompetitorsList] = useState([]);
+  const [competitorIntel, setCompetitorIntel] = useState(null);
+  const [competitorLoading, setCompetitorLoading] = useState(false);
+
+  // Competitor form state
+  const [compName, setCompName] = useState('');
+  const [compWebsite, setCompWebsite] = useState('');
+  const [compNotes, setCompNotes] = useState('');
+  const [compSubmitting, setCompSubmitting] = useState(false);
+  const [compError, setCompError] = useState('');
+
+  // Entry form state
+  const [entryCompId, setEntryCompId] = useState('');
+  const [entryCategory, setEntryCategory] = useState('pricing');
+  const [entrySummary, setEntrySummary] = useState('');
+  const [entryProductName, setEntryProductName] = useState('');
+  const [entryOurCatalogItemId, setEntryOurCatalogItemId] = useState('');
+  const [entryPrice, setEntryPrice] = useState('');
+  const [entrySourceUrl, setEntrySourceUrl] = useState('');
+  const [entrySourceNote, setEntrySourceNote] = useState('');
+  const [entryObservedOn, setEntryObservedOn] = useState(new Date().toISOString().split('T')[0]);
+  const [entrySubmitting, setEntrySubmitting] = useState(false);
+  const [entryError, setEntryError] = useState('');
+  const [entryFilterCategory, setEntryFilterCategory] = useState('all');
+
+  // Insights state
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [competitorInsights, setCompetitorInsights] = useState(null);
+  const [insightsMessage, setInsightsMessage] = useState('');
+
+  const fetchCompetitorData = async (shopSlug) => {
+    const slug = shopSlug || selectedShop;
+    if (!slug) return;
+    setCompetitorLoading(true);
+    try {
+      const [compsRes, intelRes] = await Promise.all([
+        authFetch(`${API_BASE}/api/competitors?shop=${slug}`),
+        authFetch(`${API_BASE}/api/competitor-intel?shop=${slug}`)
+      ]);
+      if (compsRes.ok) {
+        const compsData = await compsRes.json();
+        setCompetitorsList(compsData || []);
+        if (compsData.length > 0) {
+          setEntryCompId(prev => prev || String(compsData[0].id));
+        }
+      }
+      if (intelRes.ok) {
+        setCompetitorIntel(await intelRes.json());
+      }
+    } catch (err) {
+      console.error('Error fetching competitor data:', err);
+    } finally {
+      setCompetitorLoading(false);
+    }
+  };
+
+  const handleAddCompetitor = async (e) => {
+    e.preventDefault();
+    if (!compName.trim()) {
+      setCompError('Competitor name is required');
+      return;
+    }
+    setCompError('');
+    setCompSubmitting(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/competitors?shop=${selectedShop}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: compName.trim(),
+          website: compWebsite.trim() || null,
+          notes: compNotes.trim() || null
+        })
+      });
+      if (res.ok) {
+        toast.success('Competitor added successfully');
+        setCompName('');
+        setCompWebsite('');
+        setCompNotes('');
+        await fetchCompetitorData(selectedShop);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setCompError(err.detail || 'Failed to add competitor');
+      }
+    } catch (err) {
+      setCompError('Network error');
+    } finally {
+      setCompSubmitting(false);
+    }
+  };
+
+  const handleDeleteCompetitor = async (id, name) => {
+    if (!confirm(`Delete competitor "${name}" and all associated entries?`)) return;
+    try {
+      const res = await authFetch(`${API_BASE}/api/competitors/${id}?shop=${selectedShop}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        toast.success('Competitor deleted');
+        await fetchCompetitorData(selectedShop);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || 'Failed to delete competitor');
+      }
+    } catch (err) {
+      toast.error('Network error');
+    }
+  };
+
+  const handleAddEntry = async (e) => {
+    e.preventDefault();
+    if (!entryCompId) {
+      setEntryError('Please select a competitor');
+      return;
+    }
+    if (!entrySummary.trim()) {
+      setEntryError('Summary is required');
+      return;
+    }
+    if (entrySummary.trim().length > 500) {
+      setEntryError('Summary cannot exceed 500 characters');
+      return;
+    }
+    if (!entrySourceUrl.trim() && !entrySourceNote.trim()) {
+      setEntryError('At least one of Source URL or Source Note is required');
+      return;
+    }
+    if (entryCategory === 'pricing' && (entryPrice === '' || Number(entryPrice) < 0)) {
+      setEntryError('Price is required and must be non-negative for pricing category');
+      return;
+    }
+    if (entryPrice !== '' && Number(entryPrice) < 0) {
+      setEntryError('Price cannot be negative');
+      return;
+    }
+    if (new Date(entryObservedOn) > new Date()) {
+      setEntryError('Observed date cannot be in the future');
+      return;
+    }
+
+    setEntryError('');
+    setEntrySubmitting(true);
+    try {
+      const payload = {
+        category: entryCategory,
+        summary: entrySummary.trim(),
+        product_name: entryProductName.trim() || null,
+        our_catalog_item_id: entryOurCatalogItemId ? Number(entryOurCatalogItemId) : null,
+        price: entryPrice !== '' ? Number(entryPrice) : null,
+        source_url: entrySourceUrl.trim() || null,
+        source_note: entrySourceNote.trim() || null,
+        observed_on: entryObservedOn
+      };
+      const res = await authFetch(`${API_BASE}/api/competitors/${entryCompId}/entries?shop=${selectedShop}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        toast.success('Intel entry added');
+        setEntrySummary('');
+        setEntryProductName('');
+        setEntryPrice('');
+        setEntrySourceUrl('');
+        setEntrySourceNote('');
+        await fetchCompetitorData(selectedShop);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setEntryError(err.detail || 'Failed to add entry');
+      }
+    } catch (err) {
+      setEntryError('Network error');
+    } finally {
+      setEntrySubmitting(false);
+    }
+  };
+
+  const handleDeleteEntry = async (id) => {
+    if (!confirm('Delete this competitor entry?')) return;
+    try {
+      const res = await authFetch(`${API_BASE}/api/competitor-entries/${id}?shop=${selectedShop}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        toast.success('Entry deleted');
+        await fetchCompetitorData(selectedShop);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || 'Failed to delete entry');
+      }
+    } catch (err) {
+      toast.error('Network error');
+    }
+  };
+
+  const handleGenerateCompetitorInsights = async () => {
+    setInsightsLoading(true);
+    setInsightsMessage('');
+    try {
+      const res = await authFetch(`${API_BASE}/api/competitor-intel/insights?shop=${selectedShop}`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCompetitorInsights(data);
+        if (data.message) setInsightsMessage(data.message);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || 'Failed to generate insights');
+      }
+    } catch (err) {
+      toast.error('Network error');
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedShop) {
       fetch(`${API_BASE}/api/config?shop=${selectedShop}`)
@@ -305,6 +524,48 @@ export default function Dashboard() {
     } else {
       setShopCatalog([]);
     }
+  }, [selectedShop]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash === 'competitor-intel') {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(false);
+        setOrdersViewOpen(false);
+        setComingSoonPage(null);
+        setCompetitorIntelOpen(true);
+        if (selectedShop) fetchCompetitorData(selectedShop);
+      } else if (hash === 'daily-report') {
+        setDailyReportOpen(true);
+        setContentIdeasOpen(false);
+        setOrdersViewOpen(false);
+        setCompetitorIntelOpen(false);
+        setComingSoonPage(null);
+      } else if (hash === 'content-ideas') {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(true);
+        setOrdersViewOpen(false);
+        setCompetitorIntelOpen(false);
+        setComingSoonPage(null);
+      } else if (hash === 'orders') {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(false);
+        setOrdersViewOpen(true);
+        setCompetitorIntelOpen(false);
+        setComingSoonPage(null);
+      } else if (!hash) {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(false);
+        setOrdersViewOpen(false);
+        setCompetitorIntelOpen(false);
+        setComingSoonPage(null);
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
   }, [selectedShop]);
 
   const generateIdeas = async () => {
@@ -522,6 +783,8 @@ export default function Dashboard() {
           const abData = await abRes.json();
           setAbExperiments(abData);
         }
+
+        fetchCompetitorData(shopId);
       }
 
       const aRes = await authFetch(`${ANALYTICS_URL}${qs}`);
@@ -978,13 +1241,13 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div style={{ padding: '12px', color: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'default', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
-            onClick={() => { window.location.hash = ''; }}>
+          <div style={{ padding: '12px', color: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
+            onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = ''; }}>
             <span>🏠</span> Store Dashboard
           </div>
 
           <div style={{ padding: '12px', color: ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(true); window.location.hash = 'orders'; } }}
+            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(true); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'orders'; } }}
             onMouseEnter={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = c.muted; }}
           >
@@ -1006,20 +1269,28 @@ export default function Dashboard() {
           >
             <span>⚙️</span> Settings
           </div>
-          <div style={{ padding: '12px', color: dailyReportOpen && !contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: dailyReportOpen && !contentIdeasOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: dailyReportOpen && !contentIdeasOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(true); setContentIdeasOpen(false); setOrdersViewOpen(false); window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); } }}
-            onMouseEnter={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen)) e.currentTarget.style.color = c.muted; }}
+          <div style={{ padding: '12px', color: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
+            onClick={() => { if (selectedShop) { setDailyReportOpen(true); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); } }}
+            onMouseEnter={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen)) e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen)) e.currentTarget.style.color = c.muted; }}
           >
             <span>📊</span> Daily Report
           </div>
 
           <div style={{ padding: '12px', color: contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: contentIdeasOpen ? 'rgba(234,179,8,0.1)' : 'transparent', border: contentIdeasOpen ? '1px solid rgba(234,179,8,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(true); setOrdersViewOpen(false); window.location.hash = 'content-ideas'; } }}
+            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(true); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'content-ideas'; } }}
             onMouseEnter={e => { if (selectedShop && !contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
           >
             <span>💡</span> Content Ideas
+          </div>
+
+          <div style={{ padding: '12px', color: competitorIntelOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: competitorIntelOpen ? 'rgba(139,92,246,0.15)' : 'transparent', border: competitorIntelOpen ? '1px solid rgba(139,92,246,0.3)' : '1px solid transparent', borderRadius: '8px' }}
+            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(true); setComingSoonPage(null); window.location.hash = 'competitor-intel'; fetchCompetitorData(selectedShop); } }}
+            onMouseEnter={e => { if (selectedShop && !competitorIntelOpen) e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={e => { if (selectedShop && !competitorIntelOpen) e.currentTarget.style.color = c.muted; }}
+          >
+            <span>🔍</span> Competitor Intel
           </div>
 
           {selectedShop && (
@@ -1028,12 +1299,11 @@ export default function Dashboard() {
               {[
                 { key: 'whatsapp', icon: '💬', label: 'WhatsApp Inbox' },
                 { key: 'social', icon: '📱', label: 'Social Media' },
-                { key: 'ads', icon: '📢', label: 'Ad Intelligence' },
-                { key: 'competitor', icon: '🔍', label: 'Competitor Intel' }
+                { key: 'ads', icon: '📢', label: 'Ad Intelligence' }
               ].map(item => (
                 <div key={item.key}
                   style={{ padding: '10px 12px', color: comingSoonPage === item.key ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', alignItems: 'center', cursor: 'pointer', marginTop: '4px', transition: 'all 0.2s', background: comingSoonPage === item.key ? 'rgba(14,165,233,0.1)' : 'transparent', border: comingSoonPage === item.key ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-                  onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setComingSoonPage(item.key); window.location.hash = item.key; }}
+                  onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(item.key); window.location.hash = item.key; }}
                   onMouseEnter={e => { if (comingSoonPage !== item.key) e.currentTarget.style.color = '#fff'; }}
                   onMouseLeave={e => { if (comingSoonPage !== item.key) e.currentTarget.style.color = c.muted; }}
                 >
@@ -1238,6 +1508,523 @@ export default function Dashboard() {
                   <p style={{ fontSize: '14px', marginTop: '8px' }}>Select a product and format, then click Generate Ideas.</p>
                 </div>
               )}
+            </div>
+          ) : competitorIntelOpen ? (
+            /* Competitor Intel View (§27) */
+            <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <div style={{ ...sora, fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.18em', color: '#a78bfa', marginBottom: '8px' }}>
+                    {stores.find(s => s.id === selectedShop)?.name || 'Store'} • Competitive Intelligence (§27)
+                  </div>
+                  <h1 style={{ ...sora, fontSize: '28px', fontWeight: 800, color: '#fff', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
+                    🔍 Competitor Intel
+                  </h1>
+                  <p style={{ color: c.muted, margin: 0, fontSize: '14px' }}>
+                    Track verified public competitor moves, pricing gaps, and differentiation opportunities.
+                  </p>
+                </div>
+                <div>
+                  <button
+                    onClick={handleGenerateCompetitorInsights}
+                    disabled={insightsLoading || (competitorIntel?.total_entries || 0) === 0}
+                    style={{
+                      background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '12px 24px',
+                      borderRadius: '12px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: (insightsLoading || (competitorIntel?.total_entries || 0) === 0) ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s',
+                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      opacity: (insightsLoading || (competitorIntel?.total_entries || 0) === 0) ? 0.6 : 1
+                    }}
+                  >
+                    {insightsLoading ? '✨ Analyzing...' : '✨ Generate Insights'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Policy & Compliance Note */}
+              <div style={{ background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.25)', borderRadius: '16px', padding: '16px 20px', marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontSize: '20px' }}>🛡️</span>
+                <div style={{ fontSize: '13px', color: '#e2e8f0', lineHeight: 1.5 }}>
+                  <strong style={{ color: '#c4b5fd' }}>Compliance Notice (§27):</strong> Enter only publicly available information and where you saw it. Do not enter personal data of individuals.
+                </div>
+              </div>
+
+              {/* KPI Cards Row */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
+                  <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Competitors Monitored</div>
+                  <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: '#fff' }}>{competitorIntel?.competitors_count || competitorsList.length || 0}</div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
+                  <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Total Intel Entries</div>
+                  <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: '#38bdf8' }}>{competitorIntel?.total_entries || 0}</div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
+                  <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Price Mappings</div>
+                  <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: '#22c55e' }}>{competitorIntel?.price_comparisons?.length || 0}</div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
+                  <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Stale Entries (60d+)</div>
+                  <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: (competitorIntel?.stale_entries_count || 0) > 0 ? '#f59e0b' : '#94a3b8' }}>
+                    {competitorIntel?.stale_entries_count || 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Insights Panel */}
+              {(insightsLoading || competitorInsights || insightsMessage) && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '20px', padding: '24px', marginBottom: '32px', backdropFilter: 'blur(12px)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ ...sora, fontSize: '16px', fontWeight: 700, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>💡</span> Strategic Differentiation Insights
+                    </div>
+                    {competitorInsights?.data_as_of && (
+                      <div style={{ fontSize: '12px', color: c.muted }}>
+                        Data as of: <strong style={{ color: '#fff' }}>{competitorInsights.data_as_of}</strong>
+                      </div>
+                    )}
+                  </div>
+
+                  {insightsLoading ? (
+                    <div style={{ textAlign: 'center', padding: '40px 0', color: c.muted }}>
+                      <div style={{ fontSize: '32px', marginBottom: '12px', animation: 'spin 1s linear infinite' }}>⏳</div>
+                      <p style={{ margin: 0 }}>Synthesizing differentiation suggestions from entered intel...</p>
+                    </div>
+                  ) : competitorInsights?.insights?.length > 0 ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+                      {competitorInsights.insights.map((ins, idx) => (
+                        <div key={idx} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div style={{ ...sora, fontSize: '15px', fontWeight: 700, color: '#fff' }}>{ins.title}</div>
+                          <div style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: 1.6 }}>{ins.suggestion}</div>
+                          {ins.caution && (
+                            <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', color: '#fbbf24' }}>
+                              ⚠️ <strong>Caution:</strong> {ins.caution}
+                            </div>
+                          )}
+                          <div style={{ marginTop: 'auto', paddingTop: '8px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '11px', color: c.muted }}>Based on entries:</span>
+                            {ins.based_on?.map((eid) => (
+                              <span key={eid} style={{ background: 'rgba(139, 92, 246, 0.2)', color: '#c4b5fd', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                                #{eid}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '20px', color: c.muted, fontSize: '13px' }}>
+                      {insightsMessage || 'No insights generated yet. Click Generate Insights to analyze current intel.'}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Price Comparisons Table */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', marginBottom: '32px', backdropFilter: 'blur(12px)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div>
+                    <h2 style={{ ...sora, fontSize: '18px', fontWeight: 700, color: '#fff', margin: '0 0 4px 0' }}>📊 Price Comparisons</h2>
+                    <p style={{ color: c.muted, margin: 0, fontSize: '13px' }}>Deterministic comparison of our products vs competitors</p>
+                  </div>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '650px' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Competitor</th>
+                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Our Product</th>
+                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Our Price</th>
+                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Competitor Price</th>
+                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Diff</th>
+                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Position</th>
+                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Observed On</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(!competitorIntel?.price_comparisons || competitorIntel.price_comparisons.length === 0) ? (
+                        <tr>
+                          <td colSpan="7" style={{ padding: '32px', textAlign: 'center', color: c.muted, fontSize: '13px' }}>
+                            No price comparisons mapped yet. Add a 'pricing' entry linked to one of our catalog items.
+                          </td>
+                        </tr>
+                      ) : (
+                        competitorIntel.price_comparisons.map((row, idx) => {
+                          const isCheaper = row.position === 'cheaper';
+                          const isCostlier = row.position === 'costlier';
+                          const posColor = isCheaper ? '#22c55e' : (isCostlier ? '#f59e0b' : '#94a3b8');
+                          return (
+                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                              <td style={{ padding: '14px 16px', color: '#fff', fontWeight: 600, fontSize: '13px' }}>{row.competitor}</td>
+                              <td style={{ padding: '14px 16px', color: c.ivory, fontSize: '13px' }}>{row.product}</td>
+                              <td style={{ padding: '14px 16px', ...mono, color: '#fff', fontSize: '13px' }}>₹{row.our_price?.toLocaleString()}</td>
+                              <td style={{ padding: '14px 16px', ...mono, color: '#94a3b8', fontSize: '13px' }}>₹{row.competitor_price?.toLocaleString()}</td>
+                              <td style={{ padding: '14px 16px', ...mono, fontSize: '13px', color: posColor }}>
+                                {row.diff_amount > 0 ? `+₹${row.diff_amount}` : `₹${row.diff_amount}`}
+                                {row.diff_percent !== null && ` (${row.diff_percent > 0 ? '+' : ''}${row.diff_percent}%)`}
+                              </td>
+                              <td style={{ padding: '14px 16px' }}>
+                                <span style={{
+                                  padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
+                                  background: isCheaper ? 'rgba(34, 197, 94, 0.15)' : (isCostlier ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255,255,255,0.1)'),
+                                  color: posColor
+                                }}>
+                                  {row.position}
+                                </span>
+                              </td>
+                              <td style={{ padding: '14px 16px', fontSize: '12px', color: c.muted }}>
+                                {row.observed_on}
+                                {row.stale && (
+                                  <span style={{ marginLeft: '8px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontSize: '10px', fontWeight: 700 }}>
+                                    STALE
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Two Column Layout: Add Competitor & Add Intel Entry */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px', marginBottom: '32px' }}>
+                
+                {/* Form 1: Add Competitor */}
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)' }}>
+                  <h3 style={{ ...sora, fontSize: '16px', fontWeight: 700, color: '#fff', margin: '0 0 16px 0' }}>➕ Add Competitor</h3>
+                  {compError && (
+                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '8px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '16px' }}>
+                      {compError}
+                    </div>
+                  )}
+                  <form onSubmit={handleAddCompetitor} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Name *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Croma, Vijay Sales, Myntra"
+                        value={compName}
+                        onChange={e => setCompName(e.target.value)}
+                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Website</label>
+                      <input
+                        type="url"
+                        placeholder="https://competitor.com"
+                        value={compWebsite}
+                        onChange={e => setCompWebsite(e.target.value)}
+                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Notes</label>
+                      <textarea
+                        placeholder="General notes about competitor positioning"
+                        value={compNotes}
+                        onChange={e => setCompNotes(e.target.value)}
+                        rows={2}
+                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', outline: 'none', resize: 'vertical' }}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={compSubmitting}
+                      style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, cursor: compSubmitting ? 'not-allowed' : 'pointer' }}
+                    >
+                      {compSubmitting ? 'Adding...' : 'Add Competitor'}
+                    </button>
+                  </form>
+
+                  {/* Competitor List */}
+                  <div style={{ marginTop: '24px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px' }}>
+                    <div style={{ fontSize: '12px', color: c.muted, fontWeight: 700, textTransform: 'uppercase', marginBottom: '10px' }}>Active Competitors ({competitorsList.length})</div>
+                    {competitorsList.length === 0 ? (
+                      <div style={{ color: c.muted, fontSize: '12px' }}>No competitors added yet.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                        {competitorsList.map(comp => (
+                          <div key={comp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <div>
+                              <div style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{comp.name}</div>
+                              {comp.website && <a href={comp.website} target="_blank" rel="noreferrer" style={{ color: '#38bdf8', fontSize: '11px', textDecoration: 'none' }}>{comp.website}</a>}
+                            </div>
+                            <button
+                              onClick={() => handleDeleteCompetitor(comp.id, comp.name)}
+                              style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '4px' }}
+                              title="Delete competitor"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Form 2: Add Intel Entry */}
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)' }}>
+                  <h3 style={{ ...sora, fontSize: '16px', fontWeight: 700, color: '#fff', margin: '0 0 16px 0' }}>📝 Record Intel Entry</h3>
+                  {entryError && (
+                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '8px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '16px' }}>
+                      {entryError}
+                    </div>
+                  )}
+                  <form onSubmit={handleAddEntry} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Competitor *</label>
+                        <select
+                          value={entryCompId}
+                          onChange={e => setEntryCompId(e.target.value)}
+                          style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          required
+                        >
+                          <option value="">Select Competitor</option>
+                          {competitorsList.map(comp => (
+                            <option key={comp.id} value={comp.id}>{comp.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Category *</label>
+                        <select
+                          value={entryCategory}
+                          onChange={e => setEntryCategory(e.target.value)}
+                          style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          required
+                        >
+                          {['pricing', 'offer', 'product', 'positioning', 'review', 'content', 'complaint', 'promotion', 'website', 'social'].map(cat => (
+                            <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: c.muted }}>Summary *</label>
+                        <span style={{ fontSize: '11px', color: entrySummary.length > 500 ? '#ef4444' : c.muted }}>{entrySummary.length}/500</span>
+                      </div>
+                      <textarea
+                        placeholder="What did you observe? (Publicly visible info only)"
+                        value={entrySummary}
+                        onChange={e => setEntrySummary(e.target.value)}
+                        maxLength={500}
+                        rows={2}
+                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none', resize: 'vertical' }}
+                        required
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Competitor Product Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 43-inch 4K LED TV"
+                          value={entryProductName}
+                          onChange={e => setEntryProductName(e.target.value)}
+                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>
+                          Price (₹) {entryCategory === 'pricing' && '*'}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder={entryCategory === 'pricing' ? 'Required (e.g. 21999)' : 'Optional'}
+                          value={entryPrice}
+                          onChange={e => setEntryPrice(e.target.value)}
+                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          required={entryCategory === 'pricing'}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Link to Our Catalog Product</label>
+                      <select
+                        value={entryOurCatalogItemId}
+                        onChange={e => setEntryOurCatalogItemId(e.target.value)}
+                        style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                      >
+                        <option value="">None / Not directly comparable</option>
+                        {shopCatalog?.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name} (₹{item.price})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Source URL</label>
+                        <input
+                          type="url"
+                          placeholder="https://..."
+                          value={entrySourceUrl}
+                          onChange={e => setEntrySourceUrl(e.target.value)}
+                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Source Note</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. In-store poster, Public Tweet"
+                          value={entrySourceNote}
+                          onChange={e => setEntrySourceNote(e.target.value)}
+                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Observed On *</label>
+                      <input
+                        type="date"
+                        max={new Date().toISOString().split('T')[0]}
+                        value={entryObservedOn}
+                        onChange={e => setEntryObservedOn(e.target.value)}
+                        style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        required
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={entrySubmitting || competitorsList.length === 0}
+                      style={{ background: '#8b5cf6', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, cursor: (entrySubmitting || competitorsList.length === 0) ? 'not-allowed' : 'pointer', opacity: (entrySubmitting || competitorsList.length === 0) ? 0.6 : 1, marginTop: '4px' }}
+                    >
+                      {entrySubmitting ? 'Saving...' : 'Add Intel Entry'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* All Entries List (Category-wise) */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h2 style={{ ...sora, fontSize: '18px', fontWeight: 700, color: '#fff', margin: '0 0 4px 0' }}>🗂️ Intel Log & History</h2>
+                    <p style={{ color: c.muted, margin: 0, fontSize: '13px' }}>All recorded observations grouped by competitor</p>
+                  </div>
+                  {/* Category Filter Pills */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {['all', 'pricing', 'offer', 'product', 'positioning', 'review', 'content', 'complaint', 'promotion', 'website', 'social'].map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setEntryFilterCategory(cat)}
+                        style={{
+                          background: entryFilterCategory === cat ? '#8b5cf6' : 'rgba(255,255,255,0.04)',
+                          color: entryFilterCategory === cat ? '#fff' : c.muted,
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: '20px',
+                          padding: '4px 10px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          textTransform: 'capitalize'
+                        }}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {competitorsList.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: c.muted, fontSize: '14px' }}>
+                    No competitors added yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {competitorsList.flatMap(comp => (comp.entries || []).map(ent => ({ ...ent, compName: comp.name })))
+                      .filter(ent => entryFilterCategory === 'all' || ent.category === entryFilterCategory)
+                      .length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '32px', color: c.muted, fontSize: '13px' }}>
+                          No entries found for category '{entryFilterCategory}'.
+                        </div>
+                      ) : (
+                        competitorsList.flatMap(comp => (comp.entries || []).map(ent => ({ ...ent, compName: comp.name })))
+                          .filter(ent => entryFilterCategory === 'all' || ent.category === entryFilterCategory)
+                          .map(entry => {
+                            const isStale = new Date(entry.observed_on) < new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+                            return (
+                              <div key={entry.id} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+                                <div style={{ flex: 1, minWidth: '260px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                                    <span style={{ color: '#fff', fontWeight: 700, fontSize: '13px' }}>{entry.compName}</span>
+                                    <span style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase' }}>
+                                      {entry.category}
+                                    </span>
+                                    {entry.price !== null && entry.price !== undefined && (
+                                      <span style={{ ...mono, color: '#22c55e', fontSize: '12px', fontWeight: 700 }}>
+                                        ₹{entry.price.toLocaleString()}
+                                      </span>
+                                    )}
+                                    {isStale && (
+                                      <span style={{ background: 'rgba(245,158,11,0.2)', color: '#f59e0b', padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
+                                        STALE
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div style={{ color: '#e2e8f0', fontSize: '13px', lineHeight: 1.5, marginBottom: '8px' }}>
+                                    {entry.summary}
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '11px', color: c.muted, flexWrap: 'wrap' }}>
+                                    {entry.product_name && <span>Competitor item: <strong style={{ color: '#cbd5e1' }}>{entry.product_name}</strong></span>}
+                                    {entry.our_catalog_item_name && <span>Mapped to: <strong style={{ color: '#cbd5e1' }}>{entry.our_catalog_item_name}</strong></span>}
+                                    {entry.source_url && (
+                                      <a href={entry.source_url} target="_blank" rel="noreferrer" style={{ color: '#38bdf8', textDecoration: 'none' }}>
+                                        Source Link ↗
+                                      </a>
+                                    )}
+                                    {entry.source_note && <span>Source note: {entry.source_note}</span>}
+                                    <span>Observed: {entry.observed_on}</span>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <button
+                                    onClick={() => handleDeleteEntry(entry.id)}
+                                    style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '4px' }}
+                                    title="Delete entry"
+                                  >
+                                    🗑️
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                      )}
+                  </div>
+                )}
+              </div>
             </div>
           ) : dailyReportOpen ? (
             /* Daily Report View */
