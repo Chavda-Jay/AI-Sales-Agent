@@ -45,6 +45,40 @@ function iconFor(name) {
   return <img src={fallbackUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
 }
 
+function getProductMeta(product, index) {
+  const ratings = [4.8, 4.9, 4.7, 4.9, 4.8, 4.6, 4.9, 4.7, 4.8, 4.5, 4.9, 4.7, 4.8, 4.6, 4.9, 4.7, 4.8, 4.6, 4.7, 4.8];
+  const reviews = [248, 189, 312, 420, 156, 94, 280, 115, 172, 88, 310, 142, 219, 76, 305, 120, 194, 85, 110, 165];
+  const badges = [
+    '🔥 Bestseller', '⚡ 5-Star Rated', '✨ Top Pick', '🏷️ Deal of the Day',
+    '🛡️ Official Warranty', '🚚 Free Shipping', '🔥 Trending', '⭐ Popular Choice'
+  ];
+  
+  const rating = ratings[index % ratings.length];
+  const reviewCount = reviews[index % reviews.length];
+  const badge = badges[index % badges.length];
+  const mrpMultiplier = 1.15 + ((index % 5) * 0.05);
+  const mrp = Math.round(Number(product.price) * mrpMultiplier);
+  const discountPercent = Math.round(((mrp - product.price) / mrp) * 100);
+
+  return { rating, reviewCount, badge, mrp, discountPercent };
+}
+
+function getProductCategory(p, isElectronics) {
+  const n = (p.name || '').toLowerCase();
+  if (isElectronics) {
+    if (n.includes('tv') || n.includes('soundbar') || n.includes('echo') || n.includes('earphone')) return 'TV & Audio';
+    if (n.includes('macbook') || n.includes('ipad') || n.includes('mouse') || n.includes('watch')) return 'Computers & Wearables';
+    if (n.includes('ac') || n.includes('refrigerator') || n.includes('washing') || n.includes('air fryer') || n.includes('purifier') || n.includes('induction') || n.includes('mixer')) return 'Home & Appliances';
+    return 'Gadgets & Tech';
+  } else {
+    if (n.includes('t-shirt') || n.includes('shirt') || n.includes('polo')) return 'Shirts & Tops';
+    if (n.includes('jeans') || n.includes('chino') || n.includes('track') || n.includes('cargo') || n.includes('pant')) return 'Pants & Trousers';
+    if (n.includes('jacket') || n.includes('blazer') || n.includes('hoodie')) return 'Jackets & Blazers';
+    if (n.includes('sneaker') || n.includes('shoe')) return 'Footwear';
+    return 'Ethnic & Accessories';
+  }
+}
+
 export default function Home() {
   const [config, setConfig] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -52,6 +86,8 @@ export default function Home() {
   const [isTyping, setIsTyping] = useState(false);
   const [backendStatus, setBackendStatus] = useState('checking');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [customerId, setCustomerId] = useState(() => {
     if (typeof window !== 'undefined') {
       let stored = localStorage.getItem('ai_store_customer_id');
@@ -574,47 +610,179 @@ export default function Home() {
         );
       })()}
 
-      {/* Products */}
-      <div className="store-grid">
-        {config?.catalog?.map((p, i) => (
-          <div className="store-product" key={i}>
-            <div className="store-product-img">
-              {p.image_url ? (
-                <img src={p.image_url} alt={p.name} />
-              ) : (
-                iconFor(p.name)
-              )}
-            </div>
-            <div className="store-product-info">
-              <div className="store-product-name">{p.name}</div>
-              <div className="store-product-price">₹{Number(p.price).toLocaleString('en-IN')}</div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button className="add-to-cart-btn" style={{ flex: 1 }} onClick={() => {
-                  setCart(prev => [...prev, { ...p, selected: true }]);
-                  setToastMsg(`Added ${p.name} to cart!`);
-                  setTimeout(() => setToastMsg(null), 2500);
-                }}>
-                  Add to Cart
-                </button>
-                <button 
-                  onClick={() => toggleWishlist(p)}
-                  style={{ 
-                    background: wishlist.includes(p.id) ? 'rgba(239, 68, 68, 0.1)' : 'var(--border-color)', 
-                    border: wishlist.includes(p.id) ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid transparent', 
-                    borderRadius: '8px',
-                    width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', color: wishlist.includes(p.id) ? '#ef4444' : 'var(--muted)',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title={wishlist.includes(p.id) ? "Remove from wishlist" : "Add to wishlist"}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill={wishlist.includes(p.id) ? "#ef4444" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                </button>
+      {/* Trust & Guarantee Bar */}
+      <div className="store-trust-bar">
+        <div className="trust-item">
+          <div className="trust-icon-box">⚡</div>
+          <div>
+            <div className="trust-title">Express Delivery</div>
+            <div className="trust-sub">Dispatched within 24-48 hours</div>
+          </div>
+        </div>
+        <div className="trust-item">
+          <div className="trust-icon-box">🛡️</div>
+          <div>
+            <div className="trust-title">100% Brand Warranty</div>
+            <div className="trust-sub">Authorized genuine products</div>
+          </div>
+        </div>
+        <div className="trust-item">
+          <div className="trust-icon-box">🔄</div>
+          <div>
+            <div className="trust-title">7-Day Easy Returns</div>
+            <div className="trust-sub">Instant doorstep pickup</div>
+          </div>
+        </div>
+        <div className="trust-item">
+          <div className="trust-icon-box">🤖</div>
+          <div>
+            <div className="trust-title">AI Shopping Assistant</div>
+            <div className="trust-sub">24/7 expert advice & deals</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Search & Category Filter Section */}
+      {(() => {
+        const brandNameLower = (config?.brandName || shopParam || '').toLowerCase();
+        const isElectronics = brandNameLower.includes('electronic') || brandNameLower.includes('tech') || brandNameLower.includes('mobile');
+        const allCatalog = config?.catalog || [];
+
+        const categoryCounts = {};
+        allCatalog.forEach(p => {
+          const cat = getProductCategory(p, isElectronics);
+          categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+        });
+
+        const categoryTabs = [
+          { key: 'All', label: 'All Items', count: allCatalog.length },
+          ...Object.keys(categoryCounts).map(cat => ({
+            key: cat,
+            label: cat,
+            count: categoryCounts[cat]
+          }))
+        ];
+
+        const filteredCatalog = allCatalog.filter(p => {
+          const matchesSearch = !searchQuery || 
+            p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            (p.note && p.note.toLowerCase().includes(searchQuery.toLowerCase()));
+          const matchesCategory = selectedCategory === 'All' || 
+            getProductCategory(p, isElectronics) === selectedCategory;
+          return matchesSearch && matchesCategory;
+        });
+
+        return (
+          <>
+            <div className="store-filter-section">
+              <div className="store-search-box">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input 
+                  type="text" 
+                  placeholder={`Search among ${allCatalog.length} ${isElectronics ? 'gadgets, appliances & smart tech' : 'fashion items & apparel'}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="search-clear-btn" title="Clear search">✕</button>
+                )}
+              </div>
+
+              <div className="store-category-tabs">
+                {categoryTabs.map(cat => (
+                  <button
+                    key={cat.key}
+                    className={`cat-pill ${selectedCategory === cat.key ? 'active' : ''}`}
+                    onClick={() => setSelectedCategory(cat.key)}
+                  >
+                    {cat.label} <span className="cat-count">({cat.count})</span>
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+
+            {/* Products Grid */}
+            {filteredCatalog.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
+                <div style={{ fontSize: '42px', marginBottom: '12px' }}>🔍</div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: '#f8fafc' }}>No products found</div>
+                <p style={{ marginTop: '6px' }}>Try searching with a different keyword or reset filters.</p>
+                <button 
+                  onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }}
+                  style={{ marginTop: '16px', background: '#3b82f6', border: 'none', color: '#fff', padding: '8px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Reset Filters
+                </button>
+              </div>
+            ) : (
+              <div className="store-grid">
+                {filteredCatalog.map((p, i) => {
+                  const meta = getProductMeta(p, i);
+                  return (
+                    <div className="store-product" key={p.id || i}>
+                      <div className="store-product-img">
+                        <span className="product-badge-chip">{meta.badge}</span>
+                        {p.image_url ? (
+                          <img src={p.image_url} alt={p.name} loading="lazy" />
+                        ) : (
+                          iconFor(p.name)
+                        )}
+                      </div>
+                      <div className="store-product-info">
+                        <div className="store-product-meta-row">
+                          <div className="product-rating">
+                            <span>★</span>
+                            <span>{meta.rating}</span>
+                            <span className="rating-reviews">({meta.reviewCount})</span>
+                          </div>
+                          <span className="stock-pill">● In Stock</span>
+                        </div>
+
+                        <div className="store-product-name" title={p.name}>{p.name}</div>
+
+                        {p.note && (
+                          <div className="store-product-snippet" title={p.note}>{p.note}</div>
+                        )}
+
+                        <div className="store-product-price-row">
+                          <div className="store-product-price">₹{Number(p.price).toLocaleString('en-IN')}</div>
+                          <div className="store-product-mrp">₹{meta.mrp.toLocaleString('en-IN')}</div>
+                          <div className="store-product-discount">{meta.discountPercent}% OFF</div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '8px' }}>
+                          <button className="add-to-cart-btn" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => {
+                            setCart(prev => [...prev, { ...p, selected: true }]);
+                            setToastMsg(`Added ${p.name} to cart!`);
+                            setTimeout(() => setToastMsg(null), 2500);
+                          }}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+                            Add to Cart
+                          </button>
+                          <button 
+                            onClick={() => toggleWishlist(p)}
+                            style={{ 
+                              background: wishlist.includes(p.id) ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)', 
+                              border: wishlist.includes(p.id) ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)', 
+                              borderRadius: '8px',
+                              width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              cursor: 'pointer', color: wishlist.includes(p.id) ? '#ef4444' : '#94a3b8',
+                              transition: 'all 0.2s ease', flexShrink: 0
+                            }}
+                            title={wishlist.includes(p.id) ? "Remove from wishlist" : "Add to wishlist"}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill={wishlist.includes(p.id) ? "#ef4444" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       <footer className="store-footer">
         <div className="footer-content">
