@@ -757,8 +757,8 @@ export default function Home() {
                           <div className="store-product-discount">{meta.discountPercent}% OFF</div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '8px' }}>
-                          <button className="add-to-cart-btn" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => {
+                        <div className="store-product-actions">
+                          <button className="add-to-cart-btn" onClick={() => {
                             setCart(prev => [...prev, { ...p, selected: true }]);
                             setToastMsg(`Added ${p.name} to cart!`);
                             setTimeout(() => setToastMsg(null), 2500);
@@ -768,13 +768,11 @@ export default function Home() {
                           </button>
                           <button 
                             onClick={() => toggleWishlist(p)}
+                            className="store-wishlist-btn"
                             style={{ 
                               background: wishlist.includes(p.id) ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)', 
                               border: wishlist.includes(p.id) ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)', 
-                              borderRadius: '8px',
-                              width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              cursor: 'pointer', color: wishlist.includes(p.id) ? '#ef4444' : '#94a3b8',
-                              transition: 'all 0.2s ease', flexShrink: 0
+                              color: wishlist.includes(p.id) ? '#ef4444' : '#94a3b8'
                             }}
                             title={wishlist.includes(p.id) ? "Remove from wishlist" : "Add to wishlist"}
                           >
