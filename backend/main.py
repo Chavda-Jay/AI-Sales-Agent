@@ -289,11 +289,11 @@ async def post_purchase_retention_worker():
                     JOIN orders o ON o.id = rs.order_id
                     LEFT JOIN catalog_items ci ON ci.id = o.product_id
                     WHERE (
-                           (rs.current_stage = 'confirmed' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds')
-                        OR (rs.current_stage = 'delivered' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds')
-                        OR (rs.current_stage = 'satisfaction_check' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds')
-                        OR (rs.current_stage = 'review_requested' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds')
-                        OR (rs.current_stage = 'repeat_reminder' AND rs.stage_updated_at < NOW() - INTERVAL '30 seconds' AND c.opted_out = FALSE)
+                           (rs.current_stage = 'confirmed' AND rs.stage_updated_at < NOW() - INTERVAL '1 day')
+                        OR (rs.current_stage = 'delivered' AND rs.stage_updated_at < NOW() - INTERVAL '3 days')
+                        OR (rs.current_stage = 'satisfaction_check' AND rs.stage_updated_at < NOW() - INTERVAL '7 days')
+                        OR (rs.current_stage = 'review_requested' AND rs.stage_updated_at < NOW() - INTERVAL '14 days')
+                        OR (rs.current_stage = 'repeat_reminder' AND rs.stage_updated_at < NOW() - INTERVAL '21 days' AND c.opted_out = FALSE)
                       )
                 """)
                 for row in rows:
@@ -1715,13 +1715,42 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     elif total_confirmed_orders == 1 and parsed.get("segment") != "REPEAT CUSTOMER":
                         parsed["segment"] = "CUSTOMER"
 
+                # Robust referral detection from req.ref OR from message text
+                ref_candidate = req.ref
+                if not ref_candidate and req.message:
+                    m_url = re.search(r'[?&]ref=([A-Za-z0-9_-]+)', req.message)
+                    if m_url:
+                        ref_candidate = m_url.group(1)
+                    else:
+                        m_code = re.search(r'\b([A-Za-z]{3,4}\d{4}|REF-\d+)\b', req.message)
+                        if m_code:
+                            ref_candidate = m_code.group(1)
+
+                ref_code = None
+                if ref_candidate:
+                    ref_exists = await conn.fetchval(
+                        "SELECT id FROM customers WHERE UPPER(referral_code) = UPPER($1) AND business_id = $2",
+                        ref_candidate.strip(), business_id
+                    )
+                    if not ref_exists:
+                        ref_exists = await conn.fetchval(
+                            "SELECT id FROM customers WHERE UPPER(referral_code) = UPPER($1)",
+                            ref_candidate.strip()
+                        )
+                    if ref_exists:
+                        ref_code = await conn.fetchval("SELECT referral_code FROM customers WHERE id = $1", ref_exists)
+
+                # Check if customer already exists by phone number (in case of new session / cleared chat)
+                if not customer_id and c_phone and business_id:
+                    matched_id = await conn.fetchval(
+                        "SELECT id FROM customers WHERE phone = $1 AND business_id = $2 ORDER BY id DESC LIMIT 1",
+                        c_phone, business_id
+                    )
+                    if matched_id:
+                        customer_id = matched_id
+                        await conn.execute("UPDATE customers SET ext_id = $1 WHERE id = $2", req.customerId, customer_id)
+
                 if not customer_id:
-                    ref_code = None
-                    if req.ref:
-                        ref_exists = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", req.ref)
-                        if ref_exists:
-                            ref_code = req.ref
-                            
                     c_source = 'referral' if ref_code else 'website'
                             
                     customer_id = await conn.fetchval(
@@ -1732,7 +1761,7 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     
                     if ref_code:
                         referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", ref_code)
-                        if referrer_id:
+                        if referrer_id and referrer_id != customer_id:
                             await conn.execute(
                                 "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, reward_status) VALUES ($1, $2, $3, 'pending')",
                                 referrer_id, customer_id, ref_code
@@ -1792,6 +1821,22 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         json.dumps(score_breakdown) if score_breakdown else None,
                         parsed.get("detected_language")
                     )
+
+                    # Also link referral to existing customer if they just provided the referral link/code
+                    curr_referred_by = await conn.fetchval("SELECT referred_by_code FROM customers WHERE id = $1", customer_id)
+                    if not curr_referred_by and ref_code:
+                        referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", ref_code)
+                        if referrer_id and referrer_id != customer_id:
+                            await conn.execute(
+                                "UPDATE customers SET referred_by_code = $1, source = 'referral' WHERE id = $2",
+                                ref_code, customer_id
+                            )
+                            existing_ref = await conn.fetchval("SELECT id FROM referrals WHERE referred_customer_id = $1", customer_id)
+                            if not existing_ref:
+                                await conn.execute(
+                                    "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, reward_status) VALUES ($1, $2, $3, 'pending')",
+                                    referrer_id, customer_id, ref_code
+                                )
                 
                 await conn.execute(
                     "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
@@ -1866,16 +1911,25 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     # Update pending referral if this customer was referred
                     referred_by = cust_record['referred_by_code'] if cust_record else None
                     if referred_by:
-                        ref_updated = await conn.execute(
-                            "UPDATE referrals SET reward_status = 'earned', reward_amount = 100, referred_order_id = $1 WHERE referred_customer_id = $2 AND reward_status = 'pending'",
-                            order_db_id, customer_id
-                        )
-                        if ref_updated == "UPDATE 1":
-                            # Reward both referrer and friend
-                            referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", referred_by)
-                            if referrer_id:
+                        referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", referred_by)
+                        if referrer_id and referrer_id != customer_id:
+                            ref_exists_row = await conn.fetchrow("SELECT id, reward_status FROM referrals WHERE referred_customer_id = $1", customer_id)
+                            if ref_exists_row:
+                                if ref_exists_row["reward_status"] == "pending":
+                                    ref_updated = await conn.execute(
+                                        "UPDATE referrals SET reward_status = 'earned', reward_amount = 100, referred_order_id = $1 WHERE id = $2",
+                                        order_db_id, ref_exists_row["id"]
+                                    )
+                                    if ref_updated == "UPDATE 1":
+                                        await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", referrer_id)
+                                        await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", customer_id)
+                            else:
+                                await conn.execute(
+                                    "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, referred_order_id, reward_status, reward_amount) VALUES ($1, $2, $3, $4, 'earned', 100)",
+                                    referrer_id, customer_id, referred_by, order_db_id
+                                )
                                 await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", referrer_id)
-                            await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", customer_id)
+                                await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", customer_id)
                             
                     # Update lifetime_value
                     await conn.execute("UPDATE customers SET lifetime_value = (SELECT COALESCE(SUM(amount), 0) FROM orders WHERE customer_id = $1 AND status = 'confirmed') WHERE id = $1", customer_id)
@@ -2144,7 +2198,7 @@ async def get_customer_profile(customer_id: int, _ = Depends(verify_admin)):
         customer = await conn.fetchrow("""
             SELECT id, ext_id, name, phone, city, state, source, lifetime_value,
                    intent_score, segment, preferred_channel, opted_out, last_interaction,
-                   follow_up_stage
+                   follow_up_stage, business_id
             FROM customers WHERE id = $1
         """, customer_id)
         if not customer:
@@ -2173,25 +2227,52 @@ async def get_customer_profile(customer_id: int, _ = Depends(verify_admin)):
         
         next_action = get_next_action(customer['segment'], customer['follow_up_stage'], customer['opted_out'])
         
+        # Inferred interests and products viewed from conversations
+        products_viewed = None
+        interests_inferred = None
+        try:
+            conv_rows = await conn.fetch("""
+                SELECT message, reply FROM conversations 
+                WHERE customer_id = $1 AND (message IS NOT NULL OR reply IS NOT NULL)
+                ORDER BY created_at DESC LIMIT 10
+            """, customer_id)
+            if conv_rows and customer.get('business_id'):
+                cat_items = await conn.fetch("""
+                    SELECT name, note FROM catalog_items 
+                    WHERE business_id = $1
+                """, customer['business_id'])
+                
+                all_text = " ".join([(r['message'] or '') + " " + (r['reply'] or '') for r in conv_rows]).lower()
+                found_products = []
+                for ci in cat_items:
+                    c_name = ci['name']
+                    if c_name and c_name.lower() in all_text:
+                        if c_name not in found_products:
+                            found_products.append(c_name)
+                        
+                if found_products:
+                    products_viewed = ", ".join(found_products[:3])
+                    interests_inferred = f"Interested in {found_products[0]}"
+        except Exception:
+            pass
+        
         profile = {
             "Customer ID": customer['id'],
             "ext_id": customer['ext_id'],
-            "Name": customer['name'],
-            "Contact info": customer['phone'],
-            "City/state": f"{customer['city'] or ''}, {customer['state'] or ''}".strip(", ") if customer['city'] or customer['state'] else "",
-            "Source": customer['source'],
-            "Products viewed": None,  # Not tracked currently
+            "Name": customer['name'] or "Anonymous Visitor",
+            "Contact info": customer['phone'] or "Not provided",
+            "City/state": f"{customer['city'] or ''}, {customer['state'] or ''}".strip(", ") if (customer['city'] or customer['state']) else "Not specified",
+            "Source": customer['source'] or "website",
+            "Products viewed": products_viewed,
             "Products purchased": products_purchased,
             "Purchase history": len(products_purchased),
             "Average order value": avg_order_value,
             "Last purchase": last_purchase,
             "Total lifetime value": float(customer['lifetime_value']) if customer['lifetime_value'] else 0.0,
-            "Interests inferred": None,  # Not explicitly tracked as separate field
-            "Intent score": customer['intent_score'],
-            "Customer segment": customer['segment'],
-            # Note: Currently preferred_channel is static ('chat') because we are a single-channel (chat widget) application. 
-            # It will be made dynamic when future channels (e.g. WhatsApp) are added.
-            "Preferred communication channel": customer['preferred_channel'],
+            "Interests inferred": interests_inferred,
+            "Intent score": customer['intent_score'] or 0,
+            "Customer segment": customer['segment'] or "COLD",
+            "Preferred communication channel": customer['preferred_channel'] or "Chat",
             "Consent/communication status": consent_status,
             "Last interaction": customer['last_interaction'],
             "Next recommended action": next_action
@@ -2659,7 +2740,7 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                         FROM orders o
                         JOIN customers cus ON o.customer_id = cus.id
                         JOIN businesses b ON cus.business_id = b.id
-                        WHERE o.status = 'confirmed' AND b.slug = $1
+                        WHERE o.status != 'cancelled' AND b.slug = $1
                     """, shop)
                     avg_intent_score_val = await conn.fetchval("""
                         SELECT AVG(c.intent_score) FROM customers c
@@ -2680,7 +2761,7 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                             FROM orders o
                             JOIN customers cus ON o.customer_id = cus.id
                             JOIN businesses b ON cus.business_id = b.id
-                            WHERE o.status = 'confirmed' AND b.slug = $1
+                            WHERE o.status != 'cancelled' AND b.slug = $1
                             GROUP BY o.customer_id
                         ) sub
                     """, shop)
@@ -2688,7 +2769,7 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                     total_conversations = await conn.fetchval("SELECT COUNT(DISTINCT customer_id) FROM conversations")
                     warm_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('WARM', 'HOT', 'CUSTOMER')")
                     hot_or_above = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment IN ('HOT', 'CUSTOMER')")
-                    orders_placed = await conn.fetchval("SELECT COUNT(id) FROM orders WHERE status = 'confirmed'")
+                    orders_placed = await conn.fetchval("SELECT COUNT(id) FROM orders WHERE status != 'cancelled'")
                     avg_intent_score_val = await conn.fetchval("SELECT AVG(intent_score) FROM customers")
                     dormant_count = await conn.fetchval("SELECT COUNT(id) FROM customers WHERE segment = 'DORMANT'")
                     repeat_stats = await conn.fetchrow("""
@@ -2697,7 +2778,7 @@ async def get_analytics(shop: Optional[str] = None, _ = Depends(verify_admin)):
                             COUNT(*) FILTER (WHERE order_count > 1) AS repeat_buyers
                         FROM (
                             SELECT customer_id, COUNT(*) AS order_count
-                            FROM orders WHERE status = 'confirmed'
+                            FROM orders WHERE status != 'cancelled'
                             GROUP BY customer_id
                         ) sub
                     """)
@@ -3547,11 +3628,17 @@ async def get_all_businesses(_ = Depends(verify_admin)):
                 (SELECT count(*) FROM customers WHERE business_id = b.id) as customers_count,
                 (SELECT count(*) FROM conversations WHERE business_id = b.id) as chats_count,
                 (SELECT count(*) FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.business_id = b.id) as orders_count,
-                (SELECT count(*) FROM customers WHERE business_id = b.id AND segment = 'HOT') as hot_leads_count
+                (SELECT count(*) FROM customers WHERE business_id = b.id AND segment = 'HOT') as hot_leads_count,
+                (SELECT COALESCE(SUM(amount), 0) FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.business_id = b.id AND o.status = 'confirmed') as total_revenue
             FROM businesses b
             ORDER BY b.created_at ASC
         """)
-        return [dict(r) for r in rows]
+        results = []
+        for r in rows:
+            d = dict(r)
+            d['total_revenue'] = float(d.get('total_revenue') or 0)
+            results.append(d)
+        return results
 
 @app.delete("/api/businesses/{slug}")
 async def delete_business(slug: str, admin: dict = Depends(verify_admin)):
@@ -3595,7 +3682,8 @@ async def get_public_businesses():
                 b.slug, b.brand_name, b.language, b.banner_url,
                 (SELECT count(*) FROM catalog_items WHERE business_id = b.id) as product_count,
                 (SELECT min(price) FROM catalog_items WHERE business_id = b.id) as min_price,
-                (SELECT max(price) FROM catalog_items WHERE business_id = b.id) as max_price
+                (SELECT max(price) FROM catalog_items WHERE business_id = b.id) as max_price,
+                (SELECT image_url FROM catalog_items WHERE business_id = b.id AND image_url IS NOT NULL AND image_url != '' ORDER BY id ASC LIMIT 1) as fallback_image
             FROM businesses b
             ORDER BY b.created_at ASC
         """)
@@ -3607,6 +3695,7 @@ async def get_public_businesses():
                 "name": r["brand_name"],
                 "language": r["language"],
                 "banner_url": r.get("banner_url"),
+                "fallback_image": r.get("fallback_image"),
                 "product_count": r["product_count"] or 0,
                 "min_price": float(r['min_price'] or 0),
                 "max_price": float(r['max_price'] or 0),
@@ -3614,6 +3703,26 @@ async def get_public_businesses():
             })
             
         return stores
+
+class BusinessBannerRequest(BaseModel):
+    banner_url: str
+
+@app.put("/api/businesses/{slug}/banner")
+async def update_business_banner(slug: str, req: BusinessBannerRequest, admin: dict = Depends(verify_admin)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+        
+    async with db_pool.acquire() as conn:
+        biz = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", slug)
+        if not biz:
+            raise HTTPException(status_code=404, detail="Business not found")
+            
+        if admin.get("role") != "super_admin" and admin.get("business_id") != biz["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized for this business")
+            
+        await conn.execute("UPDATE businesses SET banner_url = $1 WHERE id = $2", req.banner_url, biz["id"])
+        return {"status": "success", "banner_url": req.banner_url}
+
 
 class ContentIdeaRequest(BaseModel):
     business_slug: str
@@ -4569,4 +4678,3 @@ async def generate_competitor_insights(shop: str, admin_payload: dict = Depends(
         "data_as_of": data_as_of,
         "stale_entries_count": stale_entries_count
     }
-

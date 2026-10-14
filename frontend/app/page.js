@@ -58,14 +58,18 @@ export default function MarketplaceHome() {
               defaultIcon = '👕'; defaultBadge = 'Apparel'; defaultTag = 'Fashion & Clothing';
               bgStyle = { backgroundImage: `url('/images/clothing_banner.jpg')` };
             } else {
-              glowClass = 'mk-glow-orange'; iconClass = 'mk-icon-orange'; btnClass = 'mk-btn-orange';
+              glowClass = 'mk-glow-blue'; iconClass = 'mk-icon-blue'; btnClass = 'mk-btn-blue';
               defaultIcon = '🏪'; defaultBadge = 'Retail'; defaultTag = 'General Store';
-              bgStyle = { background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' };
+              bgStyle = { backgroundImage: `url('/images/electronics_banner.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center' };
             }
             
-            // Override with owner-uploaded banner if available
-            if (store.banner_url) {
-              bgStyle = { backgroundImage: `url('${store.banner_url}')`, backgroundSize: 'cover', backgroundPosition: 'center' };
+            // Smart Image Resolution:
+            // 1. Owner-uploaded banner (store.banner_url)
+            // 2. Auto-fallback to store's first product image (store.fallback_image)
+            // 3. Category preset image
+            const finalImage = store.banner_url || store.fallback_image;
+            if (finalImage) {
+              bgStyle = { backgroundImage: `url('${finalImage}')`, backgroundSize: 'cover', backgroundPosition: 'center' };
             }
             
             return (

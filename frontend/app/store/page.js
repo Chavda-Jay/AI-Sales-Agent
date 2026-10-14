@@ -195,6 +195,10 @@ export default function Home() {
         }
         if (ref) {
           setRefParam(ref);
+          sessionStorage.setItem('ai_store_ref', ref);
+        } else {
+          const storedRef = sessionStorage.getItem('ai_store_ref');
+          if (storedRef) setRefParam(storedRef);
         }
         
         const fetchUrl = shop ? `${API_BASE}/api/config?shop=${shop}` : `${API_BASE}/api/config`;
@@ -296,10 +300,11 @@ export default function Home() {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
+        const activeRef = refParam || (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('ref') || sessionStorage.getItem('ai_store_ref')) : null);
         const res = await fetch(BACKEND_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customerId, message: text, shop: shopParam, ref: refParam })
+          body: JSON.stringify({ customerId, message: text, shop: shopParam, ref: activeRef })
         });
         const data = await res.json();
 
@@ -365,9 +370,20 @@ export default function Home() {
 
   const handleClearChat = async () => {
     const newId = "demo-customer-" + Date.now();
-    localStorage.setItem('ai_store_customer_id', newId);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ai_store_customer_id', newId);
+      sessionStorage.removeItem('ai_store_ref');
+    }
     setCustomerId(newId);
-    setMessages([]);
+    setWalletBalance(0);
+    setRefParam(null);
+    setMessages([
+      {
+        text: `Hi! Welcome to ${config?.brandName || 'our store'} 👋 How can I help you today?`,
+        who: 'agent',
+        isGreeting: true
+      }
+    ]);
     toast.success('Started a fresh chat session!');
   };
 
@@ -1008,8 +1024,8 @@ export default function Home() {
                 return (
                   <div key={i} className={`bubble ${m.who}`}>
                     {m.retention && (
-                      <div style={{ fontSize: '11px', color: '#10b981', marginBottom: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        📦 Order Update
+                      <div style={{ fontSize: '11px', color: '#38bdf8', marginBottom: '6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '2px 8px', borderRadius: '4px' }}>
+                        <span>📲</span> WhatsApp / SMS Follow-up
                       </div>
                     )}
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayText}</ReactMarkdown>

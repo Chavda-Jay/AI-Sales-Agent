@@ -163,40 +163,6 @@ export default function Dashboard() {
 
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
-  useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash;
-      if (hash === '#daily-report') {
-        setDailyReportOpen(true);
-        setContentIdeasOpen(false);
-        setOrdersViewOpen(false);
-        setComingSoonPage(null);
-      } else if (hash === '#content-ideas') {
-        setDailyReportOpen(false);
-        setContentIdeasOpen(true);
-        setOrdersViewOpen(false);
-        setComingSoonPage(null);
-      } else if (hash === '#orders') {
-        setDailyReportOpen(false);
-        setContentIdeasOpen(false);
-        setOrdersViewOpen(true);
-        setComingSoonPage(null);
-      } else if (['#whatsapp', '#social', '#ads', '#competitor'].includes(hash)) {
-        setDailyReportOpen(false);
-        setContentIdeasOpen(false);
-        setOrdersViewOpen(false);
-        setComingSoonPage(hash.slice(1));
-      } else {
-        setDailyReportOpen(false);
-        setContentIdeasOpen(false);
-        setOrdersViewOpen(false);
-        setComingSoonPage(null);
-      }
-    };
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -526,23 +492,99 @@ export default function Dashboard() {
     }
   }, [selectedShop]);
 
+  const selectStore = (storeId) => {
+    setSelectedShop(storeId);
+    setDailyReportOpen(false);
+    setContentIdeasOpen(false);
+    setOrdersViewOpen(false);
+    setCompetitorIntelOpen(false);
+    setComingSoonPage(null);
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({ shop: storeId }, '', `?shop=${storeId}`);
+    }
+  };
+
+  const backToAllStores = () => {
+    setSelectedShop(null);
+    setDailyReportOpen(false);
+    setContentIdeasOpen(false);
+    setOrdersViewOpen(false);
+    setCompetitorIntelOpen(false);
+    setComingSoonPage(null);
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState(null, '', window.location.pathname);
+    }
+    setSidebarOpen(false);
+  };
+
+  const navigateTab = (tab) => {
+    setDailyReportOpen(tab === 'daily-report');
+    setContentIdeasOpen(tab === 'content-ideas');
+    setOrdersViewOpen(tab === 'orders');
+    setCompetitorIntelOpen(tab === 'competitor-intel');
+    setComingSoonPage(['whatsapp', 'social', 'ads'].includes(tab) ? tab : null);
+
+    if (tab === 'daily-report' && selectedShop) {
+      fetchDailyReport(dailyReportDate, selectedShop);
+    } else if (tab === 'competitor-intel' && selectedShop) {
+      fetchCompetitorData(selectedShop);
+    }
+
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      const shopParam = selectedShop ? `?shop=${selectedShop}` : '';
+      const hashParam = tab ? `#${tab}` : '';
+      window.history.replaceState(null, '', `${window.location.pathname}${shopParam}${hashParam}`);
+    }
+    setSidebarOpen(false);
+  };
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    const onPopState = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const shopFromUrl = urlParams.get('shop');
+      if (isSuperAdmin) {
+        if (!shopFromUrl) {
+          setSelectedShop(null);
+          setDailyReportOpen(false);
+          setContentIdeasOpen(false);
+          setOrdersViewOpen(false);
+          setCompetitorIntelOpen(false);
+          setComingSoonPage(null);
+          return;
+        } else if (shopFromUrl !== selectedShop) {
+          setSelectedShop(shopFromUrl);
+        }
+      }
+      handleHash();
+    };
+
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '');
+      // When no store is selected (Super Admin viewing My Stores), keep all store-specific subviews closed
+      if (!selectedShop) {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(false);
+        setOrdersViewOpen(false);
+        setCompetitorIntelOpen(false);
+        setComingSoonPage(null);
+        return;
+      }
       if (hash === 'competitor-intel') {
         setDailyReportOpen(false);
         setContentIdeasOpen(false);
         setOrdersViewOpen(false);
         setComingSoonPage(null);
         setCompetitorIntelOpen(true);
-        if (selectedShop) fetchCompetitorData(selectedShop);
+        fetchCompetitorData(selectedShop);
       } else if (hash === 'daily-report') {
         setDailyReportOpen(true);
         setContentIdeasOpen(false);
         setOrdersViewOpen(false);
         setCompetitorIntelOpen(false);
         setComingSoonPage(null);
+        fetchDailyReport(dailyReportDate, selectedShop);
       } else if (hash === 'content-ideas') {
         setDailyReportOpen(false);
         setContentIdeasOpen(true);
@@ -555,7 +597,13 @@ export default function Dashboard() {
         setOrdersViewOpen(true);
         setCompetitorIntelOpen(false);
         setComingSoonPage(null);
-      } else if (!hash) {
+      } else if (['whatsapp', 'social', 'ads'].includes(hash)) {
+        setDailyReportOpen(false);
+        setContentIdeasOpen(false);
+        setOrdersViewOpen(false);
+        setCompetitorIntelOpen(false);
+        setComingSoonPage(hash);
+      } else {
         setDailyReportOpen(false);
         setContentIdeasOpen(false);
         setOrdersViewOpen(false);
@@ -565,8 +613,12 @@ export default function Dashboard() {
     };
     handleHash();
     window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
-  }, [selectedShop]);
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('hashchange', handleHash);
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, [selectedShop, dailyReportDate, isSuperAdmin]);
 
   const generateIdeas = async () => {
     if (!selectedShop) return;
@@ -834,6 +886,11 @@ export default function Dashboard() {
   const [contextLoading, setContextLoading] = useState(false);
   const [contextSaving, setContextSaving] = useState(false);
 
+  // Store Banner & Branding state
+  const [storeBannerUrl, setStoreBannerUrl] = useState('');
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [bannerSaving, setBannerSaving] = useState(false);
+
   const fetchBusinessContext = async () => {
     if (!selectedShop) return;
     setContextLoading(true);
@@ -847,6 +904,67 @@ export default function Dashboard() {
       console.error(e);
     } finally {
       setContextLoading(false);
+    }
+  };
+
+  const fetchStoreBanner = async () => {
+    if (!selectedShop) return;
+    try {
+      const res = await authFetch(`${API_BASE}/api/config?shop=${selectedShop}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStoreBannerUrl(data.bannerUrl || '');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDashboardBannerUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBannerUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    const toastId = toast.loading('Uploading banner...');
+    try {
+      const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        const finalUrl = data.url.startsWith('http') ? data.url : API_BASE + data.url;
+        setStoreBannerUrl(finalUrl);
+        toast.success('Banner uploaded!', { id: toastId });
+      } else {
+        toast.error(data.detail || 'Upload failed', { id: toastId });
+      }
+    } catch (err) {
+      toast.error('Network error during upload', { id: toastId });
+    } finally {
+      setBannerUploading(false);
+    }
+  };
+
+  const handleSaveStoreBanner = async (e) => {
+    e.preventDefault();
+    if (!selectedShop) return;
+    setBannerSaving(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/businesses/${selectedShop}/banner`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ banner_url: storeBannerUrl })
+      });
+      if (res.ok) {
+        toast.success('Store banner updated successfully!');
+        setStores(prev => prev.map(s => s.id === selectedShop ? { ...s, banner_url: storeBannerUrl } : s));
+      } else {
+        const data = await res.json();
+        toast.error(data.detail || 'Failed to update banner');
+      }
+    } catch (e) {
+      toast.error('Network error updating banner');
+    } finally {
+      setBannerSaving(false);
     }
   };
 
@@ -873,10 +991,15 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (settingsOpen && settingsTab === 'context') {
-      fetchBusinessContext();
+    if (settingsOpen) {
+      if (settingsTab === 'context') {
+        fetchBusinessContext();
+      } else if (settingsTab === 'branding') {
+        fetchStoreBanner();
+      }
     }
   }, [settingsOpen, settingsTab, selectedShop]);
+
 
 
   const handleChangePassword = async (e) => {
@@ -1048,7 +1171,7 @@ export default function Dashboard() {
       {/* Settings Modal */}
       {settingsOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div className="dash-modal-card" style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: settingsTab === 'context' ? '800px' : '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', transition: 'max-width 0.3s ease' }}>
+          <div className="dash-modal-card" style={{ background: c.panel, border: `1px solid ${c.line}`, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: settingsTab === 'context' ? '800px' : settingsTab === 'branding' ? '540px' : '400px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', transition: 'max-width 0.3s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h2 style={{ ...sora.style, fontSize: '20px', color: c.ivory, margin: 0 }}>Store Settings</h2>
               <button onClick={() => setSettingsOpen(false)} style={{ background: 'transparent', border: 'none', color: c.muted, cursor: 'pointer', fontSize: '20px' }}>×</button>
@@ -1056,8 +1179,88 @@ export default function Dashboard() {
 
             <div style={{ display: 'flex', gap: '20px', marginBottom: '24px', borderBottom: `1px solid ${c.line}` }}>
               <button onClick={() => setSettingsTab('security')} style={{ background: 'none', border: 'none', padding: '8px 0', color: settingsTab === 'security' ? c.cust : c.muted, borderBottom: settingsTab === 'security' ? `2px solid ${c.cust}` : '2px solid transparent', cursor: 'pointer', fontWeight: 600 }}>Account Security</button>
+              <button onClick={() => setSettingsTab('branding')} style={{ background: 'none', border: 'none', padding: '8px 0', color: settingsTab === 'branding' ? c.cust : c.muted, borderBottom: settingsTab === 'branding' ? `2px solid ${c.cust}` : '2px solid transparent', cursor: 'pointer', fontWeight: 600 }}>Store Banner & Branding</button>
               <button onClick={() => setSettingsTab('context')} style={{ background: 'none', border: 'none', padding: '8px 0', color: settingsTab === 'context' ? c.cust : c.muted, borderBottom: settingsTab === 'context' ? `2px solid ${c.cust}` : '2px solid transparent', cursor: 'pointer', fontWeight: 600 }}>Business Context</button>
             </div>
+
+            {settingsTab === 'branding' && (
+              <form onSubmit={handleSaveStoreBanner} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '13px', color: c.muted, fontWeight: 500, margin: 0 }}>Store Banner / Showcase Image</label>
+                    <label style={{ fontSize: '12px', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}>
+                      {bannerUploading ? 'Uploading...' : '📁 Upload Photo'}
+                      <input type="file" accept="image/*" onChange={handleDashboardBannerUpload} disabled={bannerUploading} style={{ display: 'none' }} />
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                    <input
+                      type="url"
+                      placeholder="https://... or click Upload Photo"
+                      value={storeBannerUrl}
+                      onChange={e => setStoreBannerUrl(e.target.value)}
+                      style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
+                    />
+                    {storeBannerUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setStoreBannerUrl('')}
+                        style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '0 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {storeBannerUrl ? (
+                    <div style={{ position: 'relative', width: '100%', height: '170px', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${c.line}`, marginBottom: '12px' }}>
+                      <img src={storeBannerUrl} alt="Store Banner Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <div style={{ position: 'absolute', bottom: '8px', right: '10px', background: 'rgba(0,0,0,0.75)', color: '#22c55e', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600 }}>
+                        ✓ Live Preview
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: `1px dashed ${c.line}`, borderRadius: '12px', padding: '20px', textAlign: 'center', marginBottom: '12px' }}>
+                      <div style={{ fontSize: '13px', color: c.ivory, fontWeight: 600, marginBottom: '4px' }}>
+                        No Custom Banner Set
+                      </div>
+                      <div style={{ fontSize: '12px', color: c.muted, lineHeight: '1.5' }}>
+                        Your store will automatically use your 1st product's image on the explore page. Upload a custom banner above to showcase multiple items or hero branding!
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Preset Templates */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', color: c.muted }}>Quick templates:</span>
+                    <button
+                      type="button"
+                      onClick={() => setStoreBannerUrl('/images/electronics_banner.jpg')}
+                      style={{ background: 'rgba(14, 165, 233, 0.1)', border: '1px solid rgba(14, 165, 233, 0.3)', color: 'var(--primary)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      📺 Electronics Showcase
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStoreBannerUrl('/images/clothing_banner.jpg')}
+                      style={{ background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.3)', color: '#a78bfa', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      👕 Fashion Collection
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={bannerSaving}
+                  style={{ background: c.primary, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, cursor: bannerSaving ? 'not-allowed' : 'pointer', opacity: bannerSaving ? 0.7 : 1 }}
+                >
+                  {bannerSaving ? 'Saving Banner...' : 'Save Banner'}
+                </button>
+              </form>
+            )}
+
 
             {settingsTab === 'security' && (
               !isForgotMode ? (
@@ -1247,10 +1450,22 @@ export default function Dashboard() {
 
         <div style={{ padding: '0 12px' }}>
           {isSuperAdmin && (
-            <div style={{ padding: '12px', color: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
-              onClick={() => { setSelectedShop(null); setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setSidebarOpen(false); }}
-              onMouseEnter={e => { if (selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
-              onMouseLeave={e => { if (selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen) e.currentTarget.style.color = c.muted; }}
+            <div style={{
+              padding: '12px',
+              color: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? c.ivory : c.muted,
+              fontSize: '14px',
+              fontFamily: 'var(--font-inter, sans-serif)',
+              display: 'flex',
+              gap: '12px',
+              background: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? 'rgba(14,165,233,0.1)' : 'transparent',
+              border: !selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+              onClick={backToAllStores}
+              onMouseEnter={e => { if (selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen || competitorIntelOpen || comingSoonPage) e.currentTarget.style.color = '#fff'; }}
+              onMouseLeave={e => { if (selectedShop || dailyReportOpen || contentIdeasOpen || ordersViewOpen || competitorIntelOpen || comingSoonPage) e.currentTarget.style.color = c.muted; }}
             >
               <span>🏪</span> My Stores
             </div>
@@ -1265,12 +1480,12 @@ export default function Dashboard() {
           )}
 
           <div style={{ padding: '12px', color: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', background: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? 'rgba(14,165,233,0.1)' : 'transparent', border: selectedShop && !dailyReportOpen && !contentIdeasOpen && !ordersViewOpen && !competitorIntelOpen && !comingSoonPage ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px', cursor: 'pointer', marginTop: '8px', opacity: selectedShop ? 1 : 0.6 }}
-            onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = ''; setSidebarOpen(false); }}>
+            onClick={() => navigateTab('')}>
             <span>🏠</span> Store Dashboard
           </div>
 
           <div style={{ padding: '12px', color: ordersViewOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: ordersViewOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: ordersViewOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(true); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'orders'; setSidebarOpen(false); } }}
+            onClick={() => { if (selectedShop) navigateTab('orders'); }}
             onMouseEnter={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !ordersViewOpen) e.currentTarget.style.color = c.muted; }}
           >
@@ -1293,7 +1508,7 @@ export default function Dashboard() {
             <span>⚙️</span> Settings
           </div>
           <div style={{ padding: '12px', color: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? 'rgba(14,165,233,0.1)' : 'transparent', border: dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(true); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'daily-report'; fetchDailyReport(dailyReportDate, selectedShop); setSidebarOpen(false); } }}
+            onClick={() => { if (selectedShop) navigateTab('daily-report'); }}
             onMouseEnter={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen)) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !(dailyReportOpen && !contentIdeasOpen && !competitorIntelOpen)) e.currentTarget.style.color = c.muted; }}
           >
@@ -1301,7 +1516,7 @@ export default function Dashboard() {
           </div>
 
           <div style={{ padding: '12px', color: contentIdeasOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: contentIdeasOpen ? 'rgba(234,179,8,0.1)' : 'transparent', border: contentIdeasOpen ? '1px solid rgba(234,179,8,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(true); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(null); window.location.hash = 'content-ideas'; setSidebarOpen(false); } }}
+            onClick={() => { if (selectedShop) navigateTab('content-ideas'); }}
             onMouseEnter={e => { if (selectedShop && !contentIdeasOpen) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !contentIdeasOpen) e.currentTarget.style.color = c.muted; }}
           >
@@ -1309,7 +1524,7 @@ export default function Dashboard() {
           </div>
 
           <div style={{ padding: '12px', color: competitorIntelOpen ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', cursor: selectedShop ? 'pointer' : 'not-allowed', marginTop: '8px', opacity: selectedShop ? 1 : 0.5, transition: 'all 0.2s', background: competitorIntelOpen ? 'rgba(139,92,246,0.15)' : 'transparent', border: competitorIntelOpen ? '1px solid rgba(139,92,246,0.3)' : '1px solid transparent', borderRadius: '8px' }}
-            onClick={() => { if (selectedShop) { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(true); setComingSoonPage(null); window.location.hash = 'competitor-intel'; fetchCompetitorData(selectedShop); setSidebarOpen(false); } }}
+            onClick={() => { if (selectedShop) navigateTab('competitor-intel'); }}
             onMouseEnter={e => { if (selectedShop && !competitorIntelOpen) e.currentTarget.style.color = '#fff'; }}
             onMouseLeave={e => { if (selectedShop && !competitorIntelOpen) e.currentTarget.style.color = c.muted; }}
           >
@@ -1326,7 +1541,7 @@ export default function Dashboard() {
               ].map(item => (
                 <div key={item.key}
                   style={{ padding: '10px 12px', color: comingSoonPage === item.key ? c.ivory : c.muted, fontSize: '14px', fontFamily: 'var(--font-inter, sans-serif)', display: 'flex', gap: '12px', alignItems: 'center', cursor: 'pointer', marginTop: '4px', transition: 'all 0.2s', background: comingSoonPage === item.key ? 'rgba(14,165,233,0.1)' : 'transparent', border: comingSoonPage === item.key ? '1px solid rgba(14,165,233,0.2)' : '1px solid transparent', borderRadius: '8px' }}
-                  onClick={() => { setDailyReportOpen(false); setContentIdeasOpen(false); setOrdersViewOpen(false); setCompetitorIntelOpen(false); setComingSoonPage(item.key); window.location.hash = item.key; setSidebarOpen(false); }}
+                  onClick={() => navigateTab(item.key)}
                   onMouseEnter={e => { if (comingSoonPage !== item.key) e.currentTarget.style.color = '#fff'; }}
                   onMouseLeave={e => { if (comingSoonPage !== item.key) e.currentTarget.style.color = c.muted; }}
                 >
@@ -1373,6 +1588,34 @@ export default function Dashboard() {
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
             </button>
+            {selectedShop && isSuperAdmin && (
+              <button
+                type="button"
+                onClick={backToAllStores}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: '#fff',
+                  padding: '7px 14px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginRight: '8px',
+                  transition: 'all 0.2s ease',
+                  flexShrink: 0
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(14,165,233,0.15)'; e.currentTarget.style.borderColor = 'rgba(14,165,233,0.4)'; e.currentTarget.style.color = '#38bdf8'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = '#fff'; }}
+                title="Return to Connected Businesses overview"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                All Stores
+              </button>
+            )}
             {selectedShop && (
               <div>
                 <h1 className="dash-header-title" style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: 'var(--ivory)', letterSpacing: '-0.02em' }}>{shopBrandName} Dashboard</h1>
@@ -1390,7 +1633,7 @@ export default function Dashboard() {
 
         <div className="dash-wrap">
 
-          {comingSoonPage ? (
+          {(comingSoonPage && selectedShop) ? (
             /* Coming Soon Placeholder Views */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
               {(() => {
@@ -1432,7 +1675,7 @@ export default function Dashboard() {
                 );
               })()}
             </div>
-          ) : contentIdeasOpen ? (
+          ) : (contentIdeasOpen && selectedShop) ? (
             /* Content Ideas View */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
@@ -1533,20 +1776,23 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-          ) : competitorIntelOpen ? (
+          ) : (competitorIntelOpen && selectedShop) ? (
             /* Competitor Intel View (§27) */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
               {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
-                  <div style={{ ...sora, fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.18em', color: '#a78bfa', marginBottom: '8px' }}>
-                    {stores.find(s => s.id === selectedShop)?.name || 'Store'} • Competitive Intelligence (§27)
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(139, 92, 246, 0.12)', border: '1px solid rgba(139, 92, 246, 0.3)', padding: '5px 14px', borderRadius: '20px', marginBottom: '12px' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#a78bfa', boxShadow: '0 0 8px #a78bfa' }}></span>
+                    <span style={{ ...sora, fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.14em', color: '#c4b5fd' }}>
+                      {stores.find(s => s.id === selectedShop)?.name || 'Store'} • Competitive Intelligence (§27)
+                    </span>
                   </div>
-                  <h1 style={{ ...sora, fontSize: '28px', fontWeight: 800, color: '#fff', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
-                    🔍 Competitor Intel
+                  <h1 style={{ ...sora, fontSize: '30px', fontWeight: 800, color: '#ffffff', margin: '0 0 6px 0', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span>🔍</span> Competitor Intel
                   </h1>
-                  <p style={{ color: c.muted, margin: 0, fontSize: '14px' }}>
-                    Track verified public competitor moves, pricing gaps, and differentiation opportunities.
+                  <p style={{ ...inter, color: '#94a3b8', margin: 0, fontSize: '14.5px', maxWidth: '640px', lineHeight: 1.5 }}>
+                    Track verified public competitor pricing moves, identify margin gaps, and arm your autonomous AI agent with deterministic counter-arguments.
                   </p>
                 </div>
                 <div>
@@ -1554,20 +1800,31 @@ export default function Dashboard() {
                     onClick={handleGenerateCompetitorInsights}
                     disabled={insightsLoading || (competitorIntel?.total_entries || 0) === 0}
                     style={{
-                      background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
-                      color: '#fff',
-                      border: 'none',
+                      background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+                      color: '#ffffff',
+                      border: '1px solid rgba(255, 255, 255, 0.25)',
                       padding: '12px 24px',
                       borderRadius: '12px',
                       fontSize: '14px',
-                      fontWeight: 600,
+                      fontWeight: 700,
+                      fontFamily: 'var(--font-sora, sans-serif)',
                       cursor: (insightsLoading || (competitorIntel?.total_entries || 0) === 0) ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.2s',
-                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
+                      transition: 'all 0.25s ease',
+                      boxShadow: '0 4px 18px rgba(124, 58, 237, 0.45)',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px',
                       opacity: (insightsLoading || (competitorIntel?.total_entries || 0) === 0) ? 0.6 : 1
+                    }}
+                    onMouseEnter={e => {
+                      if (!insightsLoading && (competitorIntel?.total_entries || 0) > 0) {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 6px 24px rgba(124, 58, 237, 0.65)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 18px rgba(124, 58, 237, 0.45)';
                     }}
                   >
                     {insightsLoading ? '✨ Analyzing...' : '✨ Generate Insights'}
@@ -1576,69 +1833,94 @@ export default function Dashboard() {
               </div>
 
               {/* Policy & Compliance Note */}
-              <div style={{ background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.25)', borderRadius: '16px', padding: '16px 20px', marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <span style={{ fontSize: '20px' }}>🛡️</span>
-                <div style={{ fontSize: '13px', color: '#e2e8f0', lineHeight: 1.5 }}>
-                  <strong style={{ color: '#c4b5fd' }}>Compliance Notice (§27):</strong> Enter only publicly available information and where you saw it. Do not enter personal data of individuals.
+              <div style={{ background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.25)', borderRadius: '14px', padding: '14px 20px', marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '14px', backdropFilter: 'blur(10px)' }}>
+                <span style={{ fontSize: '22px' }}>🛡️</span>
+                <div style={{ ...inter, fontSize: '13.5px', color: '#e2e8f0', lineHeight: 1.5 }}>
+                  <strong style={{ color: '#c4b5fd', fontWeight: 700 }}>Compliance Notice (§27):</strong> Enter only publicly available information and cite the observable source. Do not log personal data of individuals.
                 </div>
               </div>
 
               {/* KPI Cards Row */}
-              <div className="dash-comp-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
-                  <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Competitors Monitored</div>
-                  <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: '#fff' }}>{competitorIntel?.competitors_count || competitorsList.length || 0}</div>
+              <div className="intel-kpi-grid">
+                <div className="intel-kpi-card" style={{ borderTop: '3px solid #8b5cf6' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                    <div style={{ ...inter, fontSize: '11.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Competitors Monitored</div>
+                    <span style={{ fontSize: '18px' }}>🏢</span>
+                  </div>
+                  <div style={{ ...sora, fontSize: '32px', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
+                    {competitorIntel?.competitors_count || competitorsList.length || 0}
+                  </div>
+                  <div style={{ ...inter, fontSize: '12px', color: '#64748b', marginTop: '6px' }}>Verified active brands</div>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
-                  <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Total Intel Entries</div>
-                  <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: '#38bdf8' }}>{competitorIntel?.total_entries || 0}</div>
+
+                <div className="intel-kpi-card" style={{ borderTop: '3px solid #38bdf8' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                    <div style={{ ...inter, fontSize: '11.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total Intel Entries</div>
+                    <span style={{ fontSize: '18px' }}>📝</span>
+                  </div>
+                  <div style={{ ...sora, fontSize: '32px', fontWeight: 800, color: '#38bdf8', lineHeight: 1.1 }}>
+                    {competitorIntel?.total_entries || 0}
+                  </div>
+                  <div style={{ ...inter, fontSize: '12px', color: '#64748b', marginTop: '6px' }}>Pricing & promo observations</div>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
-                  <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Price Mappings</div>
-                  <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: '#22c55e' }}>{competitorIntel?.price_comparisons?.length || 0}</div>
+
+                <div className="intel-kpi-card" style={{ borderTop: '3px solid #22c55e' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                    <div style={{ ...inter, fontSize: '11.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Price Mappings</div>
+                    <span style={{ fontSize: '18px' }}>⚖️</span>
+                  </div>
+                  <div style={{ ...sora, fontSize: '32px', fontWeight: 800, color: '#22c55e', lineHeight: 1.1 }}>
+                    {competitorIntel?.price_comparisons?.length || 0}
+                  </div>
+                  <div style={{ ...inter, fontSize: '12px', color: '#64748b', marginTop: '6px' }}>Catalog items linked</div>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', backdropFilter: 'blur(12px)' }}>
-                  <div style={{ fontSize: '12px', color: c.muted, fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Stale Entries (60d+)</div>
-                  <div style={{ ...mono, fontSize: '28px', fontWeight: 800, color: (competitorIntel?.stale_entries_count || 0) > 0 ? '#f59e0b' : '#94a3b8' }}>
+
+                <div className="intel-kpi-card" style={{ borderTop: '3px solid #f59e0b' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                    <div style={{ ...inter, fontSize: '11.5px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Stale Entries (60d+)</div>
+                    <span style={{ fontSize: '18px' }}>⏱️</span>
+                  </div>
+                  <div style={{ ...sora, fontSize: '32px', fontWeight: 800, color: (competitorIntel?.stale_entries_count || 0) > 0 ? '#f59e0b' : '#64748b', lineHeight: 1.1 }}>
                     {competitorIntel?.stale_entries_count || 0}
                   </div>
+                  <div style={{ ...inter, fontSize: '12px', color: '#64748b', marginTop: '6px' }}>Needs periodic verification</div>
                 </div>
               </div>
 
               {/* Insights Panel */}
               {(insightsLoading || competitorInsights || insightsMessage) && (
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '20px', padding: '24px', marginBottom: '32px', backdropFilter: 'blur(12px)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-                    <div style={{ ...sora, fontSize: '16px', fontWeight: 700, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ background: 'rgba(18, 26, 45, 0.85)', border: '1px solid rgba(139, 92, 246, 0.35)', borderRadius: '20px', padding: '26px', marginBottom: '32px', backdropFilter: 'blur(14px)', boxShadow: '0 16px 40px rgba(0, 0, 0, 0.4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ ...sora, fontSize: '17px', fontWeight: 700, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>💡</span> Strategic Differentiation Insights
                     </div>
                     {competitorInsights?.data_as_of && (
-                      <div style={{ fontSize: '12px', color: c.muted }}>
-                        Data as of: <strong style={{ color: '#fff' }}>{competitorInsights.data_as_of}</strong>
+                      <div style={{ ...inter, fontSize: '12px', color: '#94a3b8' }}>
+                        Data as of: <strong style={{ color: '#ffffff' }}>{competitorInsights.data_as_of}</strong>
                       </div>
                     )}
                   </div>
 
                   {insightsLoading ? (
-                    <div style={{ textAlign: 'center', padding: '40px 0', color: c.muted }}>
+                    <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
                       <div style={{ fontSize: '32px', marginBottom: '12px', animation: 'spin 1s linear infinite' }}>⏳</div>
-                      <p style={{ margin: 0 }}>Synthesizing differentiation suggestions from entered intel...</p>
+                      <p style={{ ...inter, margin: 0, fontSize: '14px' }}>Synthesizing differentiation suggestions from entered intel...</p>
                     </div>
                   ) : competitorInsights?.insights?.length > 0 ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
                       {competitorInsights.insights.map((ins, idx) => (
-                        <div key={idx} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <div style={{ ...sora, fontSize: '15px', fontWeight: 700, color: '#fff' }}>{ins.title}</div>
-                          <div style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: 1.6 }}>{ins.suggestion}</div>
+                        <div key={idx} style={{ background: 'rgba(11, 17, 32, 0.75)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div style={{ ...sora, fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>{ins.title}</div>
+                          <div style={{ ...inter, fontSize: '13.5px', color: '#cbd5e1', lineHeight: 1.6 }}>{ins.suggestion}</div>
                           {ins.caution && (
-                            <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', color: '#fbbf24' }}>
+                            <div style={{ ...inter, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', padding: '10px 14px', fontSize: '12.5px', color: '#fbbf24' }}>
                               ⚠️ <strong>Caution:</strong> {ins.caution}
                             </div>
                           )}
                           <div style={{ marginTop: 'auto', paddingTop: '8px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '11px', color: c.muted }}>Based on entries:</span>
+                            <span style={{ ...inter, fontSize: '11px', color: '#94a3b8' }}>Based on entries:</span>
                             {ins.based_on?.map((eid) => (
-                              <span key={eid} style={{ background: 'rgba(139, 92, 246, 0.2)', color: '#c4b5fd', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                              <span key={eid} style={{ ...mono, background: 'rgba(139, 92, 246, 0.25)', color: '#c4b5fd', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
                                 #{eid}
                               </span>
                             ))}
@@ -1647,7 +1929,7 @@ export default function Dashboard() {
                       ))}
                     </div>
                   ) : (
-                    <div style={{ textAlign: 'center', padding: '20px', color: c.muted, fontSize: '13px' }}>
+                    <div style={{ ...inter, textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '13.5px' }}>
                       {insightsMessage || 'No insights generated yet. Click Generate Insights to analyze current intel.'}
                     </div>
                   )}
@@ -1655,31 +1937,35 @@ export default function Dashboard() {
               )}
 
               {/* Price Comparisons Table */}
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', marginBottom: '32px', backdropFilter: 'blur(12px)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ background: 'rgba(18, 26, 45, 0.75)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '20px', padding: '26px', marginBottom: '32px', backdropFilter: 'blur(14px)', boxShadow: '0 16px 40px rgba(0, 0, 0, 0.35)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
                   <div>
-                    <h2 style={{ ...sora, fontSize: '18px', fontWeight: 700, color: '#fff', margin: '0 0 4px 0' }}>📊 Price Comparisons</h2>
-                    <p style={{ color: c.muted, margin: 0, fontSize: '13px' }}>Deterministic comparison of our products vs competitors</p>
+                    <h2 style={{ ...sora, fontSize: '19px', fontWeight: 800, color: '#ffffff', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>📊</span> Price Comparisons
+                    </h2>
+                    <p style={{ ...inter, color: '#94a3b8', margin: 0, fontSize: '13.5px' }}>
+                      Deterministic real-time margin comparison of our catalog vs competitor listings
+                    </p>
                   </div>
                 </div>
 
                 <div className="dash-table-wrap">
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '650px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
                     <thead>
-                      <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Competitor</th>
-                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Our Product</th>
-                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Our Price</th>
-                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Competitor Price</th>
-                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Diff</th>
-                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Position</th>
-                        <th style={{ padding: '12px 16px', color: c.muted, fontSize: '12px', fontWeight: 600 }}>Observed On</th>
+                      <tr style={{ background: 'rgba(255, 255, 255, 0.03)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                        <th style={{ ...inter, padding: '14px 18px', color: '#94a3b8', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Competitor</th>
+                        <th style={{ ...inter, padding: '14px 18px', color: '#94a3b8', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Our Product</th>
+                        <th style={{ ...inter, padding: '14px 18px', color: '#94a3b8', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Our Price</th>
+                        <th style={{ ...inter, padding: '14px 18px', color: '#94a3b8', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Competitor Price</th>
+                        <th style={{ ...inter, padding: '14px 18px', color: '#94a3b8', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Difference</th>
+                        <th style={{ ...inter, padding: '14px 18px', color: '#94a3b8', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Position</th>
+                        <th style={{ ...inter, padding: '14px 18px', color: '#94a3b8', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Observed On</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(!competitorIntel?.price_comparisons || competitorIntel.price_comparisons.length === 0) ? (
                         <tr>
-                          <td colSpan="7" style={{ padding: '32px', textAlign: 'center', color: c.muted, fontSize: '13px' }}>
+                          <td colSpan="7" style={{ ...inter, padding: '40px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
                             No price comparisons mapped yet. Add a 'pricing' entry linked to one of our catalog items.
                           </td>
                         </tr>
@@ -1689,28 +1975,47 @@ export default function Dashboard() {
                           const isCostlier = row.position === 'costlier';
                           const posColor = isCheaper ? '#22c55e' : (isCostlier ? '#f59e0b' : '#94a3b8');
                           return (
-                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                              <td style={{ padding: '14px 16px', color: '#fff', fontWeight: 600, fontSize: '13px' }}>{row.competitor}</td>
-                              <td style={{ padding: '14px 16px', color: c.ivory, fontSize: '13px' }}>{row.product}</td>
-                              <td style={{ padding: '14px 16px', ...mono, color: '#fff', fontSize: '13px' }}>₹{row.our_price?.toLocaleString()}</td>
-                              <td style={{ padding: '14px 16px', ...mono, color: '#94a3b8', fontSize: '13px' }}>₹{row.competitor_price?.toLocaleString()}</td>
-                              <td style={{ padding: '14px 16px', ...mono, fontSize: '13px', color: posColor }}>
-                                {row.diff_amount > 0 ? `+₹${row.diff_amount}` : `₹${row.diff_amount}`}
-                                {row.diff_percent !== null && ` (${row.diff_percent > 0 ? '+' : ''}${row.diff_percent}%)`}
+                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)', transition: 'background 0.2s' }}>
+                              <td style={{ padding: '16px 18px', color: '#ffffff', ...sora, fontWeight: 700, fontSize: '14px' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#38bdf8' }}></span>
+                                  {row.competitor}
+                                </span>
                               </td>
-                              <td style={{ padding: '14px 16px' }}>
+                              <td style={{ padding: '16px 18px', color: '#f1f5f9', ...inter, fontWeight: 500, fontSize: '13.5px' }}>
+                                {row.product}
+                              </td>
+                              <td style={{ padding: '16px 18px', ...mono, color: '#ffffff', fontSize: '14px', fontWeight: 700 }}>
+                                ₹{row.our_price?.toLocaleString()}
+                              </td>
+                              <td style={{ padding: '16px 18px', ...mono, color: '#94a3b8', fontSize: '14px', fontWeight: 600 }}>
+                                ₹{row.competitor_price?.toLocaleString()}
+                              </td>
+                              <td style={{ padding: '16px 18px', ...mono, fontSize: '13.5px', fontWeight: 700, color: posColor }}>
                                 <span style={{
-                                  padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
+                                  display: 'inline-block',
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  background: isCheaper ? 'rgba(34, 197, 94, 0.12)' : (isCostlier ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.06)')
+                                }}>
+                                  {row.diff_amount > 0 ? `+₹${row.diff_amount}` : `₹${row.diff_amount}`}
+                                  {row.diff_percent !== null && ` (${row.diff_percent > 0 ? '+' : ''}${row.diff_percent}%)`}
+                                </span>
+                              </td>
+                              <td style={{ padding: '16px 18px' }}>
+                                <span style={{
+                                  padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
                                   background: isCheaper ? 'rgba(34, 197, 94, 0.15)' : (isCostlier ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255,255,255,0.1)'),
-                                  color: posColor
+                                  color: posColor,
+                                  border: `1px solid ${isCheaper ? 'rgba(34, 197, 94, 0.35)' : (isCostlier ? 'rgba(245, 158, 11, 0.35)' : 'rgba(255,255,255,0.2)')}`
                                 }}>
                                   {row.position}
                                 </span>
                               </td>
-                              <td style={{ padding: '14px 16px', fontSize: '12px', color: c.muted }}>
+                              <td style={{ padding: '16px 18px', ...inter, fontSize: '13px', color: '#94a3b8' }}>
                                 {row.observed_on}
                                 {row.stale && (
-                                  <span style={{ marginLeft: '8px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontSize: '10px', fontWeight: 700 }}>
+                                  <span style={{ marginLeft: '8px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontSize: '10px', fontWeight: 800 }}>
                                     STALE
                                   </span>
                                 )}
@@ -1725,73 +2030,81 @@ export default function Dashboard() {
               </div>
 
               {/* Two Column Layout: Add Competitor & Add Intel Entry */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '24px', marginBottom: '32px' }}>
+              <div className="intel-forms-grid">
                 
                 {/* Form 1: Add Competitor */}
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)' }}>
-                  <h3 style={{ ...sora, fontSize: '16px', fontWeight: 700, color: '#fff', margin: '0 0 16px 0' }}>➕ Add Competitor</h3>
+                <div className="intel-form-card">
+                  <h3 style={{ ...sora, fontSize: '17px', fontWeight: 700, color: '#ffffff', margin: '0 0 18px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>➕</span> Add Competitor
+                  </h3>
                   {compError && (
-                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '8px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '16px' }}>
+                    <div style={{ ...inter, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '10px 14px', borderRadius: '8px', fontSize: '12.5px', marginBottom: '16px' }}>
                       {compError}
                     </div>
                   )}
                   <form onSubmit={handleAddCompetitor} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Name *</label>
+                      <label className="intel-label">Competitor Name *</label>
                       <input
                         type="text"
-                        placeholder="e.g. Croma, Vijay Sales, Myntra"
+                        placeholder="e.g. Croma, Vijay Sales, Reliance Digital"
                         value={compName}
                         onChange={e => setCompName(e.target.value)}
-                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        className="intel-input"
                         required
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Website</label>
+                      <label className="intel-label">Website</label>
                       <input
                         type="url"
                         placeholder="https://competitor.com"
                         value={compWebsite}
                         onChange={e => setCompWebsite(e.target.value)}
-                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        className="intel-input"
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Notes</label>
+                      <label className="intel-label">Notes & Market Position</label>
                       <textarea
-                        placeholder="General notes about competitor positioning"
+                        placeholder="e.g. Premium retail chain, strong offline presence in malls"
                         value={compNotes}
                         onChange={e => setCompNotes(e.target.value)}
                         rows={2}
-                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', outline: 'none', resize: 'vertical' }}
+                        className="intel-textarea"
                       />
                     </div>
                     <button
                       type="submit"
                       disabled={compSubmitting}
-                      style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, cursor: compSubmitting ? 'not-allowed' : 'pointer' }}
+                      className="intel-btn-primary"
                     >
-                      {compSubmitting ? 'Adding...' : 'Add Competitor'}
+                      {compSubmitting ? 'Adding...' : 'Add Competitor →'}
                     </button>
                   </form>
 
                   {/* Competitor List */}
-                  <div style={{ marginTop: '24px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px' }}>
-                    <div style={{ fontSize: '12px', color: c.muted, fontWeight: 700, textTransform: 'uppercase', marginBottom: '10px' }}>Active Competitors ({competitorsList.length})</div>
+                  <div style={{ marginTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '18px' }}>
+                    <div style={{ ...inter, fontSize: '12px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>
+                      Active Competitors ({competitorsList.length})
+                    </div>
                     {competitorsList.length === 0 ? (
-                      <div style={{ color: c.muted, fontSize: '12px' }}>No competitors added yet.</div>
+                      <div style={{ ...inter, color: '#64748b', fontSize: '13px' }}>No competitors added yet.</div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '220px', overflowY: 'auto' }}>
                         {competitorsList.map(comp => (
-                          <div key={comp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                          <div key={comp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(11, 17, 32, 0.65)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
                             <div>
-                              <div style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{comp.name}</div>
-                              {comp.website && <a href={comp.website} target="_blank" rel="noreferrer" style={{ color: '#38bdf8', fontSize: '11px', textDecoration: 'none' }}>{comp.website}</a>}
+                              <div style={{ ...sora, color: '#ffffff', fontSize: '13.5px', fontWeight: 700 }}>{comp.name}</div>
+                              {comp.website && (
+                                <a href={comp.website} target="_blank" rel="noreferrer" style={{ ...inter, color: '#38bdf8', fontSize: '11.5px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                  {comp.website} ↗
+                                </a>
+                              )}
                             </div>
                             <button
                               onClick={() => handleDeleteCompetitor(comp.id, comp.name)}
-                              style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '4px' }}
+                              style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '15px', padding: '6px', borderRadius: '6px' }}
                               title="Delete competitor"
                             >
                               🗑️
@@ -1804,21 +2117,23 @@ export default function Dashboard() {
                 </div>
 
                 {/* Form 2: Add Intel Entry */}
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)' }}>
-                  <h3 style={{ ...sora, fontSize: '16px', fontWeight: 700, color: '#fff', margin: '0 0 16px 0' }}>📝 Record Intel Entry</h3>
+                <div className="intel-form-card">
+                  <h3 style={{ ...sora, fontSize: '17px', fontWeight: 700, color: '#ffffff', margin: '0 0 18px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📝</span> Record Intel Entry
+                  </h3>
                   {entryError && (
-                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '8px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '16px' }}>
+                    <div style={{ ...inter, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '10px 14px', borderRadius: '8px', fontSize: '12.5px', marginBottom: '16px' }}>
                       {entryError}
                     </div>
                   )}
-                  <form onSubmit={handleAddEntry} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <form onSubmit={handleAddEntry} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div className="intel-subgrid-2">
                       <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Competitor *</label>
+                        <label className="intel-label">Competitor *</label>
                         <select
                           value={entryCompId}
                           onChange={e => setEntryCompId(e.target.value)}
-                          style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          className="intel-select"
                           required
                         >
                           <option value="">Select Competitor</option>
@@ -1828,11 +2143,11 @@ export default function Dashboard() {
                         </select>
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Category *</label>
+                        <label className="intel-label">Category *</label>
                         <select
                           value={entryCategory}
                           onChange={e => setEntryCategory(e.target.value)}
-                          style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          className="intel-select"
                           required
                         >
                           {['pricing', 'offer', 'product', 'positioning', 'review', 'content', 'complaint', 'promotion', 'website', 'social'].map(cat => (
@@ -1844,33 +2159,33 @@ export default function Dashboard() {
 
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: c.muted }}>Summary *</label>
-                        <span style={{ fontSize: '11px', color: entrySummary.length > 500 ? '#ef4444' : c.muted }}>{entrySummary.length}/500</span>
+                        <label className="intel-label" style={{ margin: 0 }}>Summary *</label>
+                        <span style={{ ...mono, fontSize: '11px', color: entrySummary.length > 500 ? '#ef4444' : '#94a3b8' }}>{entrySummary.length}/500</span>
                       </div>
                       <textarea
-                        placeholder="What did you observe? (Publicly visible info only)"
+                        placeholder="What did you observe? (e.g. In-store listed price, special festive bundle discount)"
                         value={entrySummary}
                         onChange={e => setEntrySummary(e.target.value)}
                         maxLength={500}
                         rows={2}
-                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none', resize: 'vertical' }}
+                        className="intel-textarea"
                         required
                       />
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="intel-subgrid-2">
                       <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Competitor Product Name</label>
+                        <label className="intel-label">Competitor Product Name</label>
                         <input
                           type="text"
-                          placeholder="e.g. 43-inch 4K LED TV"
+                          placeholder="e.g. 43-inch Samsung 4K LED TV"
                           value={entryProductName}
                           onChange={e => setEntryProductName(e.target.value)}
-                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          className="intel-input"
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>
+                        <label className="intel-label">
                           Price (₹) {entryCategory === 'pricing' && '*'}
                         </label>
                         <input
@@ -1880,18 +2195,18 @@ export default function Dashboard() {
                           placeholder={entryCategory === 'pricing' ? 'Required (e.g. 21999)' : 'Optional'}
                           value={entryPrice}
                           onChange={e => setEntryPrice(e.target.value)}
-                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          className="intel-input"
                           required={entryCategory === 'pricing'}
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Link to Our Catalog Product</label>
+                      <label className="intel-label">Link to Our Catalog Product</label>
                       <select
                         value={entryOurCatalogItemId}
                         onChange={e => setEntryOurCatalogItemId(e.target.value)}
-                        style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        className="intel-select"
                       >
                         <option value="">None / Not directly comparable</option>
                         {shopCatalog?.map((item) => (
@@ -1902,37 +2217,37 @@ export default function Dashboard() {
                       </select>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="intel-subgrid-2">
                       <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Source URL</label>
+                        <label className="intel-label">Source URL</label>
                         <input
                           type="url"
                           placeholder="https://..."
                           value={entrySourceUrl}
                           onChange={e => setEntrySourceUrl(e.target.value)}
-                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          className="intel-input"
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Source Note</label>
+                        <label className="intel-label">Source Note</label>
                         <input
                           type="text"
                           placeholder="e.g. In-store poster, Public Tweet"
                           value={entrySourceNote}
                           onChange={e => setEntrySourceNote(e.target.value)}
-                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                          className="intel-input"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: c.muted, marginBottom: '6px' }}>Observed On *</label>
+                      <label className="intel-label">Observed On *</label>
                       <input
                         type="date"
                         max={new Date().toISOString().split('T')[0]}
                         value={entryObservedOn}
                         onChange={e => setEntryObservedOn(e.target.value)}
-                        style={{ width: '100%', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', outline: 'none' }}
+                        className="intel-input"
                         required
                       />
                     </div>
@@ -1940,20 +2255,23 @@ export default function Dashboard() {
                     <button
                       type="submit"
                       disabled={entrySubmitting || competitorsList.length === 0}
-                      style={{ background: '#8b5cf6', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, cursor: (entrySubmitting || competitorsList.length === 0) ? 'not-allowed' : 'pointer', opacity: (entrySubmitting || competitorsList.length === 0) ? 0.6 : 1, marginTop: '4px' }}
+                      className="intel-btn-purple"
+                      style={{ marginTop: '6px' }}
                     >
-                      {entrySubmitting ? 'Saving...' : 'Add Intel Entry'}
+                      {entrySubmitting ? 'Saving...' : 'Add Intel Entry →'}
                     </button>
                   </form>
                 </div>
               </div>
 
               {/* All Entries List (Category-wise) */}
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', backdropFilter: 'blur(12px)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ background: 'rgba(18, 26, 45, 0.75)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '20px', padding: '26px', backdropFilter: 'blur(14px)', boxShadow: '0 16px 40px rgba(0, 0, 0, 0.35)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px', flexWrap: 'wrap', gap: '14px' }}>
                   <div>
-                    <h2 style={{ ...sora, fontSize: '18px', fontWeight: 700, color: '#fff', margin: '0 0 4px 0' }}>🗂️ Intel Log & History</h2>
-                    <p style={{ color: c.muted, margin: 0, fontSize: '13px' }}>All recorded observations grouped by competitor</p>
+                    <h2 style={{ ...sora, fontSize: '19px', fontWeight: 800, color: '#ffffff', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>🗂️</span> Intel Log & History
+                    </h2>
+                    <p style={{ ...inter, color: '#94a3b8', margin: 0, fontSize: '13.5px' }}>All recorded market observations grouped by competitor</p>
                   </div>
                   {/* Category Filter Pills */}
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -1962,15 +2280,18 @@ export default function Dashboard() {
                         key={cat}
                         onClick={() => setEntryFilterCategory(cat)}
                         style={{
-                          background: entryFilterCategory === cat ? '#8b5cf6' : 'rgba(255,255,255,0.04)',
-                          color: entryFilterCategory === cat ? '#fff' : c.muted,
-                          border: '1px solid rgba(255,255,255,0.08)',
+                          background: entryFilterCategory === cat ? 'linear-gradient(135deg, #7c3aed, #8b5cf6)' : 'rgba(255, 255, 255, 0.05)',
+                          color: entryFilterCategory === cat ? '#ffffff' : '#94a3b8',
+                          border: `1px solid ${entryFilterCategory === cat ? 'rgba(167, 139, 250, 0.5)' : 'rgba(255, 255, 255, 0.08)'}`,
                           borderRadius: '20px',
-                          padding: '4px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
+                          padding: '6px 14px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          fontFamily: 'var(--font-inter, sans-serif)',
                           cursor: 'pointer',
-                          textTransform: 'capitalize'
+                          textTransform: 'capitalize',
+                          transition: 'all 0.2s ease',
+                          boxShadow: entryFilterCategory === cat ? '0 2px 10px rgba(124, 58, 237, 0.4)' : 'none'
                         }}
                       >
                         {cat}
@@ -1980,15 +2301,15 @@ export default function Dashboard() {
                 </div>
 
                 {competitorsList.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px', color: c.muted, fontSize: '14px' }}>
-                    No competitors added yet.
+                  <div style={{ ...inter, textAlign: 'center', padding: '48px', color: '#94a3b8', fontSize: '14px' }}>
+                    No competitors added yet. Use the form above to add your first competitor.
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     {competitorsList.flatMap(comp => (comp.entries || []).map(ent => ({ ...ent, compName: comp.name })))
                       .filter(ent => entryFilterCategory === 'all' || ent.category === entryFilterCategory)
                       .length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '32px', color: c.muted, fontSize: '13px' }}>
+                        <div style={{ ...inter, textAlign: 'center', padding: '36px', color: '#94a3b8', fontSize: '13.5px' }}>
                           No entries found for category '{entryFilterCategory}'.
                         </div>
                       ) : (
@@ -1997,38 +2318,38 @@ export default function Dashboard() {
                           .map(entry => {
                             const isStale = new Date(entry.observed_on) < new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
                             return (
-                              <div key={entry.id} style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+                              <div key={entry.id} style={{ background: 'rgba(11, 17, 32, 0.65)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: '14px', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap', transition: 'all 0.2s ease' }}>
                                 <div style={{ flex: 1, minWidth: '260px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                                    <span style={{ color: '#fff', fontWeight: 700, fontSize: '13px' }}>{entry.compName}</span>
-                                    <span style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#c4b5fd', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ color: '#ffffff', ...sora, fontWeight: 700, fontSize: '14px' }}>{entry.compName}</span>
+                                    <span style={{ ...inter, background: 'rgba(139, 92, 246, 0.18)', color: '#c4b5fd', border: '1px solid rgba(139, 92, 246, 0.35)', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                       {entry.category}
                                     </span>
                                     {entry.price !== null && entry.price !== undefined && (
-                                      <span style={{ ...mono, color: '#22c55e', fontSize: '12px', fontWeight: 700 }}>
+                                      <span style={{ ...mono, color: '#22c55e', fontSize: '13.5px', fontWeight: 800 }}>
                                         ₹{entry.price.toLocaleString()}
                                       </span>
                                     )}
                                     {isStale && (
-                                      <span style={{ background: 'rgba(245,158,11,0.2)', color: '#f59e0b', padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
+                                      <span style={{ ...mono, background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', padding: '2px 8px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 800 }}>
                                         STALE
                                       </span>
                                     )}
                                   </div>
 
-                                  <div style={{ color: '#e2e8f0', fontSize: '13px', lineHeight: 1.5, marginBottom: '8px' }}>
+                                  <div style={{ ...inter, color: '#e2e8f0', fontSize: '13.5px', lineHeight: 1.6, marginBottom: '10px' }}>
                                     {entry.summary}
                                   </div>
 
-                                  <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '11px', color: c.muted, flexWrap: 'wrap' }}>
+                                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', fontSize: '12px', color: '#94a3b8', flexWrap: 'wrap', ...inter }}>
                                     {entry.product_name && <span>Competitor item: <strong style={{ color: '#cbd5e1' }}>{entry.product_name}</strong></span>}
                                     {entry.our_catalog_item_name && <span>Mapped to: <strong style={{ color: '#cbd5e1' }}>{entry.our_catalog_item_name}</strong></span>}
                                     {entry.source_url && (
-                                      <a href={entry.source_url} target="_blank" rel="noreferrer" style={{ color: '#38bdf8', textDecoration: 'none' }}>
+                                      <a href={entry.source_url} target="_blank" rel="noreferrer" style={{ color: '#38bdf8', textDecoration: 'none', fontWeight: 600 }}>
                                         Source Link ↗
                                       </a>
                                     )}
-                                    {entry.source_note && <span>Source note: {entry.source_note}</span>}
+                                    {entry.source_note && <span>Note: {entry.source_note}</span>}
                                     <span>Observed: {entry.observed_on}</span>
                                   </div>
                                 </div>
@@ -2036,7 +2357,7 @@ export default function Dashboard() {
                                 <div>
                                   <button
                                     onClick={() => handleDeleteEntry(entry.id)}
-                                    style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '4px' }}
+                                    style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '15px', padding: '6px', borderRadius: '6px' }}
                                     title="Delete entry"
                                   >
                                     🗑️
@@ -2050,7 +2371,7 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-          ) : dailyReportOpen ? (
+          ) : (dailyReportOpen && selectedShop) ? (
             /* Daily Report View */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
               {/* Header */}
@@ -2196,7 +2517,7 @@ export default function Dashboard() {
 
               <div className="dash-stores-grid">
                 {stores.map(s => (
-                  <div key={s.id} onClick={() => setSelectedShop(s.id)} style={{
+                  <div key={s.id} onClick={() => selectStore(s.id)} style={{
                     background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', padding: '24px',
                     cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', backdropFilter: 'blur(12px)',
                     position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '20px'
@@ -2215,6 +2536,8 @@ export default function Dashboard() {
                           <div style={{ fontSize: '13px', color: c.muted, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></span>
                             {s.category || 'Retail E-commerce'}
+                            <span style={{ opacity: 0.4 }}>•</span>
+                            <span>{s.customers_count || 0} Customers Tracked</span>
                           </div>
                         </div>
                       </div>
@@ -2239,24 +2562,45 @@ export default function Dashboard() {
                     </div>
 
                     {/* Stats Row */}
-                    <div className="responsive-grid-3" style={{ gap: '12px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.02)' }}>
+                    <div className="responsive-grid-3" style={{ gap: '12px', background: 'rgba(0,0,0,0.25)', padding: '16px 18px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                      {/* AI Agent Status */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
-                          🤖 AI Agents
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          🤖 AI Sales Agent
                         </div>
-                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#fff' }}>{s.agents || 1}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                          <span style={{ display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></span>
+                          <span style={{ fontSize: '16px', fontWeight: 700, color: '#38bdf8' }}>Active (24/7)</span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: c.muted, marginTop: '2px' }}>
+                          {s.chats_count || 0} Chats Handled
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
-                          💰 Sales
+
+                      {/* Orders & Revenue */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          🛍️ Total Orders
                         </div>
-                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#22c55e' }}>{s.orders_count || 0}</div>
+                        <div style={{ ...mono.style, fontSize: '20px', fontWeight: 700, color: '#22c55e', marginTop: '2px' }}>
+                          {s.orders_count || 0} <span style={{ fontSize: '12px', fontWeight: 500, color: c.muted }}>placed</span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#22c55e', fontWeight: 600, marginTop: '2px' }}>
+                          ₹{Number(s.total_revenue || 0).toLocaleString()} Revenue
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '12px', fontWeight: 500 }}>
-                          🔥 Hot Leads
+
+                      {/* Hot Leads */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.06)', paddingLeft: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: c.muted, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          🔥 Hot Prospects
                         </div>
-                        <div style={{ ...mono.style, fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>{s.hot_leads_count || 0}</div>
+                        <div style={{ ...mono.style, fontSize: '20px', fontWeight: 700, color: '#f59e0b', marginTop: '2px' }}>
+                          {s.hot_leads_count || 0} <span style={{ fontSize: '12px', fontWeight: 500, color: c.muted }}>leads</span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 600, marginTop: '2px' }}>
+                          High Purchase Intent
+                        </div>
                       </div>
                     </div>
 
@@ -2267,14 +2611,14 @@ export default function Dashboard() {
                         View Dashboard
                       </div>
                       <div style={{ color: c.muted, fontSize: '12px', fontWeight: 500 }}>
-                        Synced: Just now
+                        Synced: Real-time
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-          ) : ordersViewOpen ? (
+          ) : (ordersViewOpen && selectedShop) ? (
             /* Orders View */
             <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
@@ -2361,7 +2705,7 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : selectedShop ? (
             /* Store Detail View */
             <div>
 
@@ -2857,7 +3201,7 @@ export default function Dashboard() {
                       </thead>
                       <tbody>
                         {priorityQueue.map((opp, idx) => (
-                          <tr key={opp.customer_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }} onClick={() => { setSelectedProfile(opp.customer_id); setShowProfileModal(true); }}>
+                          <tr key={opp.customer_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }} onClick={() => viewProfile(opp.customer_id)}>
                             <td style={{ padding: '16px', fontSize: '14px', color: '#fff', fontWeight: '600' }}>#{idx + 1}</td>
                             <td style={{ padding: '16px', fontSize: '14px', color: '#fff' }}>{opp.name}</td>
                             <td style={{ padding: '16px' }}>
@@ -3230,6 +3574,10 @@ export default function Dashboard() {
               </div>
 
             </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '80px 0', color: c.muted }}>
+              <p>Please select a store from the sidebar.</p>
+            </div>
           )}
         </div>
       </div>
@@ -3238,7 +3586,33 @@ export default function Dashboard() {
         <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
           <div className="modal-content" style={{ maxWidth: '600px', padding: '32px' }} onClick={e => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setShowProfileModal(false)}>✖</button>
-            <h2 style={{ ...styles.sectionTitle, marginBottom: '24px' }}>Customer Profile</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ ...styles.sectionTitle, margin: 0 }}>Customer Profile</h2>
+              {selectedProfile["Customer ID"] && (
+                <button
+                  type="button"
+                  style={{
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    color: '#818cf8',
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  onClick={(e) => {
+                    setShowProfileModal(false);
+                    viewConversation(e, selectedProfile["Customer ID"], selectedProfile["Name"]);
+                  }}
+                >
+                  💬 View Chat History
+                </button>
+              )}
+            </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '20px', marginBottom: '24px' }}>
               <div>
@@ -3247,15 +3621,15 @@ export default function Dashboard() {
               </div>
               <div>
                 <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Name</div>
-                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Name"] || '-'}</div>
+                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Name"] || 'Anonymous Visitor'}</div>
               </div>
               <div>
                 <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Contact Info</div>
-                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Contact info"] || '-'}</div>
+                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Contact info"] || 'Not provided'}</div>
               </div>
               <div>
                 <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>City/State</div>
-                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["City/state"] || '-'}</div>
+                <div style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["City/state"] || 'Not specified'}</div>
               </div>
               <div>
                 <div style={{ fontSize: '11px', textTransform: 'uppercase', color: c.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Source</div>
@@ -3276,15 +3650,15 @@ export default function Dashboard() {
               <div style={{ display: 'grid', gap: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: c.muted, fontSize: '13px' }}>Intent Score:</span>
-                  <span style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Intent score"]} / 100</span>
+                  <span style={{ color: c.ivory, fontWeight: 600 }}>{selectedProfile["Intent score"] ?? 0} / 100</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: c.muted, fontSize: '13px' }}>Lifetime Value:</span>
-                  <span style={{ color: '#34c759', fontWeight: 600 }}>₹{selectedProfile["Total lifetime value"]}</span>
+                  <span style={{ color: '#34c759', fontWeight: 600 }}>₹{Number(selectedProfile["Total lifetime value"] || 0).toLocaleString()}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: c.muted, fontSize: '13px' }}>Average Order Value:</span>
-                  <span style={{ color: c.ivory, fontWeight: 600 }}>₹{selectedProfile["Average order value"]}</span>
+                  <span style={{ color: c.ivory, fontWeight: 600 }}>₹{Number(selectedProfile["Average order value"] || 0).toLocaleString()}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: c.muted, fontSize: '13px' }}>Last Purchase:</span>
