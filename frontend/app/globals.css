@@ -73,9 +73,19 @@ h2 {
 
 /* Navbar */
 .navbar {
-  display: flex; justify-content: center; align-items: center;
+  display: flex; justify-content: space-between; align-items: center;
   padding: 24px 32px; background: var(--nav-bg); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 100;
+}
+.nav-spacer {
+  flex: 1;
+}
+.nav-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: 1;
+  justify-content: flex-end;
 }
 .nav-brand {
   font-family: var(--font-heading); font-size: 28px; font-weight: 900; color: var(--ivory);

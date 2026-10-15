@@ -107,17 +107,8 @@ export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [customerId, setCustomerId] = useState(() => {
-    if (typeof window !== 'undefined') {
-      let stored = localStorage.getItem('ai_store_customer_id');
-      if (!stored) {
-        stored = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ("cust-" + Date.now());
-        localStorage.setItem('ai_store_customer_id', stored);
-      }
-      return stored;
-    }
-    return "temp-customer-session";
-  });
+  const [customerId, setCustomerId] = useState('');
+  const [mounted, setMounted] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [shopParam, setShopParam] = useState(null);
   const [refParam, setRefParam] = useState(null);
@@ -482,6 +473,16 @@ export default function Home() {
   }, [isTyping, isChatOpen]);
 
   useEffect(() => {
+    setMounted(true);
+    if (typeof window !== 'undefined') {
+      let stored = localStorage.getItem('ai_store_customer_id');
+      if (!stored) {
+        stored = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ("cust-" + Date.now());
+        localStorage.setItem('ai_store_customer_id', stored);
+      }
+      setCustomerId(stored);
+    }
+
     const checkBackend = async () => {
       try {
         const r = await fetch(HEALTH_URL);
@@ -878,26 +879,27 @@ export default function Home() {
   return (
     <>
       <Toaster position="top-center" />
-      <nav className="navbar" style={{ justifyContent: 'space-between' }}>
-        <div style={{ flex: 1 }}></div>
-        <div className="nav-brand" style={{ textAlign: 'center' }}>
-          {config?.brandName || 'Store'}
+      <nav className="navbar" suppressHydrationWarning>
+        <div className="nav-spacer" suppressHydrationWarning></div>
+        <div className="nav-brand" style={{ textAlign: 'center' }} suppressHydrationWarning>
+          {mounted ? (config?.brandName || 'Store') : 'Store'}
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
+        <div className="nav-actions" suppressHydrationWarning>
           <button 
             className="nav-account-btn"
             onClick={() => { setIsAccountOpen(true); setIsCartOpen(false); setIsWishlistOpen(false); }}
             title="My Account"
+            suppressHydrationWarning
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
               <circle cx="12" cy="7" r="4"></circle>
             </svg>
-            <span className="nav-account-label">
-              {accountData?.profile?.name ? accountData.profile.name.split(' ')[0] : 'Account'}
+            <span className="nav-account-label" suppressHydrationWarning>
+              {mounted && accountData?.profile?.name ? accountData.profile.name.split(' ')[0] : 'Account'}
             </span>
-            {walletBalance > 0 && (
-              <span className="nav-wallet-pill">
+            {mounted && walletBalance > 0 && (
+              <span className="nav-wallet-pill" suppressHydrationWarning>
                 ₹{walletBalance}
               </span>
             )}
@@ -907,19 +909,20 @@ export default function Home() {
             onClick={() => { setIsWishlistOpen(true); setIsAccountOpen(false); setIsCartOpen(false); }}
             title="Wishlist"
             style={{ position: 'relative' }}
+            suppressHydrationWarning
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill={wishlist.length > 0 ? "#ef4444" : "none"} stroke={wishlist.length > 0 ? "#ef4444" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-            {wishlist.length > 0 && <span className="cart-badge">{wishlist.length}</span>}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill={mounted && wishlist.length > 0 ? "#ef4444" : "none"} stroke={mounted && wishlist.length > 0 ? "#ef4444" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            {mounted && wishlist.length > 0 && <span className="cart-badge">{wishlist.length}</span>}
           </button>
           <button 
             className="nav-cart-btn"
             onClick={() => { setIsCartOpen(true); setIsAccountOpen(false); setIsWishlistOpen(false); }}
             style={{ position: 'relative' }}
+            suppressHydrationWarning
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
-            {cart.length > 0 && <span className="cart-badge">{cart.length}</span>}
+            {mounted && cart.length > 0 && <span className="cart-badge">{cart.length}</span>}
           </button>
-
         </div>
       </nav>
       
