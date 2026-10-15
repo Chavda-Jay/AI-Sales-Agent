@@ -137,6 +137,14 @@ export default function Home() {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const isSendingRef = useRef(false);
+  const [showVipModal, setShowVipModal] = useState(false);
+  const [vipForm, setVipForm] = useState({
+    name: '',
+    phone: '',
+    city: '',
+    consent_whatsapp: true
+  });
+  const [isOnboardingSubmitting, setIsOnboardingSubmitting] = useState(false);
 
   const toggleWishlist = async (product) => {
     const isWishlisted = wishlist.includes(product.id);
@@ -173,6 +181,12 @@ export default function Home() {
             phone: data.profile.phone || '',
             delivery_address: data.profile.delivery_address || ''
           });
+          if (data.profile.name && typeof window !== 'undefined') {
+            localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
+            localStorage.setItem('ai_customer_name', data.profile.name);
+            if (data.profile.phone) localStorage.setItem('ai_customer_phone', data.profile.phone);
+            if (data.profile.city) localStorage.setItem('ai_customer_city', data.profile.city);
+          }
         }
       }
     } catch (err) {
@@ -193,6 +207,185 @@ export default function Home() {
       fetchAccountData();
     }
   }, [shopParam, customerId]);
+
+  useEffect(() => {
+    if (shopParam && typeof window !== 'undefined') {
+      const isAlreadyOnboarded = localStorage.getItem(`ai_store_onboarded_${shopParam}`);
+      const savedName = localStorage.getItem('ai_customer_name') || '';
+      const savedPhone = localStorage.getItem('ai_customer_phone') || '';
+      const savedCity = localStorage.getItem('ai_customer_city') || '';
+      if (savedName || savedPhone || savedCity) {
+        setVipForm(p => ({
+          ...p,
+          name: p.name || savedName,
+          phone: p.phone || savedPhone,
+          city: p.city || savedCity
+        }));
+      }
+      if (!isAlreadyOnboarded && !accountData?.profile?.name) {
+        const timer = setTimeout(() => {
+          setShowVipModal(true);
+        }, 600);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [shopParam, accountData?.profile?.name]);
+
+  const handleVipOnboard = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!vipForm.name || !vipForm.name.trim()) {
+      toast.error("Please enter your name");
+      return;
+    }
+    const cleanPhone = (vipForm.phone || '').trim().replace(/^\+91/, '');
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      toast.error("Please enter a valid 10-digit Indian phone number");
+      return;
+    }
+
+    // Direct switch for known demo profiles
+    if (cleanPhone === '8898547456' || vipForm.name.trim() === 'Radhe') {
+      const radheId = 'demo-customer-1791961381312';
+      setCustomerId(radheId);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ai_store_customer_id', radheId);
+        localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
+        localStorage.setItem('ai_customer_name', 'Radhe');
+      }
+      setShowVipModal(false);
+      await fetchAccountData();
+      toast.success("Welcome back Radhe! VIP session restored.");
+      return;
+    }
+
+    if (cleanPhone === '8875412545' || vipForm.name.trim() === 'Shyam') {
+      const shyamId = 'demo-customer-1791959899392';
+      setCustomerId(shyamId);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ai_store_customer_id', shyamId);
+        localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
+        localStorage.setItem('ai_customer_name', 'Shyam');
+      }
+      setShowVipModal(false);
+      await fetchAccountData();
+      toast.success("Welcome back Shyam! Warm session restored.");
+      return;
+    }
+
+    // Ensure non-demo ID for new onboarding to prevent 403 demo-edit restrictions
+    let activeCid = customerId;
+    if (!activeCid || /^demo-customer-\d+$/.test(activeCid)) {
+      activeCid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ("cust-" + Date.now());
+      setCustomerId(activeCid);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ai_store_customer_id', activeCid);
+      }
+    }
+
+    try {
+      setIsOnboardingSubmitting(true);
+      const res = await fetch(`${API_BASE}/api/store/onboard?shop=${shopParam}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: activeCid,
+          name: vipForm.name.trim(),
+          phone: cleanPhone,
+          city: vipForm.city?.trim() || '',
+          delivery_address: vipForm.city?.trim() || '',
+          consent_whatsapp: vipForm.consent_whatsapp
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`🎉 Welcome ${vipForm.name}! ₹100 added to your wallet!`, { duration: 4000 });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
+          localStorage.setItem('ai_customer_name', vipForm.name.trim());
+          localStorage.setItem('ai_customer_phone', cleanPhone);
+          if (vipForm.city) localStorage.setItem('ai_customer_city', vipForm.city.trim());
+        }
+        setShowVipModal(false);
+        await fetchAccountData();
+
+        // Personalize AI greeting
+        setMessages([
+          {
+            text: `Namaste ${vipForm.name.trim()} ji! Welcome to ${config?.brandName || 'our store'} 👋 Your ₹100 welcome shopping balance is ready in your wallet. How can I help you today?`,
+            who: 'agent',
+            isGreeting: true
+          }
+        ]);
+      } else {
+        toast.error(data.detail || "Failed to activate VIP Pass");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to connect to store. Please try again.");
+    } finally {
+      setIsOnboardingSubmitting(false);
+    }
+  };
+
+  const handleFillDemo = (type) => {
+    if (type === 'radhe') {
+      const radheId = 'demo-customer-1791961381312';
+      setCustomerId(radheId);
+      if (typeof window !== 'undefined') localStorage.setItem('ai_store_customer_id', radheId);
+      setVipForm(p => ({
+        ...p,
+        name: 'Radhe',
+        phone: '8898547456',
+        city: 'Ahmedabad',
+        consent_whatsapp: true
+      }));
+    } else if (type === 'shyam') {
+      const shyamId = 'demo-customer-1791959899392';
+      setCustomerId(shyamId);
+      if (typeof window !== 'undefined') localStorage.setItem('ai_store_customer_id', shyamId);
+      setVipForm(p => ({
+        ...p,
+        name: 'Shyam',
+        phone: '8875412545',
+        city: 'Surat',
+        consent_whatsapp: true
+      }));
+    } else if (type === 'new') {
+      const freshId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ("cust-" + Date.now());
+      setCustomerId(freshId);
+      if (typeof window !== 'undefined') localStorage.setItem('ai_store_customer_id', freshId);
+      setVipForm(p => ({
+        ...p,
+        name: 'Aarav Sharma',
+        phone: '9876543210',
+        city: 'Mumbai',
+        consent_whatsapp: true
+      }));
+    }
+  };
+
+  const handleSwitchDemoAccount = (extId) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ai_store_customer_id', extId);
+    }
+    setCustomerId(extId);
+    toast.success("Switched account session!");
+  };
+
+  const handleStartFreshAccount = () => {
+    const freshId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ("cust-" + Date.now());
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ai_store_customer_id', freshId);
+      localStorage.removeItem(`ai_store_onboarded_${shopParam}`);
+    }
+    setCustomerId(freshId);
+    setAccountData(null);
+    setWalletBalance(0);
+    setProfileForm({ name: '', phone: '', delivery_address: '' });
+    setVipForm({ name: '', phone: '', city: '', consent_whatsapp: true });
+    setIsAccountOpen(false);
+    setShowVipModal(true);
+  };
 
   const handleSaveProfile = async (e) => {
     if (e) e.preventDefault();
@@ -692,37 +885,19 @@ export default function Home() {
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
           <button 
-            className="nav-cart-btn"
+            className="nav-account-btn"
             onClick={() => { setIsAccountOpen(true); setIsCartOpen(false); setIsWishlistOpen(false); }}
             title="My Account"
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px', 
-              padding: '6px 12px', 
-              borderRadius: '20px', 
-              background: 'rgba(255, 255, 255, 0.05)', 
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              cursor: 'pointer',
-              color: 'var(--ivory)',
-              fontSize: '13px',
-              fontWeight: 600
-            }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
               <circle cx="12" cy="7" r="4"></circle>
             </svg>
-            <span className="account-nav-label">Account</span>
+            <span className="nav-account-label">
+              {accountData?.profile?.name ? accountData.profile.name.split(' ')[0] : 'Account'}
+            </span>
             {walletBalance > 0 && (
-              <span style={{ 
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
-                color: '#fff', 
-                fontSize: '11px', 
-                padding: '1px 7px', 
-                borderRadius: '10px', 
-                fontWeight: 700 
-              }}>
+              <span className="nav-wallet-pill">
                 ₹{walletBalance}
               </span>
             )}
@@ -1117,6 +1292,113 @@ export default function Home() {
         </div>
       </div>
 
+      {/* VIP Member Pass Onboarding Modal */}
+      {showVipModal && (
+        <div className="vip-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowVipModal(false); }}>
+          <div className="vip-modal-card">
+            <div className="vip-card-glow"></div>
+            
+            <div className="vip-badge-pill">
+              <span>🎁</span> SPECIAL WELCOME GIFT
+            </div>
+
+            <div className="vip-modal-header">
+              <h2>Claim Your ₹100 Shopping Pass</h2>
+              <p>Enter your details to instantly activate your ₹100 wallet credit & personal AI assistant for {config?.brandName || 'our Store'}.</p>
+            </div>
+
+            <form onSubmit={handleVipOnboard}>
+              <div className="vip-form-group">
+                <label className="vip-form-label">Full Name *</label>
+                <div className="vip-input-wrap">
+                  <span className="vip-input-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  </span>
+                  <input 
+                    type="text" 
+                    className="vip-input" 
+                    placeholder="Radhe Sharma" 
+                    value={vipForm.name}
+                    onChange={(e) => setVipForm(p => ({ ...p, name: e.target.value }))}
+                    maxLength={80}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="vip-form-group">
+                <label className="vip-form-label">WhatsApp Mobile Number *</label>
+                <div className="vip-input-wrap">
+                  <span className="vip-input-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                  </span>
+                  <span className="vip-phone-prefix">+91</span>
+                  <input 
+                    type="tel" 
+                    className="vip-input vip-input-phone" 
+                    placeholder="98765 43210" 
+                    value={vipForm.phone}
+                    onChange={(e) => setVipForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                    maxLength={10}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="vip-form-group">
+                <label className="vip-form-label">City / Delivery Town <span style={{ fontWeight: 400, color: '#8b949e', fontSize: '12px' }}>(Optional)</span></label>
+                <div className="vip-input-wrap">
+                  <span className="vip-input-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                  </span>
+                  <input 
+                    type="text" 
+                    className="vip-input" 
+                    placeholder="Ahmedabad, Mumbai, Surat" 
+                    value={vipForm.city}
+                    onChange={(e) => setVipForm(p => ({ ...p, city: e.target.value }))}
+                    maxLength={80}
+                  />
+                </div>
+              </div>
+
+              <label className="vip-consent-check">
+                <input 
+                  type="checkbox" 
+                  checked={vipForm.consent_whatsapp}
+                  onChange={(e) => setVipForm(p => ({ ...p, consent_whatsapp: e.target.checked }))}
+                />
+                <span className="vip-consent-text">
+                  Send order tracking, delivery updates, and ₹100 wallet notifications via WhatsApp.
+                </span>
+              </label>
+
+              <div className="vip-actions">
+                <button 
+                  type="submit" 
+                  className="vip-claim-btn"
+                  onClick={handleVipOnboard}
+                  disabled={isOnboardingSubmitting}
+                >
+                  {isOnboardingSubmitting ? (
+                    <>Applying Offer...</>
+                  ) : (
+                    <>Get ₹100 Off</>
+                  )}
+                </button>
+                <button 
+                  type="button" 
+                  className="vip-skip-btn"
+                  onClick={() => setShowVipModal(false)}
+                >
+                  Skip for now & browse store
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Customer Hub: My Account Drawer */}
       <div 
         className={`account-drawer-overlay ${isAccountOpen ? 'open' : ''}`} 
@@ -1166,6 +1448,48 @@ export default function Home() {
               {/* TAB 1: WALLET & REFERRALS */}
               {accountTab === 'wallet' && (
                 <>
+                  {/* Unclaimed Welcome Pass Reminder (Only inside Account Drawer) */}
+                  {(!accountData?.profile?.name || Number(accountData?.wallet?.balance || walletBalance || 0) === 0) && (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(5, 150, 105, 0.05))',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      borderRadius: '14px',
+                      padding: '14px 16px',
+                      marginBottom: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px'
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '13px', color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>🎁</span> ₹100 Welcome Pass Unclaimed
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
+                          Complete your profile details to unlock ₹100 welcome shopping credits.
+                        </div>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => { setIsAccountOpen(false); setShowVipModal(true); }}
+                        style={{
+                          background: 'linear-gradient(135deg, #10b981, #059669)',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                        }}
+                      >
+                        Claim ₹100 ⚡
+                      </button>
+                    </div>
+                  )}
+
                   {/* Wallet Balance Hero Card */}
                   <div className="account-wallet-hero">
                     <div className="account-wallet-label">Available Wallet Credits</div>
@@ -1473,6 +1797,35 @@ export default function Home() {
                         }}></span>
                       </span>
                     </label>
+                  </div>
+
+                  {/* Quick Switch Demo Account Section */}
+                  <div className="drawer-switch-section">
+                    <div className="drawer-switch-title">⚡ Quick Switch Active Account (Demo)</div>
+                    <div className="drawer-switch-btns">
+                      <button 
+                        type="button"
+                        className={`drawer-switch-btn ${customerId === 'demo-customer-1791961381312' ? 'active' : ''}`}
+                        onClick={() => handleSwitchDemoAccount('demo-customer-1791961381312')}
+                      >
+                        👔 Radhe (VIP • ₹100)
+                      </button>
+                      <button 
+                        type="button"
+                        className={`drawer-switch-btn ${customerId === 'demo-customer-1791959899392' ? 'active' : ''}`}
+                        onClick={() => handleSwitchDemoAccount('demo-customer-1791959899392')}
+                      >
+                        📱 Shyam (Warm • ₹100)
+                      </button>
+                      <button 
+                        type="button"
+                        className="drawer-switch-btn"
+                        onClick={handleStartFreshAccount}
+                        title="Create or test a brand new shopper with ₹100 Welcome Pass"
+                      >
+                        ✨ + New Shopper Pass
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

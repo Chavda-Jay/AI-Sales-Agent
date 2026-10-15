@@ -7,6 +7,7 @@ import json
 import re
 import logging
 import uuid
+import random
 import shutil
 from fastapi import FastAPI, HTTPException, Request, Depends, UploadFile, File, Query
 from fastapi.staticfiles import StaticFiles
@@ -2666,6 +2667,14 @@ class CustomerConsentUpdateReq(BaseModel):
     customerId: str
     promotional_messages: bool
 
+class CustomerOnboardReq(BaseModel):
+    customerId: str
+    name: str
+    phone: str
+    city: Optional[str] = None
+    delivery_address: Optional[str] = None
+    consent_whatsapp: Optional[bool] = True
+
 @app.get("/api/store/me")
 async def get_store_me(shop: str = Query(...), customerId: str = Query(...)):
     if not db_pool:
@@ -2938,6 +2947,145 @@ async def update_store_me_consent(req: CustomerConsentUpdateReq, shop: str = Que
     except Exception as e:
         print(f"Error updating customer consent: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/api/store/onboard")
+async def onboard_store_customer(req: CustomerOnboardReq, shop: str = Query(...)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        async with db_pool.acquire() as conn:
+            # 1. Shop scope
+            b_row = await conn.fetchrow("SELECT id, slug, brand_name FROM businesses WHERE slug = $1", shop)
+            if not b_row:
+                raise HTTPException(status_code=404, detail="Store not found")
+
+            # 2. Validation
+            cleaned_name = (req.name or "").strip()
+            if not cleaned_name:
+                raise HTTPException(status_code=400, detail="Name is required")
+            if len(cleaned_name) > 80:
+                raise HTTPException(status_code=400, detail="Name cannot exceed 80 characters")
+
+            cleaned_phone = (req.phone or "").strip()
+            if not cleaned_phone:
+                raise HTTPException(status_code=400, detail="Phone number is required")
+            if not re.match(r"^(\+91)?[6-9]\d{9}$", cleaned_phone):
+                raise HTTPException(status_code=400, detail="Invalid Indian phone number. Must be 10 digits starting with 6-9.")
+            if cleaned_phone.startswith("+91"):
+                cleaned_phone = cleaned_phone[3:]
+
+            cleaned_city = (req.city or "").strip()
+            if len(cleaned_city) > 80:
+                raise HTTPException(status_code=400, detail="City cannot exceed 80 characters")
+
+            cleaned_addr = (req.delivery_address or "").strip()
+            if not cleaned_addr and cleaned_city:
+                cleaned_addr = cleaned_city
+            if len(cleaned_addr) > 300:
+                raise HTTPException(status_code=400, detail="Delivery address cannot exceed 300 characters")
+
+            is_legacy = bool(re.match(r"^demo-customer-\d+$", req.customerId))
+            if is_legacy:
+                raise HTTPException(status_code=403, detail="Editing is disabled for demo accounts")
+
+            consent_whatsapp = bool(req.consent_whatsapp)
+            opted_out = not consent_whatsapp
+
+            # 3. Check existing customer
+            cust = await conn.fetchrow(
+                "SELECT id, ext_id, wallet_balance, referral_code, name, phone FROM customers WHERE ext_id = $1 AND business_id = $2",
+                req.customerId, b_row["id"]
+            )
+
+            async with conn.transaction():
+                name_prefix = (cleaned_name or "USR")[:3].upper()
+                if cust:
+                    cust_id = cust["id"]
+                    ref_code = cust["referral_code"]
+                    if not ref_code or not ref_code.startswith(name_prefix):
+                        ref_code = f"{name_prefix}{random.randint(1000, 9999)}"
+
+                    await conn.execute(
+                        """
+                        UPDATE customers 
+                        SET name = $1, phone = $2, city = $3, delivery_address = $4,
+                            consent_whatsapp = $5, opted_out = $6, referral_code = $7,
+                            segment = CASE WHEN segment = 'COLD' THEN 'WARM' ELSE segment END
+                        WHERE id = $8
+                        """,
+                        cleaned_name, cleaned_phone, cleaned_city, cleaned_addr,
+                        consent_whatsapp, opted_out, ref_code, cust_id
+                    )
+
+                    # Welcome bonus if not already awarded
+                    wb = await conn.fetchval(
+                        "SELECT id FROM wallet_transactions WHERE customer_id = $1 AND kind = 'welcome_bonus'",
+                        cust_id
+                    )
+                    wallet_balance = float(cust["wallet_balance"] or 0)
+                    if not wb:
+                        wallet_balance += 100.0
+                        await conn.execute(
+                            "UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1",
+                            cust_id
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, note, balance_after)
+                            VALUES ($1, $2, 100.00, 'welcome_bonus', 'VIP Welcome Shopping Credit', $3)
+                            """,
+                            cust_id, b_row["id"], wallet_balance
+                        )
+                else:
+                    ref_code = f"{name_prefix}{random.randint(1000, 9999)}"
+                    cust_id = await conn.fetchval(
+                        """
+                        INSERT INTO customers (
+                            ext_id, business_id, shop, name, phone, city, delivery_address,
+                            wallet_balance, referral_code, consent_whatsapp, opted_out, source, segment
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 100.00, $8, $9, $10, 'vip_pass', 'WARM')
+                        RETURNING id
+                        """,
+                        req.customerId, b_row["id"], b_row["slug"], cleaned_name, cleaned_phone,
+                        cleaned_city, cleaned_addr, ref_code, consent_whatsapp, opted_out
+                    )
+                    wallet_balance = 100.0
+                    await conn.execute(
+                        """
+                        INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, note, balance_after)
+                        VALUES ($1, $2, 100.00, 'welcome_bonus', 'VIP Welcome Shopping Credit', 100.00)
+                        """,
+                        cust_id, b_row["id"]
+                    )
+
+                # Log consent (Doc §24 compliance)
+                await conn.execute(
+                    """
+                    INSERT INTO consent_logs (customer_id, business_id, channel, consented, opted_out, reason)
+                    VALUES ($1, $2, 'whatsapp', $3, $4, 'vip_pass_onboarding')
+                    """,
+                    cust_id, b_row["id"], consent_whatsapp, opted_out
+                )
+
+            return {
+                "status": "success",
+                "message": "VIP Member Pass activated! ₹100 added to your wallet.",
+                "customer": {
+                    "id": cust_id,
+                    "ext_id": req.customerId,
+                    "name": cleaned_name,
+                    "phone": cleaned_phone,
+                    "city": cleaned_city,
+                    "delivery_address": cleaned_addr,
+                    "wallet_balance": wallet_balance,
+                    "referral_code": ref_code
+                }
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in onboard_store_customer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to complete customer onboarding")
 
 class ManagerReply(BaseModel):
     message: str

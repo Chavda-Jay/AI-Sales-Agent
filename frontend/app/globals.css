@@ -106,6 +106,72 @@ h2 {
   width: 18px; height: 18px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
 }
+
+/* Premium Nav Account Button */
+.nav-account-btn {
+  background: var(--panel2);
+  color: var(--ivory);
+  border: 1px solid var(--line);
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.nav-account-btn:hover {
+  background: var(--line);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+.nav-account-btn svg {
+  color: var(--ivory);
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+.nav-account-btn:hover svg {
+  color: #60a5fa;
+}
+.nav-account-label {
+  display: inline-block;
+  line-height: 1;
+}
+.nav-wallet-pill {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  line-height: 1.2;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+}
+
+@media (max-width: 640px) {
+  .nav-account-btn {
+    width: 40px;
+    padding: 0;
+    border-radius: 50%;
+    justify-content: center;
+  }
+  .nav-account-label {
+    display: none;
+  }
+  .nav-wallet-pill {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+}
 .toast-notification {
   position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
   background: var(--primary); color: #fff; font-weight: 700;
@@ -2616,6 +2682,322 @@ input[type="number"] {
     right: -100%;
   }
 }
+
+/* ==========================================================================
+   VIP Member Pass Onboarding Modal & Storefront Integration
+   ========================================================================== */
+
+.vip-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 15, 0.86);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: vipFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes vipFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes vipScaleUp {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.vip-modal-card {
+  width: 100%;
+  max-width: 500px;
+  background: linear-gradient(160deg, rgba(20, 27, 41, 0.98) 0%, rgba(11, 15, 26, 0.99) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 30px 80px -15px rgba(0, 0, 0, 0.85), 0 0 50px -10px rgba(37, 99, 235, 0.22);
+  border-radius: 24px;
+  padding: 34px 32px 28px;
+  position: relative;
+  overflow: hidden;
+  animation: vipScaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.vip-card-glow {
+  position: absolute;
+  top: -80px;
+  right: -80px;
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.25) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.vip-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #60a5fa;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.vip-modal-header h2 {
+  font-size: 25px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 8px;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.vip-modal-header p {
+  font-size: 14.5px;
+  color: #94a3b8;
+  line-height: 1.55;
+  margin: 0 0 24px;
+}
+
+/* Form Groups */
+.vip-form-group {
+  margin-bottom: 16px;
+}
+
+.vip-form-label {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin-bottom: 7px;
+  letter-spacing: -0.01em;
+}
+
+.vip-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.vip-input-icon {
+  position: absolute;
+  left: 14px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.vip-input {
+  width: 100%;
+  height: 48px;
+  padding: 12px 16px 12px 42px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 14.5px;
+  font-family: inherit;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.vip-input::placeholder {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.vip-input:focus {
+  border-color: #3b82f6;
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.22);
+}
+
+.vip-phone-prefix {
+  position: absolute;
+  left: 42px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #cbd5e1;
+  pointer-events: none;
+}
+
+.vip-input-phone {
+  padding-left: 76px !important;
+  letter-spacing: 0.04em;
+}
+
+.vip-consent-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 18px 0 24px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.vip-consent-check input[type="checkbox"] {
+  accent-color: #2563eb;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.vip-consent-text {
+  font-size: 12.5px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+/* Action Buttons */
+.vip-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vip-claim-btn {
+  width: 100%;
+  height: 50px;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  color: #ffffff;
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 10px 24px -4px rgba(37, 99, 235, 0.45);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.vip-claim-btn:hover {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  transform: translateY(-1.5px);
+  box-shadow: 0 14px 28px -4px rgba(37, 99, 235, 0.6);
+}
+
+.vip-claim-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary Skip Button (Crisp, High-Contrast Glass Button) */
+.vip-skip-btn {
+  width: 100%;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  color: #e2e8f0;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.vip-skip-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+/* Glowing Navbar Claim Button */
+.nav-claim-pass-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.25));
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  animation: pulsePass 2s infinite ease-in-out;
+}
+
+@keyframes pulsePass {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+
+.nav-claim-pass-btn:hover {
+  background: #10b981;
+  color: #ffffff;
+  border-color: #10b981;
+}
+
+/* Drawer Account Switcher */
+.drawer-switch-section {
+  margin-top: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.drawer-switch-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8b949e;
+  margin-bottom: 8px;
+}
+
+.drawer-switch-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.drawer-switch-btn {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #c9d1d9;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.drawer-switch-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.drawer-switch-btn.active {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #34d399;
+}
+
 
 
 

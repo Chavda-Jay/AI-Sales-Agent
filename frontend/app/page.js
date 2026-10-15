@@ -86,8 +86,11 @@ export default function MarketplaceHome() {
                     <span className="mk-brand-name">{store.name}</span>
                     <div className="mk-rating">★ 4.8</div>
                   </div>
-                  <div className="mk-tags">
+                  <div className="mk-tags" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <span className="mk-tag">{defaultTag}</span>
+                    <span className="mk-tag" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 700 }}>
+                      🎁 ₹100 VIP Pass
+                    </span>
                   </div>
                   <p className="mk-desc">Discover {store.name} powered by AI. 24/7 engagement and instant support in {store.language}.</p>
                   <div className="mk-products-preview">
@@ -100,7 +103,7 @@ export default function MarketplaceHome() {
                   <div className="mk-status">
                     <div className="mk-dot"></div> Live AI Support
                   </div>
-                  <span className={`mk-chat-btn ${btnClass}`}>Chat with AI →</span>
+                  <span className={`mk-chat-btn ${btnClass}`}>Visit Store →</span>
                 </div>
               </Link>
             );
