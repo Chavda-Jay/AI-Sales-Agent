@@ -820,7 +820,8 @@ export default function Dashboard() {
 
       const refRes = await authFetch(`${REFERRALS_URL}${qs}`);
       if (refRes.ok) {
-        setReferrals(await refRes.json());
+        const refData = await refRes.json();
+        setReferrals(Array.isArray(refData) ? refData : (refData.referrals || []));
       }
       
       if (shopId) {

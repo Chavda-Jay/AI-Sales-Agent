@@ -111,12 +111,12 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       let stored = localStorage.getItem('ai_store_customer_id');
       if (!stored) {
-        stored = "demo-customer-" + Date.now();
+        stored = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ("cust-" + Date.now());
         localStorage.setItem('ai_store_customer_id', stored);
       }
       return stored;
     }
-    return "demo-customer-" + Date.now();
+    return "temp-customer-session";
   });
   const [walletBalance, setWalletBalance] = useState(0);
   const [shopParam, setShopParam] = useState(null);
@@ -127,6 +127,15 @@ export default function Home() {
   const [toastMsg, setToastMsg] = useState(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [accountTab, setAccountTab] = useState('wallet');
+  const [accountData, setAccountData] = useState(null);
+  const [isAccountLoading, setIsAccountLoading] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: '', phone: '', delivery_address: '' });
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isUpdatingConsent, setIsUpdatingConsent] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const isSendingRef = useRef(false);
 
   const toggleWishlist = async (product) => {
@@ -147,6 +156,113 @@ export default function Home() {
     setTimeout(() => setToastMsg(null), 2500);
   };
 
+  const fetchAccountData = async () => {
+    if (!shopParam || !customerId) return;
+    try {
+      setIsAccountLoading(true);
+      const res = await fetch(`${API_BASE}/api/store/me?shop=${shopParam}&customerId=${customerId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAccountData(data);
+        if (data.wallet?.balance !== undefined) {
+          setWalletBalance(data.wallet.balance);
+        }
+        if (data.profile) {
+          setProfileForm({
+            name: data.profile.name || '',
+            phone: data.profile.phone || '',
+            delivery_address: data.profile.delivery_address || ''
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load account data", err);
+    } finally {
+      setIsAccountLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAccountOpen) {
+      fetchAccountData();
+    }
+  }, [isAccountOpen]);
+
+  useEffect(() => {
+    if (shopParam && customerId) {
+      fetchAccountData();
+    }
+  }, [shopParam, customerId]);
+
+  const handleSaveProfile = async (e) => {
+    if (e) e.preventDefault();
+    if (!shopParam || !customerId) return;
+    if (accountData?.profile?.is_legacy) {
+      toast.error("Editing is disabled for demo accounts");
+      return;
+    }
+    
+    if (profileForm.phone && profileForm.phone.trim()) {
+      const cleanPhone = profileForm.phone.trim();
+      if (!/^(\+91)?[6-9]\d{9}$/.test(cleanPhone)) {
+        toast.error("Please enter a valid 10-digit Indian phone number");
+        return;
+      }
+    }
+
+    try {
+      setIsSavingProfile(true);
+      const res = await fetch(`${API_BASE}/api/store/me/profile?shop=${shopParam}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId,
+          name: profileForm.name,
+          phone: profileForm.phone,
+          delivery_address: profileForm.delivery_address
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Profile updated successfully!");
+        fetchAccountData();
+      } else {
+        toast.error(data.detail || "Failed to update profile");
+      }
+    } catch (err) {
+      toast.error("Network error updating profile");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleToggleConsent = async () => {
+    if (!shopParam || !customerId || isUpdatingConsent) return;
+    const currentConsent = accountData?.profile?.consent_whatsapp && !accountData?.profile?.opted_out;
+    const newConsent = !currentConsent;
+    
+    try {
+      setIsUpdatingConsent(true);
+      const res = await fetch(`${API_BASE}/api/store/me/consent?shop=${shopParam}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId,
+          promotional_messages: newConsent
+        })
+      });
+      if (res.ok) {
+        toast.success(newConsent ? "Subscribed to WhatsApp updates!" : "Unsubscribed from promotional messages");
+        fetchAccountData();
+      } else {
+        toast.error("Failed to update preferences");
+      }
+    } catch (err) {
+      toast.error("Network error updating preferences");
+    } finally {
+      setIsUpdatingConsent(false);
+    }
+  };
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -348,6 +464,9 @@ export default function Home() {
             }
             return newMsgs;
           });
+          if (data.order_ready || data.walletBalance !== undefined) {
+            fetchAccountData();
+          }
         }
         // Success or final error shown — break out of retry loop
         break;
@@ -369,7 +488,7 @@ export default function Home() {
   };
 
   const handleClearChat = async () => {
-    const newId = "demo-customer-" + Date.now();
+    const newId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ("cust-" + Date.now());
     if (typeof window !== 'undefined') {
       localStorage.setItem('ai_store_customer_id', newId);
       sessionStorage.removeItem('ai_store_ref');
@@ -571,10 +690,46 @@ export default function Home() {
         <div className="nav-brand" style={{ textAlign: 'center' }}>
           {config?.brandName || 'Store'}
         </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
           <button 
             className="nav-cart-btn"
-            onClick={() => setIsWishlistOpen(true)}
+            onClick={() => { setIsAccountOpen(true); setIsCartOpen(false); setIsWishlistOpen(false); }}
+            title="My Account"
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px', 
+              padding: '6px 12px', 
+              borderRadius: '20px', 
+              background: 'rgba(255, 255, 255, 0.05)', 
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              cursor: 'pointer',
+              color: 'var(--ivory)',
+              fontSize: '13px',
+              fontWeight: 600
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span className="account-nav-label">Account</span>
+            {walletBalance > 0 && (
+              <span style={{ 
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+                color: '#fff', 
+                fontSize: '11px', 
+                padding: '1px 7px', 
+                borderRadius: '10px', 
+                fontWeight: 700 
+              }}>
+                ₹{walletBalance}
+              </span>
+            )}
+          </button>
+          <button 
+            className="nav-cart-btn"
+            onClick={() => { setIsWishlistOpen(true); setIsAccountOpen(false); setIsCartOpen(false); }}
             title="Wishlist"
             style={{ position: 'relative' }}
           >
@@ -583,7 +738,7 @@ export default function Home() {
           </button>
           <button 
             className="nav-cart-btn"
-            onClick={() => setIsCartOpen(true)}
+            onClick={() => { setIsCartOpen(true); setIsAccountOpen(false); setIsWishlistOpen(false); }}
             style={{ position: 'relative' }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
@@ -958,6 +1113,370 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Customer Hub: My Account Drawer */}
+      <div 
+        className={`account-drawer-overlay ${isAccountOpen ? 'open' : ''}`} 
+        onClick={() => setIsAccountOpen(false)}
+      ></div>
+      <div className={`account-drawer ${isAccountOpen ? 'open' : ''}`}>
+        <div className="account-drawer-header">
+          <h2 className="account-drawer-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            My Account
+          </h2>
+          <button className="account-close-btn" onClick={() => setIsAccountOpen(false)} title="Close">✕</button>
+        </div>
+
+        {/* 3 Tabs */}
+        <div className="account-tabs">
+          <button 
+            className={`account-tab-btn ${accountTab === 'wallet' ? 'active' : ''}`}
+            onClick={() => setAccountTab('wallet')}
+          >
+            💰 Wallet & Referrals
+          </button>
+          <button 
+            className={`account-tab-btn ${accountTab === 'orders' ? 'active' : ''}`}
+            onClick={() => setAccountTab('orders')}
+          >
+            📦 My Orders {accountData?.orders?.length > 0 && `(${accountData.orders.length})`}
+          </button>
+          <button 
+            className={`account-tab-btn ${accountTab === 'profile' ? 'active' : ''}`}
+            onClick={() => setAccountTab('profile')}
+          >
+            👤 Profile
+          </button>
+        </div>
+
+        <div className="account-drawer-body">
+          {isAccountLoading && !accountData ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+              Loading your account details...
+            </div>
+          ) : (
+            <>
+              {/* TAB 1: WALLET & REFERRALS */}
+              {accountTab === 'wallet' && (
+                <>
+                  {/* Wallet Balance Hero Card */}
+                  <div className="account-wallet-hero">
+                    <div className="account-wallet-label">Available Wallet Credits</div>
+                    <div className="account-wallet-amount">
+                      ₹{Number(accountData?.wallet?.balance || walletBalance || 0).toLocaleString('en-IN')}
+                    </div>
+                    <div className="account-wallet-hint">
+                      ✓ Instant discount applied automatically on your checkout orders.
+                    </div>
+                  </div>
+
+                  {/* Referral Code & Sharing Card */}
+                  <div className="account-card-box">
+                    <div className="account-box-title">
+                      <span>Refer Friends & Earn ₹100</span>
+                      <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 600 }}>Get ₹100 per friend</span>
+                    </div>
+
+                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>
+                      Share your personal referral link or code. When your friend places their first order, both of you get ₹100 wallet credits!
+                    </div>
+
+                    <div className="account-code-row">
+                      <div className="account-code-pill">
+                        {accountData?.referral?.code || 'Generating...'}
+                      </div>
+                      <button 
+                        className="account-btn-sm"
+                        onClick={() => {
+                          if (accountData?.referral?.code) {
+                            navigator.clipboard.writeText(accountData.referral.code);
+                            setCopiedCode(true);
+                            toast.success("Referral code copied!");
+                            setTimeout(() => setCopiedCode(false), 2000);
+                          }
+                        }}
+                      >
+                        {copiedCode ? "Copied! ✓" : "Copy Code"}
+                      </button>
+                      <button 
+                        className="account-btn-sm"
+                        onClick={() => {
+                          if (accountData?.referral?.share_url) {
+                            navigator.clipboard.writeText(accountData.referral.share_url);
+                            setCopiedLink(true);
+                            toast.success("Store link copied!");
+                            setTimeout(() => setCopiedLink(false), 2000);
+                          }
+                        }}
+                      >
+                        {copiedLink ? "Link Copied! ✓" : "Copy Link"}
+                      </button>
+                    </div>
+
+                    {/* WhatsApp Direct Share Link */}
+                    {accountData?.referral?.share_url && (
+                      <a 
+                        className="account-share-wa-btn"
+                        href={`https://wa.me/?text=${encodeURIComponent(`Hey! Check out ${config?.brandName || 'this store'} and get ₹100 off using my referral link: ${accountData.referral.share_url}`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.669-.699c.969.54 1.838.835 2.791.835 3.18 0 5.767-2.586 5.768-5.766 0-3.18-2.587-5.767-5.768-5.767zm9.969 5.768c0 5.509-4.491 10-10 10-1.782 0-3.454-.474-4.896-1.306l-6.104 1.6 1.637-5.975c-.943-1.488-1.493-3.242-1.493-5.119 0-5.509 4.491-10 10-10 5.509 0 10 4.491 10 10z"/>
+                        </svg>
+                        Share with Friends on WhatsApp
+                      </a>
+                    )}
+
+                    {/* Referral Metrics */}
+                    <div className="account-stats-row">
+                      <div className="account-stat-cell">
+                        <div className="account-stat-num">{accountData?.referral?.friends_invited || 0}</div>
+                        <div className="account-stat-label">Friends Invited</div>
+                      </div>
+                      <div className="account-stat-cell">
+                        <div className="account-stat-num">{accountData?.referral?.friends_converted || 0}</div>
+                        <div className="account-stat-label">Orders Placed</div>
+                      </div>
+                      <div className="account-stat-cell">
+                        <div className="account-stat-num">₹{accountData?.referral?.total_earned || 0}</div>
+                        <div className="account-stat-label">Total Earned</div>
+                      </div>
+                    </div>
+
+                    {/* Invites List */}
+                    <div style={{ marginTop: '14px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#c9d1d9', marginBottom: '8px' }}>
+                        Invite Status
+                      </div>
+                      {!accountData?.referral?.invites || accountData.referral.invites.length === 0 ? (
+                        <div className="account-empty-state" style={{ padding: '16px' }}>
+                          No friends invited yet. Share your link to start earning rewards!
+                        </div>
+                      ) : (
+                        <div className="account-list">
+                          {accountData.referral.invites.map((inv, idx) => (
+                            <div key={idx} className="account-list-item">
+                              <div>
+                                <div style={{ fontWeight: 600, color: '#f0f6fc' }}>{inv.name}</div>
+                                <div style={{ fontSize: '11px', color: '#8b949e' }}>{inv.date}</div>
+                              </div>
+                              <div>
+                                {inv.status === 'earned' ? (
+                                  <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700 }}>
+                                    +₹{inv.reward} Earned
+                                  </span>
+                                ) : (
+                                  <span style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#fbbf24', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600 }}>
+                                    Pending Order
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Wallet Activity Ledger */}
+                  <div className="account-card-box">
+                    <div className="account-box-title">
+                      <span>Wallet Activity Ledger</span>
+                    </div>
+                    {!accountData?.wallet?.ledger || accountData.wallet.ledger.length === 0 ? (
+                      <div className="account-empty-state">
+                        No wallet activity yet. Place an order or refer a friend to get started!
+                      </div>
+                    ) : (
+                      <div className="account-list">
+                        {accountData.wallet.ledger.map((tx, idx) => {
+                          const isCredit = Number(tx.amount) > 0;
+                          return (
+                            <div key={idx} className="account-list-item">
+                              <div>
+                                <div style={{ fontWeight: 600, color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span>{tx.kind === 'referral_reward' ? '🎁 Referral Reward' : (tx.kind === 'order_discount' ? '🛒 Order Discount' : '💳 Adjustment')}</span>
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#8b949e', marginTop: '2px' }}>
+                                  {tx.note || (isCredit ? 'Credit added' : 'Debit applied')} • {tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontWeight: 800, fontSize: '14px', color: isCredit ? '#34d399' : '#f87171' }}>
+                                  {isCredit ? `+₹${tx.amount}` : `-₹${Math.abs(tx.amount)}`}
+                                </div>
+                                <div style={{ fontSize: '10px', color: '#8b949e' }}>
+                                  Bal: ₹{tx.balance_after}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* TAB 2: MY ORDERS */}
+              {accountTab === 'orders' && (
+                <div className="account-card-box">
+                  <div className="account-box-title">
+                    <span>Order History</span>
+                  </div>
+
+                  {!accountData?.orders || accountData.orders.length === 0 ? (
+                    <div className="account-empty-state">
+                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>🛍️</div>
+                      No orders placed yet.<br/>Chat with our AI Shopping Assistant to find genuine products and checkout seamlessly!
+                    </div>
+                  ) : (
+                    <div className="account-list">
+                      {accountData.orders.map((od, idx) => (
+                        <div key={idx} className="account-list-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 700, color: '#f0f6fc', fontSize: '14px' }}>
+                              {od.product_name}
+                            </span>
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: 700, 
+                              padding: '3px 8px', 
+                              borderRadius: '6px',
+                              background: od.status === 'Confirmed' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                              color: od.status === 'Confirmed' ? '#34d399' : '#fbbf24'
+                            }}>
+                              {od.status}
+                            </span>
+                          </div>
+                          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#8b949e' }}>
+                            <span>Order #{od.id} • {od.date}</span>
+                            <span style={{ fontWeight: 800, color: '#f0f6fc', fontSize: '14px' }}>
+                              ₹{Number(od.amount).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: PROFILE */}
+              {accountTab === 'profile' && (
+                <div className="account-card-box">
+                  <div className="account-box-title">
+                    <span>Profile & Preferences</span>
+                  </div>
+
+                  {accountData?.profile?.is_legacy && (
+                    <div style={{ 
+                      padding: '10px 12px', 
+                      background: 'rgba(234, 179, 8, 0.1)', 
+                      border: '1px solid rgba(234, 179, 8, 0.25)', 
+                      borderRadius: '8px', 
+                      color: '#fbbf24', 
+                      fontSize: '12px', 
+                      marginBottom: '16px',
+                      lineHeight: 1.4
+                    }}>
+                      ℹ️ <strong>Demo Session:</strong> Profile editing is restricted for demo IDs to protect shared data. Place an order or start a new chat to register a full personal profile.
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSaveProfile}>
+                    <div className="account-form-group">
+                      <label className="account-form-label">Full Name</label>
+                      <input 
+                        type="text"
+                        className="account-form-input"
+                        placeholder="Your name"
+                        disabled={accountData?.profile?.is_legacy || isSavingProfile}
+                        value={profileForm.name}
+                        onChange={(e) => setProfileForm(p => ({ ...p, name: e.target.value }))}
+                        maxLength={80}
+                      />
+                    </div>
+
+                    <div className="account-form-group">
+                      <label className="account-form-label">Phone Number</label>
+                      <input 
+                        type="text"
+                        className="account-form-input"
+                        placeholder="10-digit phone number"
+                        disabled={accountData?.profile?.is_legacy || isSavingProfile}
+                        value={profileForm.phone}
+                        onChange={(e) => setProfileForm(p => ({ ...p, phone: e.target.value }))}
+                      />
+                      {accountData?.profile?.is_legacy && (
+                        <span style={{ fontSize: '11px', color: '#8b949e' }}>Phone number masked for privacy</span>
+                      )}
+                    </div>
+
+                    <div className="account-form-group">
+                      <label className="account-form-label">Delivery Address</label>
+                      <textarea 
+                        className="account-form-input"
+                        rows="3"
+                        placeholder="House / Flat No., Street, City, State, PIN"
+                        disabled={accountData?.profile?.is_legacy || isSavingProfile}
+                        value={profileForm.delivery_address}
+                        onChange={(e) => setProfileForm(p => ({ ...p, delivery_address: e.target.value }))}
+                        maxLength={300}
+                        style={{ resize: 'vertical' }}
+                      />
+                    </div>
+
+                    {!accountData?.profile?.is_legacy && (
+                      <button 
+                        type="submit" 
+                        className="account-save-btn"
+                        disabled={isSavingProfile}
+                      >
+                        {isSavingProfile ? "Saving Profile..." : "Save Profile Details"}
+                      </button>
+                    )}
+                  </form>
+
+                  {/* Promotional Consent Toggle */}
+                  <div className="account-toggle-card">
+                    <div className="account-toggle-info">
+                      <div className="account-toggle-title">Receive Offers & WhatsApp Updates</div>
+                      <div className="account-toggle-sub">
+                        Get personalized order tracking, exclusive referral drops, and promotional discounts.
+                      </div>
+                    </div>
+                    <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={Boolean(accountData?.profile?.consent_whatsapp && !accountData?.profile?.opted_out)}
+                        onChange={handleToggleConsent}
+                        disabled={isUpdatingConsent}
+                        style={{ opacity: 0, width: 0, height: 0 }}
+                      />
+                      <span style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: (accountData?.profile?.consent_whatsapp && !accountData?.profile?.opted_out) ? '#10b981' : '#4b5563',
+                        borderRadius: '24px', transition: '0.3s'
+                      }}>
+                        <span style={{
+                          position: 'absolute', content: '""', height: '18px', width: '18px', left: (accountData?.profile?.consent_whatsapp && !accountData?.profile?.opted_out) ? '22px' : '3px', bottom: '3px',
+                          backgroundColor: '#fff', borderRadius: '50%', transition: '0.3s'
+                        }}></span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

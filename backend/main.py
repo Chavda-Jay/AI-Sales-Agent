@@ -8,7 +8,7 @@ import re
 import logging
 import uuid
 import shutil
-from fastapi import FastAPI, HTTPException, Request, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, Depends, UploadFile, File, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -613,6 +613,35 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS score_band TEXT;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS score_breakdown JSONB;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS preferred_language TEXT;")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS delivery_address TEXT;")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS wallet_transactions (
+                        id SERIAL PRIMARY KEY,
+                        customer_id INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                        business_id INT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                        amount NUMERIC NOT NULL,
+                        kind TEXT NOT NULL,
+                        ref_id INT NULL,
+                        note TEXT,
+                        balance_after NUMERIC NOT NULL,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_wallet_transactions_cust ON wallet_transactions(customer_id);
+                    CREATE INDEX IF NOT EXISTS idx_wallet_transactions_biz ON wallet_transactions(business_id);
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS consent_logs (
+                        id SERIAL PRIMARY KEY,
+                        customer_id INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                        business_id INT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                        channel TEXT DEFAULT 'whatsapp',
+                        consented BOOLEAN NOT NULL,
+                        opted_out BOOLEAN NOT NULL,
+                        reason TEXT,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_consent_logs_cust ON consent_logs(customer_id);
+                """)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS handoffs (
                         id SERIAL PRIMARY KEY,
@@ -1760,12 +1789,21 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     )
                     
                     if ref_code:
-                        referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", ref_code)
-                        if referrer_id and referrer_id != customer_id:
-                            await conn.execute(
-                                "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, reward_status) VALUES ($1, $2, $3, 'pending')",
-                                referrer_id, customer_id, ref_code
+                        referrer_row = await conn.fetchrow("SELECT id, phone, ext_id FROM customers WHERE referral_code = $1", ref_code)
+                        if referrer_row:
+                            referrer_id = referrer_row["id"]
+                            is_self_ref = (
+                                referrer_id == customer_id or
+                                (referrer_row["phone"] and c_phone and referrer_row["phone"] == c_phone) or
+                                (referrer_row["ext_id"] and req.customerId and referrer_row["ext_id"] == req.customerId)
                             )
+                            if not is_self_ref:
+                                existing_ref = await conn.fetchval("SELECT id FROM referrals WHERE referred_customer_id = $1", customer_id)
+                                if not existing_ref:
+                                    await conn.execute(
+                                        "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, reward_status) VALUES ($1, $2, $3, 'pending')",
+                                        referrer_id, customer_id, ref_code
+                                    )
                 else:
                     await conn.execute(
                         """
@@ -1825,18 +1863,26 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     # Also link referral to existing customer if they just provided the referral link/code
                     curr_referred_by = await conn.fetchval("SELECT referred_by_code FROM customers WHERE id = $1", customer_id)
                     if not curr_referred_by and ref_code:
-                        referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", ref_code)
-                        if referrer_id and referrer_id != customer_id:
-                            await conn.execute(
-                                "UPDATE customers SET referred_by_code = $1, source = 'referral' WHERE id = $2",
-                                ref_code, customer_id
+                        referrer_row = await conn.fetchrow("SELECT id, phone, ext_id FROM customers WHERE referral_code = $1", ref_code)
+                        if referrer_row:
+                            referrer_id = referrer_row["id"]
+                            c_phone_val = c_phone or await conn.fetchval("SELECT phone FROM customers WHERE id = $1", customer_id)
+                            is_self_ref = (
+                                referrer_id == customer_id or
+                                (referrer_row["phone"] and c_phone_val and referrer_row["phone"] == c_phone_val) or
+                                (referrer_row["ext_id"] and req.customerId and referrer_row["ext_id"] == req.customerId)
                             )
-                            existing_ref = await conn.fetchval("SELECT id FROM referrals WHERE referred_customer_id = $1", customer_id)
-                            if not existing_ref:
+                            if not is_self_ref:
                                 await conn.execute(
-                                    "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, reward_status) VALUES ($1, $2, $3, 'pending')",
-                                    referrer_id, customer_id, ref_code
+                                    "UPDATE customers SET referred_by_code = $1, source = 'referral' WHERE id = $2",
+                                    ref_code, customer_id
                                 )
+                                existing_ref = await conn.fetchval("SELECT id FROM referrals WHERE referred_customer_id = $1", customer_id)
+                                if not existing_ref:
+                                    await conn.execute(
+                                        "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, reward_status) VALUES ($1, $2, $3, 'pending')",
+                                        referrer_id, customer_id, ref_code
+                                    )
                 
                 await conn.execute(
                     "INSERT INTO conversations (customer_id, business_id, message, reply, intent_score, segment) VALUES ($1, $2, $3, $4, $5, $6)",
@@ -1865,10 +1911,18 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     
                     wallet_discount = float(parsed.get("wallet_discount_applied") or 0)
                     final_amount = float(parsed.get("order_amount") or 0)
+                    actual_discount = 0
                     
                     if wallet_discount > 0:
-                        final_amount = max(0, final_amount - wallet_discount)
-                        await conn.execute("UPDATE customers SET wallet_balance = GREATEST(0, wallet_balance - $1) WHERE id = $2", wallet_discount, customer_id)
+                        cust_bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE id = $1 FOR UPDATE", customer_id)
+                        current_bal = float(cust_bal or 0)
+                        actual_discount = min(current_bal, wallet_discount)
+                        if actual_discount > 0:
+                            final_amount = max(0.0, final_amount - actual_discount)
+                            new_bal = max(0.0, current_bal - actual_discount)
+                            await conn.execute("UPDATE customers SET wallet_balance = $1 WHERE id = $2", new_bal, customer_id)
+                        else:
+                            actual_discount = 0
                     
                     threshold = await conn.fetchval("SELECT high_value_order_threshold FROM businesses WHERE id = $1", business_id)
                     order_status = 'confirmed'
@@ -1879,6 +1933,16 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                         "INSERT INTO orders (customer_id, business_id, product_id, status, amount) VALUES ($1, $2, $3, $4, $5) RETURNING id",
                         customer_id, business_id, prod_id, order_status, final_amount
                     )
+
+                    if actual_discount > 0:
+                        bal_after = await conn.fetchval("SELECT wallet_balance FROM customers WHERE id = $1", customer_id)
+                        await conn.execute(
+                            """
+                            INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, ref_id, note, balance_after)
+                            VALUES ($1, $2, $3, 'order_discount', $4, $5, $6)
+                            """,
+                            customer_id, business_id, -actual_discount, order_db_id, f"Order #{order_db_id} discount", float(bal_after or 0)
+                        )
                     
                     if order_status == 'confirmed':
                         await conn.execute("INSERT INTO retention_stages (order_id, customer_id, current_stage) VALUES ($1, $2, 'confirmed')", order_db_id, customer_id)
@@ -1894,10 +1958,10 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
 
                     parsed["order_id"] = order_id
                     parsed["order_amount"] = final_amount
-                    parsed["wallet_discount_applied"] = wallet_discount
+                    parsed["wallet_discount_applied"] = actual_discount
                     
                     # Generate or fetch referral code
-                    cust_record = await conn.fetchrow("SELECT referral_code, referred_by_code, name FROM customers WHERE id = $1", customer_id)
+                    cust_record = await conn.fetchrow("SELECT referral_code, referred_by_code, name, phone, ext_id FROM customers WHERE id = $1", customer_id)
                     ref_code = cust_record['referral_code'] if cust_record else None
                     name_prefix = (cust_record['name'] or "USR")[:3].upper() if cust_record else "USR"
                     
@@ -1908,28 +1972,88 @@ Respond with ONLY a raw JSON object (NO markdown fences, NO extra text) with exa
                     
                     parsed["referral_code"] = ref_code
                     
-                    # Update pending referral if this customer was referred
+                    # Referral reward logic - MUST ONLY REWARD IF order_status == 'confirmed'
                     referred_by = cust_record['referred_by_code'] if cust_record else None
                     if referred_by:
-                        referrer_id = await conn.fetchval("SELECT id FROM customers WHERE referral_code = $1", referred_by)
-                        if referrer_id and referrer_id != customer_id:
-                            ref_exists_row = await conn.fetchrow("SELECT id, reward_status FROM referrals WHERE referred_customer_id = $1", customer_id)
-                            if ref_exists_row:
-                                if ref_exists_row["reward_status"] == "pending":
-                                    ref_updated = await conn.execute(
-                                        "UPDATE referrals SET reward_status = 'earned', reward_amount = 100, referred_order_id = $1 WHERE id = $2",
-                                        order_db_id, ref_exists_row["id"]
-                                    )
-                                    if ref_updated == "UPDATE 1":
-                                        await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", referrer_id)
-                                        await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", customer_id)
-                            else:
-                                await conn.execute(
-                                    "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, referred_order_id, reward_status, reward_amount) VALUES ($1, $2, $3, $4, 'earned', 100)",
-                                    referrer_id, customer_id, referred_by, order_db_id
+                        referrer_row = await conn.fetchrow("SELECT id, phone, ext_id, wallet_balance, business_id, name FROM customers WHERE referral_code = $1", referred_by)
+                        if referrer_row:
+                            referrer_id = referrer_row["id"]
+                            # Self-referral guard
+                            is_self_ref = (
+                                referrer_id == customer_id or
+                                (referrer_row["phone"] and cust_record["phone"] and referrer_row["phone"] == cust_record["phone"]) or
+                                (referrer_row["ext_id"] and cust_record["ext_id"] and referrer_row["ext_id"] == cust_record["ext_id"])
+                            )
+                            if not is_self_ref:
+                                ref_exists_row = await conn.fetchrow(
+                                    "SELECT id, reward_status FROM referrals WHERE referred_customer_id = $1", customer_id
                                 )
-                                await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", referrer_id)
-                                await conn.execute("UPDATE customers SET wallet_balance = wallet_balance + 100 WHERE id = $1", customer_id)
+                                if order_status == 'confirmed':
+                                    if ref_exists_row:
+                                        if ref_exists_row["reward_status"] == "pending":
+                                            ref_updated = await conn.execute(
+                                                "UPDATE referrals SET reward_status = 'earned', reward_amount = 100, referred_order_id = $1 WHERE id = $2 AND reward_status = 'pending'",
+                                                order_db_id, ref_exists_row["id"]
+                                            )
+                                            if ref_updated == "UPDATE 1":
+                                                # Referrer reward with FOR UPDATE
+                                                r_bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE id = $1 FOR UPDATE", referrer_id)
+                                                new_r_bal = float(r_bal or 0) + 100
+                                                await conn.execute("UPDATE customers SET wallet_balance = $1 WHERE id = $2", new_r_bal, referrer_id)
+                                                await conn.execute(
+                                                    """
+                                                    INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, ref_id, note, balance_after)
+                                                    VALUES ($1, $2, 100, 'referral_reward', $3, $4, $5)
+                                                    """,
+                                                    referrer_id, referrer_row["business_id"], ref_exists_row["id"], f"Referral reward for referring {cust_record['name'] or 'customer'}", new_r_bal
+                                                )
+                                                
+                                                # Referred customer reward with FOR UPDATE
+                                                c_bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE id = $1 FOR UPDATE", customer_id)
+                                                new_c_bal = float(c_bal or 0) + 100
+                                                await conn.execute("UPDATE customers SET wallet_balance = $1 WHERE id = $2", new_c_bal, customer_id)
+                                                await conn.execute(
+                                                    """
+                                                    INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, ref_id, note, balance_after)
+                                                    VALUES ($1, $2, 100, 'referral_reward', $3, $4, $5)
+                                                    """,
+                                                    customer_id, business_id, ref_exists_row["id"], f"Welcome referral bonus for order #{order_db_id}", new_c_bal
+                                                )
+                                    else:
+                                        new_ref_id = await conn.fetchval(
+                                            "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, referred_order_id, reward_status, reward_amount) VALUES ($1, $2, $3, $4, 'earned', 100) RETURNING id",
+                                            referrer_id, customer_id, referred_by, order_db_id
+                                        )
+                                        # Referrer reward with FOR UPDATE
+                                        r_bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE id = $1 FOR UPDATE", referrer_id)
+                                        new_r_bal = float(r_bal or 0) + 100
+                                        await conn.execute("UPDATE customers SET wallet_balance = $1 WHERE id = $2", new_r_bal, referrer_id)
+                                        await conn.execute(
+                                            """
+                                            INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, ref_id, note, balance_after)
+                                            VALUES ($1, $2, 100, 'referral_reward', $3, $4, $5)
+                                            """,
+                                            referrer_id, referrer_row["business_id"], new_ref_id, f"Referral reward for referring {cust_record['name'] or 'customer'}", new_r_bal
+                                        )
+                                        
+                                        # Referred customer reward with FOR UPDATE
+                                        c_bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE id = $1 FOR UPDATE", customer_id)
+                                        new_c_bal = float(c_bal or 0) + 100
+                                        await conn.execute("UPDATE customers SET wallet_balance = $1 WHERE id = $2", new_c_bal, customer_id)
+                                        await conn.execute(
+                                            """
+                                            INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, ref_id, note, balance_after)
+                                            VALUES ($1, $2, 100, 'referral_reward', $3, $4, $5)
+                                            """,
+                                            customer_id, business_id, new_ref_id, f"Welcome referral bonus for order #{order_db_id}", new_c_bal
+                                        )
+                                else:
+                                    # Pending approval: do not reward yet, ensure pending referral row exists
+                                    if not ref_exists_row:
+                                        await conn.execute(
+                                            "INSERT INTO referrals (referrer_customer_id, referred_customer_id, referral_code, referred_order_id, reward_status, reward_amount) VALUES ($1, $2, $3, $4, 'pending', 100)",
+                                            referrer_id, customer_id, referred_by, order_db_id
+                                        )
                             
                     # Update lifetime_value
                     await conn.execute("UPDATE customers SET lifetime_value = (SELECT COALESCE(SUM(amount), 0) FROM orders WHERE customer_id = $1 AND status = 'confirmed') WHERE id = $1", customer_id)
@@ -2313,17 +2437,66 @@ async def approve_order(order_id: int):
         raise HTTPException(status_code=500, detail="Database not configured")
     try:
         async with db_pool.acquire() as conn:
-            # 1. Update status to confirmed
-            result = await conn.execute("UPDATE orders SET status = 'confirmed' WHERE id = $1 AND status = 'pending_approval'", order_id)
-            if result == "UPDATE 0":
-                raise HTTPException(status_code=400, detail="Order not found or not in pending_approval status")
-            
-            # 2. Insert into retention_stages as 'confirmed'
-            order_record = await conn.fetchrow("SELECT customer_id FROM orders WHERE id = $1", order_id)
-            if order_record:
-                await conn.execute("INSERT INTO retention_stages (order_id, customer_id, current_stage) VALUES ($1, $2, 'confirmed')", order_id, order_record["customer_id"])
+            async with conn.transaction():
+                # 1. Update status to confirmed
+                result = await conn.execute("UPDATE orders SET status = 'confirmed' WHERE id = $1 AND status = 'pending_approval'", order_id)
+                if result == "UPDATE 0":
+                    raise HTTPException(status_code=400, detail="Order not found or not in pending_approval status")
                 
-            return {"status": "success", "message": "Order approved and moved to confirmed status."}
+                # 2. Insert into retention_stages as 'confirmed'
+                order_record = await conn.fetchrow("SELECT customer_id, business_id, amount FROM orders WHERE id = $1", order_id)
+                if order_record:
+                    cid = order_record["customer_id"]
+                    biz_id = order_record["business_id"]
+                    await conn.execute("INSERT INTO retention_stages (order_id, customer_id, current_stage) VALUES ($1, $2, 'confirmed')", order_id, cid)
+                    
+                    # Update customer lifetime_value
+                    await conn.execute("UPDATE customers SET lifetime_value = (SELECT COALESCE(SUM(amount), 0) FROM orders WHERE customer_id = $1 AND status = 'confirmed') WHERE id = $1", cid)
+                    
+                    # 3. Check for pending referral reward for this customer
+                    ref_row = await conn.fetchrow("SELECT id, referrer_customer_id, referral_code, reward_status FROM referrals WHERE referred_customer_id = $1 AND reward_status = 'pending'", cid)
+                    if ref_row:
+                        referrer_id = ref_row["referrer_customer_id"]
+                        cust_row = await conn.fetchrow("SELECT name, phone, ext_id FROM customers WHERE id = $1", cid)
+                        ref_cust_row = await conn.fetchrow("SELECT name, phone, ext_id, business_id FROM customers WHERE id = $1", referrer_id)
+                        
+                        # Self-referral guard
+                        is_self_ref = (
+                            referrer_id == cid or
+                            (cust_row and ref_cust_row and cust_row["phone"] and ref_cust_row["phone"] and cust_row["phone"] == ref_cust_row["phone"]) or
+                            (cust_row and ref_cust_row and cust_row["ext_id"] and ref_cust_row["ext_id"] and cust_row["ext_id"] == ref_cust_row["ext_id"])
+                        )
+                        if not is_self_ref:
+                            update_res = await conn.execute(
+                                "UPDATE referrals SET reward_status = 'earned', reward_amount = 100, referred_order_id = $1 WHERE id = $2 AND reward_status = 'pending'",
+                                order_id, ref_row["id"]
+                            )
+                            if update_res == "UPDATE 1":
+                                # Referrer reward
+                                r_bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE id = $1 FOR UPDATE", referrer_id)
+                                new_r_bal = float(r_bal or 0) + 100
+                                await conn.execute("UPDATE customers SET wallet_balance = $1 WHERE id = $2", new_r_bal, referrer_id)
+                                await conn.execute(
+                                    """
+                                    INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, ref_id, note, balance_after)
+                                    VALUES ($1, $2, 100, 'referral_reward', $3, $4, $5)
+                                    """,
+                                    referrer_id, ref_cust_row["business_id"], ref_row["id"], f"Referral reward for referring {cust_row['name'] if cust_row else 'customer'}", new_r_bal
+                                )
+                                
+                                # Referred reward
+                                c_bal = await conn.fetchval("SELECT wallet_balance FROM customers WHERE id = $1 FOR UPDATE", cid)
+                                new_c_bal = float(c_bal or 0) + 100
+                                await conn.execute("UPDATE customers SET wallet_balance = $1 WHERE id = $2", new_c_bal, cid)
+                                await conn.execute(
+                                    """
+                                    INSERT INTO wallet_transactions (customer_id, business_id, amount, kind, ref_id, note, balance_after)
+                                    VALUES ($1, $2, 100, 'referral_reward', $3, $4, $5)
+                                    """,
+                                    cid, biz_id, ref_row["id"], f"Welcome referral bonus for order #{order_id}", new_c_bal
+                                )
+
+                return {"status": "success", "message": "Order approved and moved to confirmed status."}
     except Exception as e:
         print(f"Error approving order: {e}")
         raise HTTPException(status_code=500, detail="Database error")
@@ -2482,6 +2655,290 @@ async def get_wishlist(customer_id: str):
         print(e)
         raise HTTPException(status_code=500, detail="Database error")
 
+class CustomerProfileUpdateReq(BaseModel):
+    customerId: str
+    name: Optional[str] = None
+    city: Optional[str] = None
+    phone: Optional[str] = None
+    delivery_address: Optional[str] = None
+
+class CustomerConsentUpdateReq(BaseModel):
+    customerId: str
+    promotional_messages: bool
+
+@app.get("/api/store/me")
+async def get_store_me(shop: str = Query(...), customerId: str = Query(...)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        async with db_pool.acquire() as conn:
+            # Shop scope
+            b_row = await conn.fetchrow("SELECT id, slug FROM businesses WHERE slug = $1", shop)
+            if not b_row:
+                raise HTTPException(status_code=404, detail="Customer not found")
+            
+            # Customer scoped to shop
+            cust = await conn.fetchrow(
+                "SELECT * FROM customers WHERE ext_id = $1 AND business_id = $2",
+                customerId, b_row["id"]
+            )
+            if not cust:
+                raise HTTPException(status_code=404, detail="Customer not found")
+            
+            # Rule 3: Legacy id check (^demo-customer-\d+$)
+            is_legacy = bool(re.match(r"^demo-customer-\d+$", customerId))
+            raw_phone = cust["phone"] or ""
+            if is_legacy:
+                masked_phone = f"******{raw_phone[-4:]}" if len(raw_phone) >= 4 else ("******" if raw_phone else "")
+                delivery_address = None
+                can_edit = False
+            else:
+                masked_phone = raw_phone
+                delivery_address = cust["delivery_address"]
+                can_edit = True
+
+            # Wallet & Ledger (latest 50)
+            wallet_balance = float(cust["wallet_balance"] or 0)
+            ledger_rows = await conn.fetch("""
+                SELECT id, amount, kind, ref_id, note, balance_after, created_at
+                FROM wallet_transactions
+                WHERE customer_id = $1
+                ORDER BY created_at DESC, id DESC
+                LIMIT 50
+            """, cust["id"])
+            ledger = [
+                {
+                    "id": lr["id"],
+                    "amount": float(lr["amount"]),
+                    "kind": lr["kind"],
+                    "ref_id": lr["ref_id"],
+                    "note": lr["note"] or "",
+                    "balance_after": float(lr["balance_after"]),
+                    "created_at": lr["created_at"].isoformat() if lr["created_at"] else None
+                }
+                for lr in ledger_rows
+            ]
+
+            # Referral details
+            ref_code = cust["referral_code"] or ""
+            public_site_url = os.getenv("PUBLIC_SITE_URL", "http://localhost:3000").rstrip("/")
+            share_url = f"{public_site_url}/store?shop={b_row['slug']}&ref={ref_code}" if ref_code else ""
+
+            ref_stats = await conn.fetchrow("""
+                SELECT 
+                    COUNT(*) as total_invited,
+                    COUNT(*) FILTER (WHERE reward_status = 'earned') as total_converted,
+                    COALESCE(SUM(reward_amount) FILTER (WHERE reward_status = 'earned'), 0) as total_earned
+                FROM referrals
+                WHERE referrer_customer_id = $1
+            """, cust["id"])
+
+            friends_invited = int(ref_stats["total_invited"] or 0) if ref_stats else 0
+            friends_converted = int(ref_stats["total_converted"] or 0) if ref_stats else 0
+            total_earned = float(ref_stats["total_earned"] or 0) if ref_stats else 0.0
+
+            invite_rows = await conn.fetch("""
+                SELECT r.id, r.reward_status, r.reward_amount, r.created_at, c2.name as referred_name
+                FROM referrals r
+                LEFT JOIN customers c2 ON r.referred_customer_id = c2.id
+                WHERE r.referrer_customer_id = $1
+                ORDER BY r.created_at DESC, r.id DESC
+                LIMIT 50
+            """, cust["id"])
+
+            invites = []
+            for ir in invite_rows:
+                r_name = (ir["referred_name"] or "").strip()
+                first_name = r_name.split()[0] if r_name else "A friend"
+                invites.append({
+                    "name": first_name,
+                    "status": ir["reward_status"],
+                    "reward": float(ir["reward_amount"] or 100) if ir["reward_status"] == "earned" else 0,
+                    "date": ir["created_at"].strftime("%d %b %Y") if ir["created_at"] else ""
+                })
+
+            # Orders
+            order_rows = await conn.fetch("""
+                SELECT o.id, o.amount, o.status, o.created_at, ci.name as product_name
+                FROM orders o
+                LEFT JOIN catalog_items ci ON o.product_id = ci.id
+                WHERE o.customer_id = $1
+                ORDER BY o.created_at DESC, o.id DESC
+                LIMIT 50
+            """, cust["id"])
+
+            orders = []
+            for od in order_rows:
+                raw_st = od["status"]
+                if raw_st == "confirmed":
+                    status_label = "Confirmed"
+                elif raw_st == "pending_approval":
+                    status_label = "Awaiting confirmation"
+                else:
+                    status_label = raw_st.capitalize() if raw_st else "Unknown"
+
+                orders.append({
+                    "id": od["id"],
+                    "product_name": od["product_name"] or "Product",
+                    "amount": float(od["amount"] or 0),
+                    "status": status_label,
+                    "date": od["created_at"].strftime("%d %b %Y") if od["created_at"] else ""
+                })
+
+            return {
+                "profile": {
+                    "name": cust["name"] or "",
+                    "city": cust["city"] or "",
+                    "state": cust["state"] or "",
+                    "phone": masked_phone,
+                    "delivery_address": delivery_address,
+                    "consent_whatsapp": cust["consent_whatsapp"] or False,
+                    "opted_out": cust["opted_out"] or False,
+                    "can_edit": can_edit,
+                    "is_legacy": is_legacy
+                },
+                "wallet": {
+                    "balance": wallet_balance,
+                    "ledger": ledger
+                },
+                "referral": {
+                    "code": ref_code,
+                    "share_url": share_url,
+                    "friends_invited": friends_invited,
+                    "friends_converted": friends_converted,
+                    "total_earned": total_earned,
+                    "invites": invites
+                },
+                "orders": orders
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_store_me: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.patch("/api/store/me/profile")
+async def update_store_me_profile(req: CustomerProfileUpdateReq, shop: str = Query(...)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        async with db_pool.acquire() as conn:
+            # 1. Shop scope
+            b_row = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+            if not b_row:
+                raise HTTPException(status_code=404, detail="Customer not found")
+
+            # 2. Customer scoped to shop
+            cust = await conn.fetchrow(
+                "SELECT id, ext_id, phone, name, city, delivery_address FROM customers WHERE ext_id = $1 AND business_id = $2",
+                req.customerId, b_row["id"]
+            )
+            if not cust:
+                raise HTTPException(status_code=404, detail="Customer not found")
+
+            # 3. Legacy check (Rule 3)
+            if re.match(r"^demo-customer-\d+$", req.customerId):
+                raise HTTPException(status_code=403, detail="Editing is disabled for demo accounts")
+
+            # 4. Validations
+            updates = []
+            params = []
+            param_idx = 1
+
+            if req.name is not None:
+                cleaned_name = req.name.strip()
+                if len(cleaned_name) > 80:
+                    raise HTTPException(status_code=400, detail="Name cannot exceed 80 characters")
+                updates.append(f"name = ${param_idx}")
+                params.append(cleaned_name)
+                param_idx += 1
+
+            if req.city is not None:
+                cleaned_city = req.city.strip()
+                if len(cleaned_city) > 80:
+                    raise HTTPException(status_code=400, detail="City cannot exceed 80 characters")
+                updates.append(f"city = ${param_idx}")
+                params.append(cleaned_city)
+                param_idx += 1
+
+            if req.phone is not None:
+                cleaned_phone = req.phone.strip()
+                if cleaned_phone:
+                    if not re.match(r"^(\+91)?[6-9]\d{9}$", cleaned_phone):
+                        raise HTTPException(status_code=400, detail="Invalid Indian phone number. Must be 10 digits starting with 6-9.")
+                    if cleaned_phone.startswith("+91"):
+                        cleaned_phone = cleaned_phone[3:]
+                updates.append(f"phone = ${param_idx}")
+                params.append(cleaned_phone)
+                param_idx += 1
+
+            if req.delivery_address is not None:
+                cleaned_addr = req.delivery_address.strip()
+                if len(cleaned_addr) > 300:
+                    raise HTTPException(status_code=400, detail="Delivery address cannot exceed 300 characters")
+                updates.append(f"delivery_address = ${param_idx}")
+                params.append(cleaned_addr)
+                param_idx += 1
+
+            if updates:
+                params.append(cust["id"])
+                query = f"UPDATE customers SET {', '.join(updates)} WHERE id = ${param_idx}"
+                await conn.execute(query, *params)
+
+            return {"status": "success", "message": "Profile updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating customer profile: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.patch("/api/store/me/consent")
+async def update_store_me_consent(req: CustomerConsentUpdateReq, shop: str = Query(...)):
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        async with db_pool.acquire() as conn:
+            # 1. Shop scope
+            b_row = await conn.fetchrow("SELECT id FROM businesses WHERE slug = $1", shop)
+            if not b_row:
+                raise HTTPException(status_code=404, detail="Customer not found")
+
+            # 2. Customer scoped to shop
+            cust = await conn.fetchrow(
+                "SELECT id, ext_id, consent_whatsapp, opted_out FROM customers WHERE ext_id = $1 AND business_id = $2",
+                req.customerId, b_row["id"]
+            )
+            if not cust:
+                raise HTTPException(status_code=404, detail="Customer not found")
+
+            opted_out = not req.promotional_messages
+            consent_whatsapp = req.promotional_messages
+
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE customers SET opted_out = $1, consent_whatsapp = $2 WHERE id = $3",
+                    opted_out, consent_whatsapp, cust["id"]
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO consent_logs (customer_id, business_id, channel, consented, opted_out, reason)
+                    VALUES ($1, $2, 'whatsapp', $3, $4, 'customer_storefront_toggle')
+                    """,
+                    cust["id"], b_row["id"], consent_whatsapp, opted_out
+                )
+
+            return {
+                "status": "success",
+                "promotional_messages": req.promotional_messages,
+                "opted_out": opted_out,
+                "consent_whatsapp": consent_whatsapp
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating customer consent: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 class ManagerReply(BaseModel):
     message: str
 
@@ -2568,7 +3025,8 @@ async def get_referrals(shop: Optional[str] = None, admin: dict = Depends(verify
                 
                 query = """
                     SELECT r.id, r.referral_code, r.reward_status, r.reward_amount, r.created_at,
-                           c1.name as referrer_name, c2.name as referred_name
+                           c1.name as referrer_name, c2.name as referred_name,
+                           r.referrer_customer_id, r.referred_customer_id, r.referred_order_id
                     FROM referrals r
                     JOIN customers c1 ON r.referrer_customer_id = c1.id
                     JOIN customers c2 ON r.referred_customer_id = c2.id
@@ -2580,12 +3038,52 @@ async def get_referrals(shop: Optional[str] = None, admin: dict = Depends(verify
                 else:
                     query += " ORDER BY r.created_at DESC"
                     rows = await conn.fetch(query)
-                
-                return [dict(r) for r in rows]
+
+                # Referral revenue = sum of confirmed orders from referred customers
+                rev_query = """
+                    SELECT COALESCE(SUM(o.amount), 0)
+                    FROM orders o
+                    WHERE o.status = 'confirmed'
+                      AND o.customer_id IN (
+                          SELECT r.referred_customer_id
+                          FROM referrals r
+                          JOIN customers c ON r.referrer_customer_id = c.id
+                          WHERE ($1::INT IS NULL OR c.business_id = $1)
+                      )
+                      AND ($1::INT IS NULL OR o.business_id = $1)
+                """
+                referral_revenue = float(await conn.fetchval(rev_query, business_id) or 0)
+
+                # Total reward paid
+                reward_query = """
+                    SELECT COALESCE(SUM(wt.amount), 0)
+                    FROM wallet_transactions wt
+                    WHERE wt.kind = 'referral_reward'
+                      AND ($1::INT IS NULL OR wt.business_id = $1)
+                """
+                total_reward_paid = float(await conn.fetchval(reward_query, business_id) or 0)
+                if total_reward_paid == 0:
+                    ref_paid = await conn.fetchval("""
+                        SELECT COALESCE(SUM(r.reward_amount * 2), 0)
+                        FROM referrals r
+                        JOIN customers c ON r.referrer_customer_id = c.id
+                        WHERE r.reward_status = 'earned'
+                          AND ($1::INT IS NULL OR c.business_id = $1)
+                    """, business_id)
+                    total_reward_paid = float(ref_paid or 0)
+
+                roi_percent = round(((referral_revenue - total_reward_paid) / total_reward_paid * 100), 2) if total_reward_paid > 0 else None
+
+                return {
+                    "referrals": [dict(r) for r in rows],
+                    "referral_revenue": referral_revenue,
+                    "total_reward_paid": total_reward_paid,
+                    "roi_percent": roi_percent
+                }
         except Exception as e:
             print(f"Warning: Database error fetching referrals: {e}")
             raise HTTPException(status_code=500, detail="Database error")
-    return []
+    return {"referrals": [], "referral_revenue": 0.0, "total_reward_paid": 0.0, "roi_percent": None}
 
 @app.post("/api/handoffs/{handoff_id}/resolve")
 async def resolve_handoff(handoff_id: int, _ = Depends(verify_admin)):
