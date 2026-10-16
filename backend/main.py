@@ -4374,7 +4374,7 @@ async def get_public_businesses():
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT 
-                b.slug, b.brand_name, b.language, b.banner_url,
+                b.slug, b.brand_name, b.language, b.banner_url, b.welcome_bonus_amount,
                 (SELECT count(*) FROM catalog_items WHERE business_id = b.id) as product_count,
                 (SELECT min(price) FROM catalog_items WHERE business_id = b.id) as min_price,
                 (SELECT max(price) FROM catalog_items WHERE business_id = b.id) as max_price,
@@ -4391,6 +4391,7 @@ async def get_public_businesses():
                 "language": r["language"],
                 "banner_url": r.get("banner_url"),
                 "fallback_image": r.get("fallback_image"),
+                "welcome_bonus_amount": float(r['welcome_bonus_amount'] or 0) if r.get('welcome_bonus_amount') is not None else 0.0,
                 "product_count": r["product_count"] or 0,
                 "min_price": float(r['min_price'] or 0),
                 "max_price": float(r['max_price'] or 0),

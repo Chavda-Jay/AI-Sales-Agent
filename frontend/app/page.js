@@ -88,9 +88,15 @@ export default function MarketplaceHome() {
                   </div>
                   <div className="mk-tags" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <span className="mk-tag">{defaultTag}</span>
-                    <span className="mk-tag" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 700 }}>
-                      🎁 ₹100 VIP Pass
-                    </span>
+                    {Number(store.welcome_bonus_amount || 0) > 0 ? (
+                      <span className="mk-tag" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 700 }}>
+                        🎁 ₹{Math.round(store.welcome_bonus_amount)} VIP Pass
+                      </span>
+                    ) : (
+                      <span className="mk-tag" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)', fontWeight: 700 }}>
+                        ✨ VIP Member Access
+                      </span>
+                    )}
                   </div>
                   <p className="mk-desc">Discover {store.name} powered by AI. 24/7 engagement and instant support in {store.language}.</p>
                   <div className="mk-products-preview">
