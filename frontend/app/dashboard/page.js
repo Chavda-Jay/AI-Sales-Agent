@@ -1382,6 +1382,7 @@ export default function Dashboard() {
                       { key: 'target_roas', label: 'Target ROAS', placeholder: 'e.g. 3.5', type: 'number' },
                       { key: 'target_repeat_purchase_rate', label: 'Target Repeat Purchase Rate (%)', placeholder: 'e.g. 25', type: 'number' },
                       { key: 'high_value_order_threshold', label: 'High-Value Order Threshold (₹)', placeholder: 'e.g. 50000', type: 'number' },
+                      { key: 'welcome_bonus_amount', label: 'Welcome Bonus Amount (₹) [0 or empty = OFF]', placeholder: 'e.g. 100 (0 = disabled)', type: 'number' },
                     ].map(field => (
                       <div key={field.key} className="dash-context-field" style={{ flex: '1 1 calc(50% - 16px)', minWidth: '200px' }}>
                         <label style={{ display: 'block', fontSize: '13px', color: c.muted, marginBottom: '8px', fontWeight: 500 }}>{field.label}</label>

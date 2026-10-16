@@ -155,11 +155,12 @@ export default function Home() {
     setTimeout(() => setToastMsg(null), 2500);
   };
 
-  const fetchAccountData = async () => {
-    if (!shopParam || !customerId) return;
+  const fetchAccountData = async (cidOverride) => {
+    const targetCid = cidOverride || customerId;
+    if (!shopParam || !targetCid) return;
     try {
       setIsAccountLoading(true);
-      const res = await fetch(`${API_BASE}/api/store/me?shop=${shopParam}&customerId=${customerId}`);
+      const res = await fetch(`${API_BASE}/api/store/me?shop=${shopParam}&customerId=${targetCid}`);
       if (res.ok) {
         const data = await res.json();
         setAccountData(data);
@@ -244,7 +245,7 @@ export default function Home() {
         localStorage.setItem('ai_customer_name', 'Radhe');
       }
       setShowVipModal(false);
-      await fetchAccountData();
+      await fetchAccountData(radheId);
       toast.success("Welcome back Radhe! VIP session restored.");
       return;
     }
@@ -258,7 +259,7 @@ export default function Home() {
         localStorage.setItem('ai_customer_name', 'Shyam');
       }
       setShowVipModal(false);
-      await fetchAccountData();
+      await fetchAccountData(shyamId);
       toast.success("Welcome back Shyam! Warm session restored.");
       return;
     }
@@ -289,7 +290,10 @@ export default function Home() {
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(`🎉 Welcome ${vipForm.name}! ₹100 added to your wallet!`, { duration: 4000 });
+        const bonusMsg = data.welcome_bonus_awarded && data.welcome_bonus_amount > 0
+          ? `🎉 Welcome ${vipForm.name}! ₹${Math.round(data.welcome_bonus_amount)} added to your wallet!`
+          : `🎉 Welcome ${vipForm.name}! Your account is ready!`;
+        toast.success(bonusMsg, { duration: 4000 });
         if (typeof window !== 'undefined') {
           localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
           localStorage.setItem('ai_customer_name', vipForm.name.trim());
@@ -297,12 +301,19 @@ export default function Home() {
           if (vipForm.city) localStorage.setItem('ai_customer_city', vipForm.city.trim());
         }
         setShowVipModal(false);
-        await fetchAccountData();
+        if (data.customer) {
+          setWalletBalance(data.customer.wallet_balance || 0);
+        }
+        await fetchAccountData(activeCid);
 
         // Personalize AI greeting
+        const bonusGranted = data.welcome_bonus_awarded && data.welcome_bonus_amount > 0;
+        const greetingBalanceText = bonusGranted
+          ? ` Your ₹${Math.round(data.welcome_bonus_amount)} welcome shopping balance is ready in your wallet.`
+          : '';
         setMessages([
           {
-            text: `Namaste ${vipForm.name.trim()} ji! Welcome to ${config?.brandName || 'our store'} 👋 Your ₹100 welcome shopping balance is ready in your wallet. How can I help you today?`,
+            text: `Namaste ${vipForm.name.trim()} ji! Welcome to ${config?.brandName || 'our store'} 👋${greetingBalanceText} How can I help you today?`,
             who: 'agent',
             isGreeting: true
           }
@@ -1301,103 +1312,118 @@ export default function Home() {
           <div className="vip-modal-card">
             <div className="vip-card-glow"></div>
             
-            <div className="vip-badge-pill">
-              <span>🎁</span> SPECIAL WELCOME GIFT
-            </div>
+            {(() => {
+              const welcomeBonus = Number(config?.welcome_bonus_amount ?? 100);
+              return (
+                <>
+                  <div className="vip-badge-pill">
+                    <span>{welcomeBonus > 0 ? "🎁" : "✨"}</span> {welcomeBonus > 0 ? "SPECIAL WELCOME GIFT" : "VIP MEMBER PASS"}
+                  </div>
 
-            <div className="vip-modal-header">
-              <h2>Claim Your ₹100 Shopping Pass</h2>
-              <p>Enter your details to instantly activate your ₹100 wallet credit & personal AI assistant for {config?.brandName || 'our Store'}.</p>
-            </div>
+                  <div className="vip-modal-header">
+                    <h2>{welcomeBonus > 0 ? `Claim Your ₹${welcomeBonus} Shopping Pass` : "Create Your Member Account"}</h2>
+                    <p>
+                      {welcomeBonus > 0 
+                        ? `Enter your details to instantly activate your ₹${welcomeBonus} wallet credit & personal AI assistant for ${config?.brandName || 'our Store'}.`
+                        : `Enter your details to activate your member profile & personal AI assistant for ${config?.brandName || 'our Store'}.`
+                      }
+                    </p>
+                  </div>
 
-            <form onSubmit={handleVipOnboard}>
-              <div className="vip-form-group">
-                <label className="vip-form-label">Full Name *</label>
-                <div className="vip-input-wrap">
-                  <span className="vip-input-icon">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                  </span>
-                  <input 
-                    type="text" 
-                    className="vip-input" 
-                    placeholder="Radhe Sharma" 
-                    value={vipForm.name}
-                    onChange={(e) => setVipForm(p => ({ ...p, name: e.target.value }))}
-                    maxLength={80}
-                    required
-                  />
-                </div>
-              </div>
+                  <form onSubmit={handleVipOnboard}>
+                    <div className="vip-form-group">
+                      <label className="vip-form-label">Full Name *</label>
+                      <div className="vip-input-wrap">
+                        <span className="vip-input-icon">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        </span>
+                        <input 
+                          type="text" 
+                          className="vip-input" 
+                          placeholder="Radhe Sharma" 
+                          value={vipForm.name}
+                          onChange={(e) => setVipForm(p => ({ ...p, name: e.target.value }))}
+                          maxLength={80}
+                          required
+                        />
+                      </div>
+                    </div>
 
-              <div className="vip-form-group">
-                <label className="vip-form-label">WhatsApp Mobile Number *</label>
-                <div className="vip-input-wrap">
-                  <span className="vip-input-icon">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-                  </span>
-                  <span className="vip-phone-prefix">+91</span>
-                  <input 
-                    type="tel" 
-                    className="vip-input vip-input-phone" 
-                    placeholder="98765 43210" 
-                    value={vipForm.phone}
-                    onChange={(e) => setVipForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
-                    maxLength={10}
-                    required
-                  />
-                </div>
-              </div>
+                    <div className="vip-form-group">
+                      <label className="vip-form-label">WhatsApp Mobile Number *</label>
+                      <div className="vip-input-wrap">
+                        <span className="vip-input-icon">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        </span>
+                        <span className="vip-phone-prefix">+91</span>
+                        <input 
+                          type="tel" 
+                          className="vip-input vip-input-phone" 
+                          placeholder="98765 43210" 
+                          value={vipForm.phone}
+                          onChange={(e) => setVipForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                          maxLength={10}
+                          required
+                        />
+                      </div>
+                    </div>
 
-              <div className="vip-form-group">
-                <label className="vip-form-label">City / Delivery Town <span style={{ fontWeight: 400, color: '#8b949e', fontSize: '12px' }}>(Optional)</span></label>
-                <div className="vip-input-wrap">
-                  <span className="vip-input-icon">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                  </span>
-                  <input 
-                    type="text" 
-                    className="vip-input" 
-                    placeholder="Ahmedabad, Mumbai, Surat" 
-                    value={vipForm.city}
-                    onChange={(e) => setVipForm(p => ({ ...p, city: e.target.value }))}
-                    maxLength={80}
-                  />
-                </div>
-              </div>
+                    <div className="vip-form-group">
+                      <label className="vip-form-label">City / Delivery Town <span style={{ fontWeight: 400, color: '#8b949e', fontSize: '12px' }}>(Optional)</span></label>
+                      <div className="vip-input-wrap">
+                        <span className="vip-input-icon">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                        </span>
+                        <input 
+                          type="text" 
+                          className="vip-input" 
+                          placeholder="Ahmedabad, Mumbai, Surat" 
+                          value={vipForm.city}
+                          onChange={(e) => setVipForm(p => ({ ...p, city: e.target.value }))}
+                          maxLength={80}
+                        />
+                      </div>
+                    </div>
 
-              <label className="vip-consent-check">
-                <input 
-                  type="checkbox" 
-                  checked={vipForm.consent_whatsapp}
-                  onChange={(e) => setVipForm(p => ({ ...p, consent_whatsapp: e.target.checked }))}
-                />
-                <span className="vip-consent-text">
-                  Send order tracking, delivery updates, and ₹100 wallet notifications via WhatsApp.
-                </span>
-              </label>
+                    <label className="vip-consent-check">
+                      <input 
+                        type="checkbox" 
+                        checked={vipForm.consent_whatsapp}
+                        onChange={(e) => setVipForm(p => ({ ...p, consent_whatsapp: e.target.checked }))}
+                      />
+                      <span className="vip-consent-text">
+                        {welcomeBonus > 0
+                          ? `Send order tracking, delivery updates, and ₹${welcomeBonus} wallet notifications via WhatsApp.`
+                          : `Send order tracking, delivery updates, and member notifications via WhatsApp.`
+                        }
+                      </span>
+                    </label>
 
-              <div className="vip-actions">
-                <button 
-                  type="submit" 
-                  className="vip-claim-btn"
-                  onClick={handleVipOnboard}
-                  disabled={isOnboardingSubmitting}
-                >
-                  {isOnboardingSubmitting ? (
-                    <>Applying Offer...</>
-                  ) : (
-                    <>Get ₹100 Off</>
-                  )}
-                </button>
-                <button 
-                  type="button" 
-                  className="vip-skip-btn"
-                  onClick={() => setShowVipModal(false)}
-                >
-                  Skip for now & browse store
-                </button>
-              </div>
-            </form>
+                    <div className="vip-actions">
+                      <button 
+                        type="submit" 
+                        className="vip-claim-btn"
+                        onClick={handleVipOnboard}
+                        disabled={isOnboardingSubmitting}
+                      >
+                        {isOnboardingSubmitting ? (
+                          <>Activating Profile...</>
+                        ) : (
+                          <>{welcomeBonus > 0 ? `Get ₹${welcomeBonus} Off` : "Activate Account"}</>
+                        )}
+                      </button>
+                      <button 
+                        type="button" 
+                        className="vip-skip-btn"
+                        onClick={() => setShowVipModal(false)}
+                      >
+                        Skip for now & browse store
+                      </button>
+                    </div>
+                  </form>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
