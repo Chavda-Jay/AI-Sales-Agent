@@ -609,6 +609,8 @@ async def lifespan(app: FastAPI):
                 await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS banner_url TEXT;")
                 await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS dormant_after_days INT DEFAULT 30;")
                 await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS business_context JSONB DEFAULT '{}'::jsonb;")
+                await conn.execute("ALTER TABLE businesses ADD COLUMN IF NOT EXISTS welcome_bonus_amount NUMERIC DEFAULT 100.00;")
+                await conn.execute("ALTER TABLE businesses ALTER COLUMN welcome_bonus_amount SET DEFAULT 100.00;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS opted_out BOOLEAN DEFAULT FALSE;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS follow_up_stage INT DEFAULT 0;")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS score_band TEXT;")
