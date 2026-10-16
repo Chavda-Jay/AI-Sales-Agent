@@ -1313,7 +1313,7 @@ export default function Home() {
             <div className="vip-card-glow"></div>
             
             {(() => {
-              const welcomeBonus = Number(config?.welcome_bonus_amount ?? 100);
+              const welcomeBonus = Number(config?.welcome_bonus_amount ?? 0);
               return (
                 <>
                   <div className="vip-badge-pill">
@@ -1478,46 +1478,52 @@ export default function Home() {
               {accountTab === 'wallet' && (
                 <>
                   {/* Unclaimed Welcome Pass Reminder (Only inside Account Drawer) */}
-                  {(!accountData?.profile?.name || Number(accountData?.wallet?.balance || walletBalance || 0) === 0) && (
-                    <div style={{
-                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(5, 150, 105, 0.05))',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                      borderRadius: '14px',
-                      padding: '14px 16px',
-                      marginBottom: '16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px'
-                    }}>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '13px', color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>🎁</span> ₹100 Welcome Pass Unclaimed
+                  {(!accountData?.profile?.name || Number(accountData?.wallet?.balance || walletBalance || 0) === 0) && (() => {
+                    const welcomeBonus = Number(config?.welcome_bonus_amount ?? 0);
+                    return (
+                      <div style={{
+                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(5, 150, 105, 0.05))',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        borderRadius: '14px',
+                        padding: '14px 16px',
+                        marginBottom: '16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px'
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '13px', color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>{welcomeBonus > 0 ? "🎁" : "✨"}</span> {welcomeBonus > 0 ? `₹${welcomeBonus} Welcome Pass Unclaimed` : "VIP Member Pass"}
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
+                            {welcomeBonus > 0
+                              ? `Complete your profile details to unlock ₹${welcomeBonus} welcome shopping credits.`
+                              : "Complete your profile details to activate your member benefits."
+                            }
+                          </div>
                         </div>
-                        <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
-                          Complete your profile details to unlock ₹100 welcome shopping credits.
-                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => { setIsAccountOpen(false); setShowVipModal(true); }}
+                          style={{
+                            background: 'linear-gradient(135deg, #10b981, #059669)',
+                            color: '#ffffff',
+                            border: 'none',
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                          }}
+                        >
+                          {welcomeBonus > 0 ? `Claim ₹${welcomeBonus} ⚡` : "Activate ⚡"}
+                        </button>
                       </div>
-                      <button 
-                        type="button"
-                        onClick={() => { setIsAccountOpen(false); setShowVipModal(true); }}
-                        style={{
-                          background: 'linear-gradient(135deg, #10b981, #059669)',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '8px 14px',
-                          borderRadius: '8px',
-                          fontWeight: 700,
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
-                        }}
-                      >
-                        Claim ₹100 ⚡
-                      </button>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Wallet Balance Hero Card */}
                   <div className="account-wallet-hero">
