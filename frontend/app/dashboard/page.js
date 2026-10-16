@@ -1185,79 +1185,64 @@ export default function Dashboard() {
             </div>
 
             {settingsTab === 'branding' && (
-              <form onSubmit={handleSaveStoreBanner} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <form onSubmit={handleSaveStoreBanner} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label style={{ fontSize: '13px', color: c.muted, fontWeight: 500, margin: 0 }}>Store Banner / Showcase Image</label>
-                    <label style={{ fontSize: '12px', color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}>
-                      {bannerUploading ? 'Uploading...' : '📁 Upload Photo'}
-                      <input type="file" accept="image/*" onChange={handleDashboardBannerUpload} disabled={bannerUploading} style={{ display: 'none' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <label style={{ fontSize: '13px', color: c.muted, fontWeight: 500, margin: 0 }}>
+                      Marketplace Store Showcase
                     </label>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                    <input
-                      type="url"
-                      placeholder="https://... or click Upload Photo"
-                      value={storeBannerUrl}
-                      onChange={e => setStoreBannerUrl(e.target.value)}
-                      style={{ width: '100%', background: c.panel2, border: `1px solid ${c.line}`, color: c.ivory, padding: '12px', borderRadius: '8px', outline: 'none' }}
-                    />
-                    {storeBannerUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setStoreBannerUrl('')}
-                        style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '0 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}
-                      >
-                        Clear
-                      </button>
-                    )}
+                    <span style={{ fontSize: '11px', color: storeBannerUrl ? '#34d399' : '#60a5fa', background: storeBannerUrl ? 'rgba(16, 185, 129, 0.12)' : 'rgba(59, 130, 246, 0.12)', border: `1px solid ${storeBannerUrl ? 'rgba(16, 185, 129, 0.25)' : 'rgba(59, 130, 246, 0.25)'}`, padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                      {storeBannerUrl ? 'Custom Banner Active' : 'Auto-Catalog Mode'}
+                    </span>
                   </div>
 
                   {storeBannerUrl ? (
-                    <div style={{ position: 'relative', width: '100%', height: '170px', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${c.line}`, marginBottom: '12px' }}>
+                    <div style={{ position: 'relative', width: '100%', height: '180px', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${c.line}`, background: '#090d16', marginBottom: '14px' }}>
                       <img src={storeBannerUrl} alt="Store Banner Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <div style={{ position: 'absolute', bottom: '8px', right: '10px', background: 'rgba(0,0,0,0.75)', color: '#22c55e', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600 }}>
+                      <div style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(0,0,0,0.75)', color: '#22c55e', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, backdropFilter: 'blur(4px)' }}>
                         ✓ Live Preview
+                      </div>
+                      <div style={{ position: 'absolute', bottom: '10px', left: '10px', right: '10px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <label style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(4px)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          {bannerUploading ? 'Uploading...' : '📸 Change Photo'}
+                          <input type="file" accept="image/*" onChange={handleDashboardBannerUpload} disabled={bannerUploading} style={{ display: 'none' }} />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setStoreBannerUrl('')}
+                          style={{ background: 'rgba(239, 68, 68, 0.85)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(4px)' }}
+                        >
+                          🗑️ Remove
+                        </button>
                       </div>
                     </div>
                   ) : (
-                    <div style={{ background: 'rgba(255,255,255,0.02)', border: `1px dashed ${c.line}`, borderRadius: '12px', padding: '20px', textAlign: 'center', marginBottom: '12px' }}>
-                      <div style={{ fontSize: '13px', color: c.ivory, fontWeight: 600, marginBottom: '4px' }}>
-                        No Custom Banner Set
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: `1px dashed ${c.line}`, borderRadius: '12px', padding: '24px 20px', textAlign: 'center', marginBottom: '14px' }}>
+                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>🖼️</div>
+                      <div style={{ fontSize: '14px', color: c.ivory, fontWeight: 600, marginBottom: '6px' }}>
+                        Auto-Catalog Showcase Active
                       </div>
-                      <div style={{ fontSize: '12px', color: c.muted, lineHeight: '1.5' }}>
-                        Your store will automatically use your 1st product's image on the explore page. Upload a custom banner above to showcase multiple items or hero branding!
+                      <div style={{ fontSize: '12px', color: c.muted, lineHeight: '1.5', maxWidth: '380px', margin: '0 auto 16px' }}>
+                        Your store on the marketplace automatically displays the top featured item from your product catalog. You can upload a custom showcase banner anytime.
                       </div>
+                      <label style={{ background: 'rgba(14, 165, 233, 0.15)', border: '1px solid rgba(14, 165, 233, 0.35)', color: 'var(--primary)', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        {bannerUploading ? 'Uploading...' : '📁 Upload Custom Banner'}
+                        <input type="file" accept="image/*" onChange={handleDashboardBannerUpload} disabled={bannerUploading} style={{ display: 'none' }} />
+                      </label>
                     </div>
                   )}
 
-                  {/* Preset Templates */}
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '12px', color: c.muted }}>Quick templates:</span>
-                    <button
-                      type="button"
-                      onClick={() => setStoreBannerUrl('/images/electronics_banner.jpg')}
-                      style={{ background: 'rgba(14, 165, 233, 0.1)', border: '1px solid rgba(14, 165, 233, 0.3)', color: 'var(--primary)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
-                    >
-                      📺 Electronics Showcase
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStoreBannerUrl('/images/clothing_banner.jpg')}
-                      style={{ background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.3)', color: '#a78bfa', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
-                    >
-                      👕 Fashion Collection
-                    </button>
+                  <div style={{ fontSize: '11.5px', color: c.muted, lineHeight: '1.4' }}>
+                    💡 <strong>Tip:</strong> Recommended banner size is 1200×600. If no banner is set, your catalog&apos;s first product photo will be used automatically.
                   </div>
                 </div>
 
                 <button
                   type="submit"
                   disabled={bannerSaving}
-                  style={{ background: c.primary, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, cursor: bannerSaving ? 'not-allowed' : 'pointer', opacity: bannerSaving ? 0.7 : 1 }}
+                  style={{ background: c.primary, color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 600, cursor: bannerSaving ? 'not-allowed' : 'pointer', opacity: bannerSaving ? 0.7 : 1, width: '100%' }}
                 >
-                  {bannerSaving ? 'Saving Banner...' : 'Save Banner'}
+                  {bannerSaving ? 'Saving Changes...' : 'Save Showcase Settings'}
                 </button>
               </form>
             )}
