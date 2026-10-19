@@ -2686,7 +2686,7 @@ class CustomerOnboardReq(BaseModel):
     phone: str
     city: Optional[str] = None
     delivery_address: Optional[str] = None
-    consent_whatsapp: Optional[bool] = True
+    consent_whatsapp: Optional[bool] = False
 
 @app.get("/api/store/me")
 async def get_store_me(shop: str = Query(...), customerId: str = Query(...)):

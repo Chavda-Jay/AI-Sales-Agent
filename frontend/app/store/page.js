@@ -133,7 +133,7 @@ export default function Home() {
     name: '',
     phone: '',
     city: '',
-    consent_whatsapp: true
+    consent_whatsapp: false
   });
   const [isOnboardingSubmitting, setIsOnboardingSubmitting] = useState(false);
 
@@ -339,7 +339,7 @@ export default function Home() {
         name: 'Radhe',
         phone: '8898547456',
         city: 'Ahmedabad',
-        consent_whatsapp: true
+        consent_whatsapp: false
       }));
     } else if (type === 'shyam') {
       const shyamId = 'demo-customer-1791959899392';
@@ -350,7 +350,7 @@ export default function Home() {
         name: 'Shyam',
         phone: '8875412545',
         city: 'Surat',
-        consent_whatsapp: true
+        consent_whatsapp: false
       }));
     } else if (type === 'new') {
       const freshId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ("cust-" + Date.now());
@@ -361,7 +361,7 @@ export default function Home() {
         name: 'Aarav Sharma',
         phone: '9876543210',
         city: 'Mumbai',
-        consent_whatsapp: true
+        consent_whatsapp: false
       }));
     }
   };
@@ -384,9 +384,28 @@ export default function Home() {
     setAccountData(null);
     setWalletBalance(0);
     setProfileForm({ name: '', phone: '', delivery_address: '' });
-    setVipForm({ name: '', phone: '', city: '', consent_whatsapp: true });
+    setVipForm({ name: '', phone: '', city: '', consent_whatsapp: false });
     setIsAccountOpen(false);
     setShowVipModal(true);
+  };
+
+  const handleSkipVip = async () => {
+    setVipForm(p => ({ ...p, consent_whatsapp: false }));
+    setShowVipModal(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'skipped');
+    }
+    if (customerId && shopParam) {
+      try {
+        await fetch(`${API_BASE}/api/store/me/consent?shop=${shopParam}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId, promotional_messages: false })
+        });
+      } catch (e) {
+        // Safe ignore
+      }
+    }
   };
 
   const handleSaveProfile = async (e) => {
@@ -1392,10 +1411,7 @@ export default function Home() {
                         onChange={(e) => setVipForm(p => ({ ...p, consent_whatsapp: e.target.checked }))}
                       />
                       <span className="vip-consent-text">
-                        {welcomeBonus > 0
-                          ? `Send order tracking, delivery updates, and ₹${welcomeBonus} wallet notifications via WhatsApp.`
-                          : `Send order tracking, delivery updates, and member notifications via WhatsApp.`
-                        }
+                        Send order tracking and delivery updates on WhatsApp
                       </span>
                     </label>
 
@@ -1415,7 +1431,7 @@ export default function Home() {
                       <button 
                         type="button" 
                         className="vip-skip-btn"
-                        onClick={() => setShowVipModal(false)}
+                        onClick={handleSkipVip}
                       >
                         Skip for now & browse store
                       </button>
