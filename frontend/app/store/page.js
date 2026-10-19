@@ -235,33 +235,36 @@ export default function Home() {
       return;
     }
 
-    // Direct switch for known demo profiles
-    if (cleanPhone === '8898547456' || vipForm.name.trim() === 'Radhe') {
-      const radheId = 'demo-customer-1791961381312';
-      setCustomerId(radheId);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('ai_store_customer_id', radheId);
-        localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
-        localStorage.setItem('ai_customer_name', 'Radhe');
+    // Direct switch for known demo profiles (gated by NEXT_PUBLIC_DEMO_MODE)
+    const isDemoMode = typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || process.env.NEXT_PUBLIC_DEMO_MODE === '1');
+    if (isDemoMode) {
+      if (cleanPhone === '9999900001' || vipForm.name.trim() === 'Radhe') {
+        const radheId = 'demo-customer-1791961381312';
+        setCustomerId(radheId);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ai_store_customer_id', radheId);
+          localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
+          localStorage.setItem('ai_customer_name', 'Radhe');
+        }
+        setShowVipModal(false);
+        await fetchAccountData(radheId);
+        toast.success("Welcome back Radhe! VIP session restored.");
+        return;
       }
-      setShowVipModal(false);
-      await fetchAccountData(radheId);
-      toast.success("Welcome back Radhe! VIP session restored.");
-      return;
-    }
 
-    if (cleanPhone === '8875412545' || vipForm.name.trim() === 'Shyam') {
-      const shyamId = 'demo-customer-1791959899392';
-      setCustomerId(shyamId);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('ai_store_customer_id', shyamId);
-        localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
-        localStorage.setItem('ai_customer_name', 'Shyam');
+      if (cleanPhone === '9999900002' || vipForm.name.trim() === 'Shyam') {
+        const shyamId = 'demo-customer-1791959899392';
+        setCustomerId(shyamId);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ai_store_customer_id', shyamId);
+          localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'true');
+          localStorage.setItem('ai_customer_name', 'Shyam');
+        }
+        setShowVipModal(false);
+        await fetchAccountData(shyamId);
+        toast.success("Welcome back Shyam! Warm session restored.");
+        return;
       }
-      setShowVipModal(false);
-      await fetchAccountData(shyamId);
-      toast.success("Welcome back Shyam! Warm session restored.");
-      return;
     }
 
     // Ensure non-demo ID for new onboarding to prevent 403 demo-edit restrictions
@@ -337,7 +340,7 @@ export default function Home() {
       setVipForm(p => ({
         ...p,
         name: 'Radhe',
-        phone: '8898547456',
+        phone: '9999900001',
         city: 'Ahmedabad',
         consent_whatsapp: false
       }));
@@ -348,7 +351,7 @@ export default function Home() {
       setVipForm(p => ({
         ...p,
         name: 'Shyam',
-        phone: '8875412545',
+        phone: '9999900002',
         city: 'Surat',
         consent_whatsapp: false
       }));
@@ -389,22 +392,11 @@ export default function Home() {
     setShowVipModal(true);
   };
 
-  const handleSkipVip = async () => {
+  const handleSkipVip = () => {
     setVipForm(p => ({ ...p, consent_whatsapp: false }));
     setShowVipModal(false);
     if (typeof window !== 'undefined') {
       localStorage.setItem(`ai_store_onboarded_${shopParam}`, 'skipped');
-    }
-    if (customerId && shopParam) {
-      try {
-        await fetch(`${API_BASE}/api/store/me/consent?shop=${shopParam}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customerId, promotional_messages: false })
-        });
-      } catch (e) {
-        // Safe ignore
-      }
     }
   };
 
@@ -1850,34 +1842,36 @@ export default function Home() {
                     </label>
                   </div>
 
-                  {/* Quick Switch Demo Account Section */}
-                  <div className="drawer-switch-section">
-                    <div className="drawer-switch-title">⚡ Quick Switch Active Account (Demo)</div>
-                    <div className="drawer-switch-btns">
-                      <button 
-                        type="button"
-                        className={`drawer-switch-btn ${customerId === 'demo-customer-1791961381312' ? 'active' : ''}`}
-                        onClick={() => handleSwitchDemoAccount('demo-customer-1791961381312')}
-                      >
-                        👔 Radhe (VIP • ₹100)
-                      </button>
-                      <button 
-                        type="button"
-                        className={`drawer-switch-btn ${customerId === 'demo-customer-1791959899392' ? 'active' : ''}`}
-                        onClick={() => handleSwitchDemoAccount('demo-customer-1791959899392')}
-                      >
-                        📱 Shyam (Warm • ₹100)
-                      </button>
-                      <button 
-                        type="button"
-                        className="drawer-switch-btn"
-                        onClick={handleStartFreshAccount}
-                        title="Create or test a brand new shopper with ₹100 Welcome Pass"
-                      >
-                        ✨ + New Shopper Pass
-                      </button>
+                  {/* Quick Switch Demo Account Section - gated by NEXT_PUBLIC_DEMO_MODE */}
+                  {(process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || process.env.NEXT_PUBLIC_DEMO_MODE === '1') && (
+                    <div className="drawer-switch-section">
+                      <div className="drawer-switch-title">⚡ Quick Switch Active Account (Demo)</div>
+                      <div className="drawer-switch-btns">
+                        <button 
+                          type="button"
+                          className={`drawer-switch-btn ${customerId === 'demo-customer-1791961381312' ? 'active' : ''}`}
+                          onClick={() => handleSwitchDemoAccount('demo-customer-1791961381312')}
+                        >
+                          👔 Radhe (VIP • ₹100)
+                        </button>
+                        <button 
+                          type="button"
+                          className={`drawer-switch-btn ${customerId === 'demo-customer-1791959899392' ? 'active' : ''}`}
+                          onClick={() => handleSwitchDemoAccount('demo-customer-1791959899392')}
+                        >
+                          📱 Shyam (Warm • ₹100)
+                        </button>
+                        <button 
+                          type="button"
+                          className="drawer-switch-btn"
+                          onClick={handleStartFreshAccount}
+                          title="Create or test a brand new shopper with ₹100 Welcome Pass"
+                        >
+                          ✨ + New Shopper Pass
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </>

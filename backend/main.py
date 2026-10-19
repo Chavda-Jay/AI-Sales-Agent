@@ -3005,19 +3005,21 @@ async def onboard_store_customer(req: CustomerOnboardReq, shop: str = Query(...)
             if is_legacy:
                 raise HTTPException(status_code=403, detail="Editing is disabled for demo accounts")
 
-            consent_whatsapp = bool(req.consent_whatsapp)
-            opted_out = not consent_whatsapp
-
             # 3. Dedupe check: Find customer by phone or ext_id in this business
             existing_by_phone = await conn.fetchrow(
-                "SELECT id, ext_id, wallet_balance, referral_code, name, phone, city, delivery_address FROM customers WHERE right(regexp_replace(phone, '\\D', '', 'g'), 10) = $1 AND business_id = $2",
+                "SELECT id, ext_id, wallet_balance, referral_code, name, phone, city, delivery_address, opted_out FROM customers WHERE right(regexp_replace(phone, '\\D', '', 'g'), 10) = $1 AND business_id = $2",
                 norm_phone, b_row["id"]
             )
             existing_by_ext = await conn.fetchrow(
-                "SELECT id, ext_id, wallet_balance, referral_code, name, phone, city, delivery_address FROM customers WHERE ext_id = $1 AND business_id = $2",
+                "SELECT id, ext_id, wallet_balance, referral_code, name, phone, city, delivery_address, opted_out FROM customers WHERE ext_id = $1 AND business_id = $2",
                 req.customerId, b_row["id"]
             )
             cust = existing_by_phone or existing_by_ext
+
+            consent_whatsapp = bool(req.consent_whatsapp)
+            # Onboarding unticked or skip: only consent_whatsapp=False, opted_out DOES NOT change (remains False).
+            # opted_out=True only on explicit 'stop' or drawer 'Receive offers and updates' toggle off.
+            opted_out = bool(cust["opted_out"]) if (cust and cust["opted_out"] is not None) else False
 
             # Check if welcome bonus was ALREADY awarded to this phone or customer ID in this business
             target_cid = cust["id"] if cust else -1
